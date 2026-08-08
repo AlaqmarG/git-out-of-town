@@ -57,6 +57,7 @@ npm workspaces. Run `npm install` and all scripts from the **repo root** — nev
 | [`docs/PLAN.md`](docs/PLAN.md) | Deadlines, rubric, product, scope, risks, pitch |
 | [`docs/OPS.md`](docs/OPS.md) | Onboarding, VPS access, deployment, troubleshooting |
 | [`docs/reve-api.md`](docs/reve-api.md) | Reve API reference (only if we get a key) |
+| [`docs/hunt.md`](docs/hunt.md) | Third Space Trek — route, schedule, photo log |
 
 Each directory also carries its own `CLAUDE.md` with local detail — `apps/web`, `apps/ios`,
 `packages/shared`, `db`.
