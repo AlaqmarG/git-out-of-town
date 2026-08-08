@@ -41,14 +41,14 @@ PHOTOS = [
     ("1221-fungo", "Fungo Cafe", "Sat Aug 8 · 12:21 PM · new spot", False),
     ("1324-waterworks", "Waterworks Food Hall / The Well", "Sat Aug 8 · 1:24 PM · new spot", True),
     ("1425-scadding", "Scadding Court Community Ctr", "Sat Aug 8 · 2:25 PM · new spot", False),
+    ("1526-lillian", "TPL Lillian H. Smith Branch", "Sat Aug 8 · 3:26 PM · new spot", False),
 ]
 
 PENDING = [
-    ("3-25-lillian", "TPL Lillian H. Smith", "Sat Aug 8 · 3:25 PM · unlogged"),
-    ("4-25-fortyork", "TPL Fort York Branch", "Sat Aug 8 · 4:25 PM · unlogged"),
-    ("5-25-botanic", "Botanic Coffee and Caphe", "Sat Aug 8 · 5:25 PM · unlogged"),
-    ("6-25-icha", "ICHA Tea / Project Seoul", "Sat Aug 8 · 6:25 PM · unlogged"),
-    ("7-25-varda", "Varda", "Sat Aug 8 · 7:25 PM · unlogged"),
+    ("4-26-fortyork", "TPL Fort York Branch", "Sat Aug 8 · 4:26 PM · unlogged"),
+    ("5-26-botanic", "Botanic Coffee and Caphe", "Sat Aug 8 · 5:26 PM · unlogged"),
+    ("6-26-icha", "ICHA Tea / Project Seoul", "Sat Aug 8 · 6:26 PM · unlogged"),
+    ("7-26-varda", "Varda", "Sat Aug 8 · 7:26 PM · unlogged"),
 ]
 
 

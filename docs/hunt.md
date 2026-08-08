@@ -2,8 +2,8 @@
 
 Side quest for SummerHacks 2026 — one photo per hour, nine spots on the list, 18 points on the board.
 
-**Standing: 🥇 #1 · 8 pts · 4 spots · 4 photos.** Second place is a three-way tie at 6.
-Next photo unlocks **3:25 PM**. Team code `FTA8PD` — Alaqmar, Connor.
+**Standing: 🥇 #1 · 10 pts · 5 spots · 5 photos.** Second place is on 8.
+Next photo unlocks **4:26 PM**. Team code `FTA8PD` — Alaqmar, Connor.
 
 <p align="center">
   <img src="assets/hunt-timeline.svg" alt="Photo schedule timeline" width="100%">
@@ -21,13 +21,13 @@ Next photo unlocks **3:25 PM**. Team code `FTA8PD` — Alaqmar, Connor.
 </tr>
 <tr>
 <td><img src="assets/photos/1425-scadding-stamp.png" width="100%" alt="Scadding Court Community Ctr — Sat Aug 8, 2:25 PM, new spot, +2 pts"></td>
-<td><img src="assets/photos/3-25-lillian-stamp.png" width="100%" alt="TPL Lillian H. Smith — 3:25 PM slot, unlogged"></td>
-<td><img src="assets/photos/4-25-fortyork-stamp.png" width="100%" alt="TPL Fort York Branch — 4:25 PM slot, unlogged"></td>
+<td><img src="assets/photos/1526-lillian-stamp.png" width="100%" alt="TPL Lillian H. Smith Branch — Sat Aug 8, 3:26 PM, new spot, +2 pts"></td>
+<td><img src="assets/photos/4-26-fortyork-stamp.png" width="100%" alt="TPL Fort York Branch — 4:26 PM slot, unlogged"></td>
 </tr>
 <tr>
-<td><img src="assets/photos/5-25-botanic-stamp.png" width="100%" alt="Botanic Coffee and Caphe — 5:25 PM slot, unlogged"></td>
-<td><img src="assets/photos/6-25-icha-stamp.png" width="100%" alt="ICHA Tea / Project Seoul — 6:25 PM slot, unlogged"></td>
-<td><img src="assets/photos/7-25-varda-stamp.png" width="100%" alt="Varda — 7:25 PM slot, unlogged"></td>
+<td><img src="assets/photos/5-26-botanic-stamp.png" width="100%" alt="Botanic Coffee and Caphe — 5:26 PM slot, unlogged"></td>
+<td><img src="assets/photos/6-26-icha-stamp.png" width="100%" alt="ICHA Tea / Project Seoul — 6:26 PM slot, unlogged"></td>
+<td><img src="assets/photos/7-26-varda-stamp.png" width="100%" alt="Varda — 7:26 PM slot, unlogged"></td>
 </tr>
 </table>
 
@@ -55,17 +55,17 @@ Next photo unlocks **3:25 PM**. Team code `FTA8PD` — Alaqmar, Connor.
 | ~~12:21~~ | ~~Fungo Cafe~~ | King St W | Purchase | ✅ 2 | — |
 | ~~1:24~~ | ~~Waterworks / The Well~~ | Richmond & Brant | Free | ✅ 2 | — |
 | ~~2:25~~ | ~~Scadding Court Community Ctr~~ | Bathurst & Dundas | Free | ✅ 2 | — |
-| **3:25** | **TPL Lillian H. Smith** | College & Spadina | Free | 2 | 6 min |
-| 4:25 | TPL Fort York Branch | Fort York Blvd | Free | 2 | 11 min |
-| 5:25 | Botanic Coffee and Caphe | Queen St W | Purchase | 2 | 8 min |
-| 6:25 | ICHA Tea / Project Seoul / Cafe Foret | Chinatown | Purchase | 2 | 6 min |
-| 7:25 | Varda | King St W (TIFF) | Purchase | 2 | 8 min |
+| ~~3:26~~ | ~~TPL Lillian H. Smith~~ | College & Spadina | Free | ✅ 2 | — |
+| **4:26** | **TPL Fort York Branch** | Fort York Blvd | Free | 2 | 11 min |
+| 5:26 | Botanic Coffee and Caphe | Queen St W | Purchase | 2 | 8 min |
+| 6:26 | ICHA Tea / Project Seoul / Cafe Foret | Chinatown | Purchase | 2 | 6 min |
+| 7:26 | Varda | King St W (TIFF) | Purchase | 2 | 8 min |
 
-**8 banked · 10 still on the table · ~39 min of riding left.**
+**10 banked · 8 still on the table · ~33 min of riding left.**
 
 Note the clock drifted: the hourly lock runs off the last submission, so the slot moved 11:17 →
-12:21 → 1:24 → 2:25. Assume `:25` for the rest of the day and don't queue up early — the button
-won't take it.
+12:21 → 1:24 → 2:25 → 3:26. Assume `:26` for the rest of the day and don't queue up early — the
+button won't take it.
 
 ## Scoring, as the portal actually counts it
 
@@ -75,7 +75,7 @@ won't take it.
 - **Off-list — 1 pt.** Counts, but never earns the discovery bonus.
 - **One scoring photo per hour, per team.** The cadence is the ceiling, not the map.
 
-Five unlogged spots remain, so the board maxes out at 18. Everything from here is worth 2 —
+Four unlogged spots remain, so the board still maxes out at 18. Everything from here is worth 2 —
 there's no reason to repeat a spot while new ones are open.
 
 ## Why this order
@@ -86,14 +86,14 @@ every leg into ≤12 minutes and hands the rest of each hour back as build time.
 
 Since geography is nearly free on a bike, **closing times decide the order:**
 
-- **3:25 and 4:25 are the last two photo slots before 5 PM**, and the two remaining free stops
-  both die at 5 PM. Zero slack. Those slots are spoken for.
+- **4:26 is the last slot before 5 PM, and Fort York is the last free stop.** It has to be that
+  photo — there is no second chance and no slack left. Leave Lillian by 4:10 for the 11 min ride.
 - **Fort York has no Sunday recovery.** TPL Sunday hours, where they exist, start at 1:30 PM
   against a 3 PM cutoff.
 - The three cafés are the buffer. If anything slips tonight, let it be one of those.
 
-**Best build block:** 3:35–5:00, two libraries back to back, tables and power and wifi, interrupted
-only by a photo we're standing next to anyway.
+**Best build block:** now until 4:10 at Lillian, then Fort York until 5:00 — two libraries back to
+back, tables and power and wifi, interrupted only by a photo we're standing next to anyway.
 
 ## Bike Share notes
 
@@ -101,9 +101,9 @@ only by a photo we're standing next to anyway.
 - Classic bikes only; e-bikes bill per-minute on top of the pass for no gain over 1.5 km.
 - Every leg is well under the 30-min free window, so docking costs nothing extra.
 - Dundas/Spadina and Queen W stations fill up Saturday evening. Keep 10 min of margin on the
-  5:25 and 6:25 legs and have a backup dock picked.
+  5:26 and 6:26 legs and have a backup dock picked.
 
 ## Sunday fallback
 
-Five slots exist Sunday (10:25 → 2:25) but **only cafés will be open in them.** Both remaining free
-stops have to be logged Saturday.
+Five slots exist Sunday (10:26 → 2:26) but **only cafés will be open in them.** Fort York is the
+last free stop, and it has to be logged Saturday.
