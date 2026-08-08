@@ -15,8 +15,8 @@ const KEY = process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MA
 const META = "https://maps.googleapis.com/maps/api/streetview/metadata";
 const IMG = "https://maps.googleapis.com/maps/api/streetview";
 
-// Every fetch is billed, and iterating on the compositor means fetching the same
-// handful of views hundreds of times. Cache on disk, keyed by the request.
+// Every fetch is billed, and iterating on the compositor means fetching the
+// same handful of views hundreds of times. Cache on disk, keyed by the request.
 const CACHE = process.env.SV_CACHE_DIR || ".cache/streetview";
 
 let warned = false;
@@ -26,7 +26,10 @@ let warned = false;
  * `heading` is the compass bearing the piece was painted toward, so the photo
  * looks the way the painter was facing.
  */
-export async function fetchStreetView(lat, lng, heading, { width = 640, height = 480, pitch = 0, fov = 80 } = {}) {
+export async function fetchStreetView(
+  lat, lng, heading,
+  { width = 640, height = 480, pitch = 0, fov = 80, officialOnly = true } = {},
+) {
   if (!KEY) return null;
 
   const loc = `${lat},${lng}`;
@@ -53,15 +56,20 @@ export async function fetchStreetView(lat, lng, heading, { width = 640, height =
       return null;
     }
 
+    // User-contributed photospheres are indexed at the same coordinates as the
+    // road-level car imagery, and some of them are shot *indoors*. Painting a
+    // throw-up on a cafe table is worse than not painting at all, and the
+    // copyright line is the cheapest way to tell the two apart.
+    if (officialOnly && !String(meta.copyright ?? "").includes("Google")) return null;
+
     const res = await fetch(
       `${IMG}?size=${width}x${height}&location=${loc}&heading=${Math.round(heading)}&pitch=${pitch}&fov=${fov}&key=${KEY}`,
       { signal: AbortSignal.timeout(15_000) },
     );
     if (!res.ok) {
-      // Drain before bailing out. An unread response body keeps its connection
-      // checked out of undici's pool; when the Static API is not enabled every
-      // single image 403s, so a seed run would pin one connection per piece and
-      // then hang forever on a later fetch() with no error.
+      // Drain before bailing. An unread body keeps its connection checked out of
+      // undici's pool; with the Static API disabled every image 403s, which pins
+      // one connection per piece and eventually wedges every later fetch.
       await res.arrayBuffer();
       return null;
     }

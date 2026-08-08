@@ -19,22 +19,36 @@ import { boxBlur, clamp, luminance, smoothstep, sobel } from "./image.mjs";
 const CELL = 8;
 /** Street View car camera height, metres. Only sets scale; shape is unaffected. */
 const CAM_HEIGHT = 2.5;
+/** Aspect ratios a throw-up can sensibly be drawn at. */
+const MIN_ASPECT = 1.5, MAX_ASPECT = 3.4;
 
 // --- masks ------------------------------------------------------------------
 
 /**
- * Sky, by flood fill from the top edge. A colour test alone paints white walls
- * as sky under an overcast sky; requiring connectivity to the top *and* refusing
- * to cross a strong edge keeps the fill on the right side of the roofline.
+ * Sky — the one region that scores perfectly on every "is this a flat surface"
+ * test and must never be painted.
+ *
+ * Two detectors, unioned, because neither alone is enough. Clear blue is
+ * unmistakable from colour, so it is taken outright. Overcast white is
+ * indistinguishable from a white wall by colour, so it has to be reached by a
+ * flood fill from the top edge that refuses to cross a strong edge — which
+ * keeps the fill on the right side of the roofline.
  */
 function skyMask(img, mag) {
   const { data, width: w, height: h } = img;
   const sky = new Uint8Array(w * h);
   const skyish = (i) => {
     const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
-    const lum = r * 0.299 + g * 0.587 + b * 0.114;
-    return lum > 135 && b >= r - 6;
+    return r * 0.299 + g * 0.587 + b * 0.114 > 118 && b >= r - 6;
   };
+
+  for (let y = 0; y < h * 0.72; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (data[i * 4 + 2] > 118 && data[i * 4 + 2] - data[i * 4] > 24) sky[i] = 1; // unambiguous blue
+    }
+  }
+
   const stack = [];
   for (let x = 0; x < w; x++) if (skyish(x)) { sky[x] = 1; stack.push(x); }
   while (stack.length) {
@@ -53,18 +67,126 @@ function skyMask(img, mag) {
   return sky;
 }
 
-/** Foliage: green-dominant. High-energy and never a surface anyone paints. */
+/**
+ * Vegetation — foliage, hedges, and above all *grass*, which is the single most
+ * dangerous false positive this module has. A lawn is flat, evenly textured and
+ * sits below the horizon, so it scores like a beautiful wall and produces a
+ * throw-up floating in the middle of a park.
+ *
+ * A green-dominant test misses it: dry late-season grass is olive, with red and
+ * green near equal. Testing hue instead catches the whole yellow-green through
+ * cyan-green band, which no masonry occupies.
+ */
 function vegMask(img) {
   const { data } = img;
   const veg = new Uint8Array(img.width * img.height);
   for (let p = 0; p < veg.length; p++) {
     const r = data[p * 4], g = data[p * 4 + 1], b = data[p * 4 + 2];
-    if (g > r + 5 && g > b + 5) veg[p] = 1;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    if (d < mx * 0.13 || mx < 24) continue; // grey: masonry, tarmac, concrete
+    let hue;
+    if (mx === r) hue = 60 * (((g - b) / d + 6) % 6);
+    else if (mx === g) hue = 60 * ((b - r) / d + 2);
+    else hue = 60 * ((r - g) / d + 4);
+    if (hue >= 46 && hue <= 178) veg[p] = 1;
   }
   return veg;
 }
 
+/**
+ * A robust colour model of what the chosen surface looks like, used to decide
+ * whether a given pixel belongs to it.
+ *
+ * Median and MAD rather than mean and standard deviation, because the sample box
+ * usually contains a drainpipe or a stain and those would drag a mean around.
+ * A wide-gamut surface like brick gets a large MAD and a permissive test, which
+ * is the right behaviour — brick really is that varied.
+ *
+ * Two jobs: keeping the perspective vote on the wall rather than on the power
+ * lines crossing the sky behind it, and keeping paint off whatever stands in
+ * front of the wall.
+ */
+export function surfaceModel(img, box) {
+  const { data, width: w } = img;
+  const chans = [[], [], []];
+  for (let y = box[1]; y < box[3]; y += 2) {
+    for (let x = box[0]; x < box[2]; x += 2) {
+      const i = (y * w + x) * 4;
+      for (let c = 0; c < 3; c++) chans[c].push(data[i + c]);
+    }
+  }
+  const med = [], mad = [];
+  for (let c = 0; c < 3; c++) {
+    const s = chans[c].sort((a, b) => a - b);
+    const m = s[s.length >> 1];
+    med.push(m);
+    const dev = s.map((v) => Math.abs(v - m)).sort((a, b) => a - b);
+    mad.push(dev[dev.length >> 1]);
+  }
+  const tol = med.map((_, c) => 2.4 * mad[c] + 14);
+  const member = (i) => {
+    let d = 0;
+    for (let c = 0; c < 3; c++) d = Math.max(d, Math.abs(data[i * 4 + c] - med[c]) / tol[c]);
+    return 1 - smoothstep(1.0, 2.3, d);
+  };
+
+  // How well the model actually describes the box. A plain brick wall scores
+  // near 1; a box straddling brick, plywood and window reveals scores far
+  // lower, and its verdicts should not be trusted as hard evidence of an
+  // occluder. The compositor scales the mask's authority by this.
+  let inliers = 0, total = 0;
+  for (let y = box[1]; y < box[3]; y += 3) {
+    for (let x = box[0]; x < box[2]; x += 3) {
+      total++;
+      if (member(y * w + x) > 0.5) inliers++;
+    }
+  }
+
+  return { med, mad, member, homogeneity: total ? inliers / total : 0 };
+}
+
 // --- cell scoring -----------------------------------------------------------
+
+/**
+ * Local edge orientation by structure tensor. Per-pixel Sobel angles are far too
+ * noisy to vote with; smoothing the tensor (not the gradients — those cancel)
+ * gives a stable orientation plus a coherence score that says whether there is
+ * a line here at all, or just texture.
+ */
+export function structureTensor(grad, w, h, r = 2) {
+  const { gx, gy } = grad;
+  const xx = new Float32Array(w * h), yy = new Float32Array(w * h), xy = new Float32Array(w * h);
+  for (let i = 0; i < xx.length; i++) {
+    xx[i] = gx[i] * gx[i];
+    yy[i] = gy[i] * gy[i];
+    xy[i] = gx[i] * gy[i];
+  }
+  return { xx: boxBlur(xx, w, h, r), yy: boxBlur(yy, w, h, r), xy: boxBlur(xy, w, h, r) };
+}
+
+/**
+ * Per-pixel strength of *vertical* lines.
+ *
+ * With a level camera, only a vertical plane can show vertical lines — a ground
+ * plane's seams all converge on the horizon instead. Door jambs, downpipes,
+ * window reveals and pilasters are therefore the cleanest evidence that a smooth
+ * grey rectangle is a wall and not a stretch of pavement.
+ */
+function verticalLines(tensor, w, h) {
+  const out = new Float32Array(w * h);
+  for (let i = 0; i < out.length; i++) {
+    const jxx = tensor.xx[i], jyy = tensor.yy[i], jxy = tensor.xy[i];
+    const tr = jxx + jyy;
+    if (tr < 900) continue;
+    const disc = Math.sqrt((jxx - jyy) ** 2 + 4 * jxy * jxy);
+    const coh = disc / tr;
+    if (coh < 0.55) continue;
+    // Gradient horizontal ⇒ the line it sits on is vertical.
+    if (Math.abs(Math.cos(0.5 * Math.atan2(2 * jxy, jxx - jyy))) < 0.9) continue;
+    out[i] = coh;
+  }
+  return out;
+}
 
 /**
  * How paintable is each cell?
@@ -76,7 +198,7 @@ function vegMask(img) {
  */
 function scoreCells(img, fields) {
   const { width: w, height: h } = img;
-  const { lum, mag, sky, veg, smooth } = fields;
+  const { lum, mag, sky, veg, smooth, vert } = fields;
   const gw = Math.floor(w / CELL), gh = Math.floor(h / CELL);
   const wall = new Float32Array(gw * gh);
   const ground = new Float32Array(gw * gh);
@@ -84,7 +206,7 @@ function scoreCells(img, fields) {
 
   for (let cy = 0; cy < gh; cy++) {
     for (let cx = 0; cx < gw; cx++) {
-      let n = 0, sLum = 0, sMag = 0, sSky = 0, sVeg = 0, sSm = 0, sSm2 = 0, sSat = 0;
+      let n = 0, sLum = 0, sMag = 0, sSky = 0, sVeg = 0, sSm = 0, sSm2 = 0, sSat = 0, sVert = 0;
       for (let y = cy * CELL; y < (cy + 1) * CELL; y++) {
         for (let x = cx * CELL; x < (cx + 1) * CELL; x++) {
           const i = y * w + x;
@@ -98,6 +220,7 @@ function scoreCells(img, fields) {
           sSm += smooth[i];
           sSm2 += smooth[i] * smooth[i];
           sSat += mx > 8 ? (mx - mn) / mx : 0;
+          sVert += vert[i];
         }
       }
       const meanLum = sLum / n;
@@ -107,14 +230,26 @@ function scoreCells(img, fields) {
 
       // Flatness dominates; fine texture is only a tiebreaker.
       let q = Math.exp(-((coarseSd / 9) ** 2)) * (0.55 + 0.45 * Math.exp(-meanMag / 70));
+      // But a *completely* featureless patch is sky, glass or blown highlight —
+      // never a surface. Every real material has some grain at this scale.
+      q *= smoothstep(2.5, 7, meanMag);
       q *= 1 - smoothstep(0.02, 0.22, sSky / n);
-      q *= 1 - smoothstep(0.05, 0.42, sVeg / n);
+      q *= 1 - smoothstep(0.03, 0.20, sVeg / n);
       q *= smoothstep(28, 62, meanLum) * (1 - smoothstep(232, 251, meanLum));
 
       const y0 = cy * CELL;
-      // A wall lives above the ground line and below the roofline.
-      wall[cy * gw + cx] = q * smoothstep(-0.04, 0.06, y0 / h) * (1 - smoothstep(0.86, 0.99, y0 / h));
-      // Ground is below the horizon, unsaturated, and not blindingly bright.
+      // Tarmac and concrete slabs are flat, even and irresistible to the
+      // scorer, and painting them as if they were vertical is the worst failure
+      // this module can make. Below the horizon, grey, and with no vertical
+      // lines anywhere nearby is the signature — dock it hard.
+      const groundish =
+        smoothstep(horizon + 15, horizon + 75, y0) *
+        (1 - smoothstep(0.28, 0.5, sat)) *
+        (1 - smoothstep(0.012, 0.06, sVert / n));
+
+      wall[cy * gw + cx] =
+        q * (1 - 0.9 * groundish) *
+        smoothstep(-0.04, 0.06, y0 / h) * (1 - smoothstep(0.86, 0.99, y0 / h));
       ground[cy * gw + cx] =
         q * smoothstep(horizon + 4, horizon + 40, y0) * (1 - smoothstep(0.22, 0.45, sat));
     }
@@ -138,28 +273,36 @@ const rectSum = (I, gw, x0, y0, x1, y1) =>
   I[y1 * (gw + 1) + x1] - I[y0 * (gw + 1) + x1] - I[y1 * (gw + 1) + x0] + I[y0 * (gw + 1) + x0];
 
 /**
- * Best rectangle of good cells. Scored on mean quality cubed times sqrt(area) —
- * quality has to dominate or the sweep just returns the biggest patch of sky-
- * adjacent nothing, but a tiny perfect patch is no use either.
+ * Best rectangle of good cells.
+ *
+ * The balance between "clean" and "big" is the whole game here. Quality is
+ * cubed so a patch with a window in it never wins, but area carries a high
+ * exponent because a small immaculate patch is the wrong answer: graffiti fills
+ * a wall, and a postage stamp of paint in the middle of a garage door looks
+ * exactly like what it is — an algorithm being timid.
  */
-function bestRect(field, gw, gh, w, h, kind) {
+function bestRect(field, gw, gh, w, h, kind, aspect) {
   const I = integral(field, gw, gh);
   const bad = new Float32Array(field.length);
-  for (let i = 0; i < field.length; i++) bad[i] = field[i] < 0.35 ? 1 : 0;
+  for (let i = 0; i < field.length; i++) bad[i] = field[i] < 0.38 ? 1 : 0;
   const Ibad = integral(bad, gw, gh);
 
   let best = null;
-  const widths = kind === "ground" ? [0.66, 0.52, 0.4] : [0.58, 0.46, 0.36, 0.28];
-  const aspects = kind === "ground" ? [1.5, 2.0, 2.6] : [1.7, 2.2, 2.9, 3.6];
+  const widths = kind === "ground" ? [0.72, 0.58, 0.44] : [0.74, 0.6, 0.47, 0.36];
+  // Boxes near the artwork's own aspect, so fitting it in wastes little of the
+  // surface we worked to find.
+  const aspects = [0.7, 1, 1.45].map((k) => aspect * k);
 
   for (const relW of widths) {
     const cw = Math.round((relW * w) / CELL);
-    for (const aspect of aspects) {
-      const ch = Math.round((relW * w) / aspect / CELL);
+    for (const asp of aspects) {
+      const ch = Math.round((relW * w) / asp / CELL);
       if (cw < 6 || ch < 4 || cw > gw || ch > gh) continue;
       for (let y = 0; y + ch <= gh; y += 2) {
         for (let x = 0; x + cw <= gw; x += 2) {
           const cells = cw * ch;
+          // A box that averages well can still straddle three window reveals.
+          // Cap the share of outright bad cells, not just the mean.
           if (rectSum(Ibad, gw, x, y, x + cw, y + ch) / cells > 0.1) continue;
           const meanQ = rectSum(I, gw, x, y, x + cw, y + ch) / cells;
           if (meanQ < 0.42) continue;
@@ -172,7 +315,7 @@ function bestRect(field, gw, gh, w, h, kind) {
               ? 0.5 + 0.5 * smoothstep(0.6, 0.95, yc)
               : (1 - 0.85 * Math.abs(yc - 0.56)) * (1 - 0.3 * Math.abs(xc - 0.5));
 
-          const score = meanQ ** 3 * Math.sqrt(cw * ch) * place;
+          const score = meanQ ** 3 * (cw * ch) ** 0.8 * place;
           if (!best || score > best.score) {
             best = { score, meanQ, box: [x * CELL, y * CELL, (x + cw) * CELL, (y + ch) * CELL] };
           }
@@ -186,83 +329,108 @@ function bestRect(field, gw, gh, w, h, kind) {
 // --- vanishing point --------------------------------------------------------
 
 /**
- * Where the near-horizontal lines inside `box` converge, along the horizon.
+ * Where the near-horizontal lines around `box` converge, along the horizon.
  *
- * A small Hough over edge pixels whose normal is near-vertical (so the line is
- * near-horizontal), then a least-squares intersection constrained to the horizon
- * row, refined once with residual reweighting to shake off a stray building face.
+ * Every oriented pixel implies its own vanishing point: a line through (x,y)
+ * whose normal is at angle φ meets the horizon at `x + (y − cy)·tanφ`. So rather
+ * than extracting lines and intersecting them, vote for that value directly —
+ * a one-dimensional Hough in vanishing-point space.
  *
- * Returns the x of the vanishing point, or null when the lines are parallel —
- * which is the honest answer for a wall you are square to.
+ * Two details make it work. Votes are weighted by |cosφ|, which is the precision
+ * of the estimate: a perfectly horizontal edge says nothing about where the
+ * vanishing point is, and correctly contributes nothing. And the axis is
+ * compressed through `atan`, so "at infinity" is a finite bin at each end —
+ * a frontal wall produces a clean peak there instead of a smeared tail.
+ *
+ * Returns null for a frontal wall, which is the honest answer, not a failure.
  */
-function vanishingX(fields, w, h, box) {
-  const { gx, gy, mag } = fields;
-  const cy = h / 2;
-  const pad = 0.25;
+function vanishingX(fields, w, h, box, model) {
+  const { tensor, sky } = fields;
+  const cx = w / 2, cy = h / 2;
+  // Generous margin: a blank wall's own coursing may be too faint to vote, and
+  // the roofline and window heads that do carry the perspective sit outside it.
   const bw = box[2] - box[0], bh = box[3] - box[1];
-  const x0 = Math.max(0, Math.floor(box[0] - bw * pad));
-  const x1 = Math.min(w, Math.ceil(box[2] + bw * pad));
-  const y0 = Math.max(0, Math.floor(box[1] - bh * pad));
-  const y1 = Math.min(h, Math.ceil(box[3] + bh * pad));
+  const x0 = Math.max(0, Math.floor(box[0] - bw * 0.7));
+  const x1 = Math.min(w, Math.ceil(box[2] + bw * 0.7));
+  const y0 = Math.max(0, Math.floor(box[1] - bh));
+  const y1 = Math.min(h, Math.ceil(box[3] + bh));
 
-  const NA = 71; // normal angle 55°..125°, 1° bins
-  const A0 = (55 * Math.PI) / 180, A1 = (125 * Math.PI) / 180;
-  const RHO = 2;
-  const rhoMax = Math.ceil(Math.hypot(w, h) / RHO) + 2;
-  const acc = new Float32Array(NA * (2 * rhoMax + 1));
+  const NB = 141;
+  const SCALE = 1.5 * w;
+  const bins = new Float64Array(NB); // splatted, for peak finding
+  const mass = new Float64Array(NB); // exact-bin weight, for the refined mean
+  const sums = new Float64Array(NB); // exact-bin weight × u
+  let total = 0;
 
   for (let y = y0; y < y1; y++) {
+    // Near the horizon every line reports its own x; no information, and it
+    // would just pull the estimate toward the region centre.
+    if (Math.abs(y - cy) < 20) continue;
     for (let x = x0; x < x1; x++) {
       const i = y * w + x;
-      if (mag[i] < 55) continue;
-      let a = Math.atan2(gy[i], gx[i]);
-      if (a < 0) a += Math.PI;
-      if (a < A0 || a > A1) continue;
-      const ai = Math.min(NA - 1, Math.round(((a - A0) / (A1 - A0)) * (NA - 1)));
-      const ang = A0 + (ai / (NA - 1)) * (A1 - A0);
-      const rho = Math.round((x * Math.cos(ang) + y * Math.sin(ang)) / RHO);
-      acc[ai * (2 * rhoMax + 1) + rho + rhoMax] += mag[i];
+      // Overhead cables are strong, near-horizontal, and converge nowhere
+      // useful; so is the building across the street. Vote only from pixels
+      // that look like the surface we picked. The sky test is deliberately
+      // un-dilated: a roofline pixel is a wall pixel, and the roofline is
+      // usually the strongest perspective cue in the frame.
+      if (sky[i]) continue;
+      const belongs = model.member(i);
+      if (belongs < 0.35) continue;
+
+      const jxx = tensor.xx[i], jyy = tensor.yy[i], jxy = tensor.xy[i];
+      const tr = jxx + jyy;
+      if (tr < 900) continue;
+      const disc = Math.sqrt((jxx - jyy) ** 2 + 4 * jxy * jxy);
+      const coh = disc / tr;
+      if (coh < 0.55) continue;
+
+      const phi = 0.5 * Math.atan2(2 * jxy, jxx - jyy); // gradient orientation, mod π
+      const nx = Math.cos(phi), ny = Math.sin(phi);
+      if (Math.abs(ny) < 0.82) continue; // line not near-horizontal
+
+      const vx = x + ((y - cy) * ny) / nx;
+      const u = Math.atan((vx - cx) / SCALE);
+      const b = clamp(Math.round((u / Math.PI + 0.5) * (NB - 1)), 0, NB - 1);
+      const weight = Math.sqrt(disc) * coh * Math.abs(nx) * belongs;
+      // Triangular splat absorbs bin quantisation.
+      bins[b] += weight;
+      if (b > 0) bins[b - 1] += weight * 0.5;
+      if (b < NB - 1) bins[b + 1] += weight * 0.5;
+      mass[b] += weight;
+      sums[b] += weight * u;
+      total += weight;
     }
   }
+  if (total < 400) return null;
 
-  // Peak picking with crude non-max suppression.
-  const lines = [];
-  let peak = 0;
-  for (const v of acc) if (v > peak) peak = v;
-  if (peak <= 0) return null;
-  for (let ai = 0; ai < NA; ai++) {
-    for (let ri = 1; ri < 2 * rhoMax; ri++) {
-      const v = acc[ai * (2 * rhoMax + 1) + ri];
-      if (v < peak * 0.28) continue;
-      if (v < acc[ai * (2 * rhoMax + 1) + ri - 1] || v < acc[ai * (2 * rhoMax + 1) + ri + 1]) continue;
-      const ang = A0 + (ai / (NA - 1)) * (A1 - A0);
-      lines.push({ nx: Math.cos(ang), ny: Math.sin(ang), rho: (ri - rhoMax) * RHO, w: v });
-    }
+  let best = 0;
+  for (let b = 0; b < NB; b++) if (bins[b] > bins[best]) best = b;
+  // Peaks at the extremes mean "no finite vanishing point": a frontal surface.
+  if (best < NB * 0.09 || best > NB * 0.91) return null;
+
+  // A real plane makes a sharp mode. A jumble of unrelated edges does not.
+  let m = 0, mu = 0;
+  for (let b = Math.max(0, best - 2); b <= Math.min(NB - 1, best + 2); b++) {
+    m += mass[b];
+    mu += sums[b];
   }
-  if (lines.length < 3) return null;
+  if (m < total * 0.16) return null;
 
-  // vx minimising Σ w (nx·vx + ny·cy − ρ)², then one reweighted pass.
-  let vx = null;
-  let weights = lines.map((l) => l.w);
-  for (let iter = 0; iter < 2; iter++) {
-    let num = 0, den = 0;
-    lines.forEach((l, i) => {
-      num += weights[i] * l.nx * (l.rho - l.ny * cy);
-      den += weights[i] * l.nx * l.nx;
-    });
-    const total = lines.reduce((s, l, i) => s + weights[i], 0);
-    // Near-zero slant mass means the lines really are parallel: no finite VP.
-    if (den < total * 0.004) return null;
-    vx = num / den;
-    weights = lines.map((l, i) => {
-      const r = Math.abs(l.nx * vx + l.ny * cy - l.rho);
-      return l.w / (1 + (r / 24) ** 2);
-    });
-  }
+  const vx = cx + SCALE * Math.tan(clamp(mu / m, -1.5, 1.5));
+  if (!Number.isFinite(vx)) return null;
 
-  // A VP inside or beside the region is a misfit, not a wall raking away.
-  const cxBox = (box[0] + box[2]) / 2;
-  if (!Number.isFinite(vx) || Math.abs(vx - cxBox) < w * 0.55) return null;
+  // A planar face cannot contain its own vanishing point — it would fold there.
+  const margin = w * 0.12;
+  if (vx > box[0] - margin && vx < box[2] + margin) return null;
+  const dNear = Math.max(Math.abs(vx - box[0]), Math.abs(vx - box[2]));
+  const dFar = Math.min(Math.abs(vx - box[0]), Math.abs(vx - box[2]));
+  // Reject rakes so steep that the far end is a smear: any small error in the
+  // estimate blows up, and the artwork stops being legible anyway.
+  if (dFar / dNear < 0.26) return null;
+  // And a taper this slight is inside the estimator's own noise. Frontal is the
+  // safer reading: a wrong small rake is more obvious than no rake at all.
+  if (dFar / dNear > 0.87) return null;
+
   return clamp(vx, -14 * w, 15 * w);
 }
 
@@ -309,13 +477,11 @@ function wallPlane(vx, w, h, f) {
   const cx = w / 2, cy = h / 2;
   // A vanishing point at (vx, cy) means the wall runs along (vx−cx, 0, f).
   // Cap it: beyond this the wall is effectively fronto-parallel anyway.
-  const a = clamp(vx === null ? Infinity : vx - cx, -40 * w, 40 * w);
+  const a = vx === null ? 40 * w : clamp(vx - cx, -40 * w, 40 * w);
   const dir = norm([a, 0, f]);
-  const n = norm([-f, 0, a]);
-  // Keep the plane in front of the camera.
-  const D = n[2] > 0 ? 10 : -10;
-  const axisU = a >= 0 ? dir : [-dir[0], -dir[1], -dir[2]];
-  return makePlane({ n: D > 0 ? n : [-n[0], -n[1], -n[2]], D: Math.abs(D), axisU, axisV: [0, 1, 0], f, cx, cy });
+  let n = norm([-f, 0, a]);
+  if (n[2] < 0) n = [-n[0], -n[1], -n[2]]; // keep the plane in front of us
+  return makePlane({ n, D: 10, axisU: [...dir], axisV: [0, 1, 0], f, cx, cy });
 }
 
 function groundPlane(vx, w, h, f) {
@@ -326,31 +492,62 @@ function groundPlane(vx, w, h, f) {
   return makePlane({
     n: [0, 1, 0],
     D: CAM_HEIGHT,
-    axisU: across[0] >= 0 ? across : [-across[0], -across[1], -across[2]],
-    axisV: [-away[0], -away[1], -away[2]], // art's "down" is toward the camera
+    axisU: [...across],
+    axisV: [-away[0], -away[1], -away[2]], // the art's "down" is toward the camera
     f, cx, cy,
   });
 }
 
 /**
- * Turn the found box into a quad by measuring it *on the plane*, fitting a
- * rectangle of the artwork's aspect inside it, and projecting that back.
+ * Point the plane's u axis right and its v axis down *in the image*, so the
+ * artwork never lands mirrored or upside down.
  */
-function quadFromBox(plane, box, aspect, w, h) {
-  const corners = [
+function orient(plane, box) {
+  const mid = plane.unproject((box[0] + box[2]) / 2, (box[1] + box[3]) / 2);
+  if (!mid) return false;
+  const here = plane.project(mid[0], mid[1]);
+  const right = plane.project(mid[0] + 0.05, mid[1]);
+  const down = plane.project(mid[0], mid[1] + 0.05);
+  if (!here || !right || !down) return false;
+  if (right[0] < here[0]) for (let i = 0; i < 3; i++) plane.axisU[i] *= -1;
+  if (down[1] < here[1]) for (let i = 0; i < 3; i++) plane.axisV[i] *= -1;
+  return true;
+}
+
+/**
+ * Turn the found box into a quad by measuring it *on the plane* and projecting
+ * a world rectangle back. Returns the quad and the rectangle's true world
+ * aspect, so the artwork can be drawn to fit rather than letterboxed into it.
+ *
+ * The subtlety: a rectangle in the image is a *trapezoid* on a raked plane, and
+ * its far end covers far more ground than its near end. Taking the bounding box
+ * of that trapezoid produces a world rectangle several times larger than the
+ * region we vetted, which then reprojects halfway across the frame. So take the
+ * inscribed rectangle instead — every corner max'd or min'd inward — and the
+ * artwork is guaranteed to stay on the surface we actually checked.
+ */
+function quadFromBox(plane, box, w, h, rand) {
+  if (!orient(plane, box)) return null;
+  const c = [
     [box[0], box[1]], [box[2], box[1]], [box[2], box[3]], [box[0], box[3]],
   ].map(([x, y]) => plane.unproject(x, y));
-  if (corners.some((c) => c === null)) return null;
+  if (c.some((p) => p === null)) return null;
+  const [tl, tr, br, bl] = c;
 
-  const us = corners.map((c) => c[0]), vs = corners.map((c) => c[1]);
-  const u0 = Math.min(...us), u1 = Math.max(...us);
-  const v0 = Math.min(...vs), v1 = Math.max(...vs);
-  const uc = (u0 + u1) / 2, vc = (v0 + v1) / 2;
+  const u0 = Math.max(tl[0], bl[0]), u1 = Math.min(tr[0], br[0]);
+  const v0 = Math.max(tl[1], tr[1]), v1 = Math.min(bl[1], br[1]);
+  if (u1 - u0 < 1e-3 || v1 - v0 < 1e-3) return null;
 
-  // Fit the art's aspect inside the measured rectangle.
-  let du = u1 - u0, dv = v1 - v0;
+  // Nobody paints flush to the edges of a wall, and dead-centre placement is
+  // its own tell. Leave a margin and drift inside it.
+  let du = (u1 - u0) * 0.9, dv = (v1 - v0) * 0.9;
+  const aspect = clamp(du / dv, MIN_ASPECT, MAX_ASPECT);
   if (du / dv > aspect) du = dv * aspect;
   else dv = du / aspect;
+
+  const slackU = (u1 - u0 - du) / 2, slackV = (v1 - v0 - dv) / 2;
+  const uc = (u0 + u1) / 2 + slackU * (rand() * 2 - 1) * 0.8;
+  const vc = (v0 + v1) / 2 + slackV * (rand() * 2 - 1) * 0.8;
 
   const quad = [
     plane.project(uc - du / 2, vc - dv / 2),
@@ -359,12 +556,13 @@ function quadFromBox(plane, box, aspect, w, h) {
     plane.project(uc - du / 2, vc + dv / 2),
   ];
   if (quad.some((p) => p === null)) return null;
-  // Reject anything that wandered far off frame or collapsed.
+
   const xs = quad.map((p) => p[0]), ys = quad.map((p) => p[1]);
-  if (Math.min(...xs) < -w * 0.4 || Math.max(...xs) > w * 1.4) return null;
-  if (Math.min(...ys) < -h * 0.4 || Math.max(...ys) > h * 1.4) return null;
   if (Math.max(...xs) - Math.min(...xs) < w * 0.1) return null;
-  return quad;
+  if (Math.max(...ys) - Math.min(...ys) < h * 0.05) return null;
+  if (Math.min(...xs) < -w * 0.15 || Math.max(...xs) > w * 1.15) return null;
+  if (Math.min(...ys) < -h * 0.15 || Math.max(...ys) > h * 1.15) return null;
+  return { quad, aspect };
 }
 
 // --- entry point ------------------------------------------------------------
@@ -374,37 +572,54 @@ function quadFromBox(plane, box, aspect, w, h) {
  * a treed street, a car park, a wall of glass — and the caller should try
  * another heading rather than paint something silly.
  */
-export function findSurface(img, { aspect = 2.2, fov = 80, prefer = "auto" } = {}) {
+export function findSurface(img, {
+  fov = 80, prefer = "auto", rand = Math.random, allowGround = true,
+} = {}) {
+  const nominalAspect = 2.2; // only shapes the candidate boxes; the quad measures its own
   const { width: w, height: h } = img;
   const f = w / 2 / Math.tan((fov * Math.PI) / 360);
 
   const lum = luminance(img);
   const grad = sobel(lum, w, h);
+  const tensor = structureTensor(grad, w, h);
   const fields = {
     lum,
     ...grad,
+    tensor,
+    // Blurred wide so a smooth patch of wall inherits the evidence from the
+    // door frame beside it.
+    vert: boxBlur(verticalLines(tensor, w, h), w, h, 14, 1),
     smooth: boxBlur(lum, w, h, 4),
     sky: skyMask(img, grad.mag),
     veg: vegMask(img),
   };
 
   const cells = scoreCells(img, fields);
+  const kinds = prefer === "auto" ? ["wall", "ground"] : [prefer];
   const options = [];
-  for (const kind of prefer === "auto" ? ["wall", "ground"] : [prefer]) {
-    const rect = bestRect(cells[kind], cells.gw, cells.gh, w, h, kind);
-    if (rect) options.push({ kind, ...rect });
+  for (const kind of kinds) {
+    if (kind === "ground" && !allowGround) continue;
+    const rect = bestRect(cells[kind], cells.gw, cells.gh, w, h, kind, nominalAspect);
+    if (!rect) continue;
+    // Tarmac is a genuinely poor canvas: it is coarse, it is walked and driven
+    // on, and a throw-up in the middle of a road is not a thing that happens.
+    // Take it only when there is no wall at all and the patch is a good one.
+    if (kind === "ground" && (options.length || rect.meanQ < 0.62)) continue;
+    options.push({ kind, ...rect });
   }
   if (!options.length) return null;
 
-  // Walls read better than ground at almost any angle; only prefer ground when
-  // it is clearly the stronger find.
-  options.sort((a, b) => b.score * (b.kind === "wall" ? 1.35 : 1) - a.score * (a.kind === "wall" ? 1.35 : 1));
-
   for (const opt of options) {
-    const vx = vanishingX(fields, w, h, opt.box);
+    const model = surfaceModel(img, opt.box);
+    const vx = vanishingX(fields, w, h, opt.box, model);
     const plane = opt.kind === "ground" ? groundPlane(vx, w, h, f) : wallPlane(vx, w, h, f);
-    const quad = quadFromBox(plane, opt.box, aspect, w, h);
-    if (quad) return { kind: opt.kind, quad, box: opt.box, vanishX: vx, quality: opt.meanQ, fields };
+    const fit = quadFromBox(plane, opt.box, w, h, rand);
+    if (fit) {
+      return {
+        kind: opt.kind, ...fit,
+        box: opt.box, vanishX: vx, quality: opt.meanQ, model, fields,
+      };
+    }
   }
   return null;
 }

@@ -19,17 +19,6 @@ export function smoothstep(a, b, x) {
   return t * t * (3 - 2 * t);
 }
 
-/** Deterministic RNG — iteration on realism is impossible if every run differs. */
-export function mulberry32(seed) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 export function decodeJpeg(buf) {
   const raw = jpeg.decode(buf, { useTArray: true, formatAsRGBA: true });
   return {
@@ -40,11 +29,9 @@ export function decodeJpeg(buf) {
 }
 
 export function encodeJpeg(img, quality = 86) {
-  return Buffer.from(jpeg.encode({ data: img.data, width: img.width, height: img.height }, quality).data);
-}
-
-export function cloneImage(img) {
-  return { data: Buffer.from(img.data), width: img.width, height: img.height };
+  return Buffer.from(
+    jpeg.encode({ data: img.data, width: img.width, height: img.height }, quality).data,
+  );
 }
 
 export function luminance(img) {
@@ -84,8 +71,8 @@ function blurV(src, dst, w, h, r) {
 /** Separable box blur; two passes read as Gaussian enough for our purposes. */
 export function boxBlur(src, w, h, r, passes = 2) {
   if (r < 1) return Float32Array.from(src);
-  let a = Float32Array.from(src);
-  let b = new Float32Array(w * h);
+  const a = Float32Array.from(src);
+  const b = new Float32Array(w * h);
   for (let p = 0; p < passes; p++) {
     blurH(a, b, w, h, r);
     blurV(b, a, w, h, r);
@@ -115,7 +102,39 @@ export function sobel(lum, w, h) {
   return { gx, gy, mag };
 }
 
-/** Bilinear sample of an RGBA buffer. Returns [r,g,b,a]; out of bounds is transparent. */
+function rankFilter(src, w, h, r, pick) {
+  const tmp = new Float32Array(w * h);
+  const out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let v = src[y * w + x];
+      for (let d = -r; d <= r; d++) v = pick(v, src[y * w + clamp(x + d, 0, w - 1)]);
+      tmp[y * w + x] = v;
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let v = tmp[y * w + x];
+      for (let d = -r; d <= r; d++) v = pick(v, tmp[clamp(y + d, 0, h - 1) * w + x]);
+      out[y * w + x] = v;
+    }
+  }
+  return out;
+}
+
+/**
+ * Morphological opening: erode then dilate.
+ *
+ * Removes anything thinner than 2r while leaving larger blobs their original
+ * size. Used to tell a lamp post standing in front of a wall from a window
+ * frame painted on it — both are colour outliers, only one is an occluder.
+ */
+export function open(src, w, h, r) {
+  const eroded = rankFilter(src, w, h, r, Math.min);
+  return rankFilter(eroded, w, h, r, Math.max);
+}
+
+/** Bilinear sample of an RGBA buffer. Writes [r,g,b,a] into `out`; outside is transparent. */
 export function sampleRgba(buf, w, h, x, y, out) {
   const x0 = Math.floor(x), y0 = Math.floor(y);
   if (x0 < 0 || y0 < 0 || x0 >= w - 1 || y0 >= h - 1) {
