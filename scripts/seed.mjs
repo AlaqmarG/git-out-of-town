@@ -52,7 +52,7 @@ for (let i = 0; i < COUNT; i++) {
 
   const fd = new FormData();
   fd.append("image", new Blob([art.png], { type: "image/png" }), "art.png");
-  fd.append("scene", new Blob([scene], { type: sceneType }), sv ? "scene.jpg" : "scene.png");
+  fd.append("scene", new Blob([scene], { type: sceneType }), "scene.png");
   fd.append(
     "meta",
     JSON.stringify({
