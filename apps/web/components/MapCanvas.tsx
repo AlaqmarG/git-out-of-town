@@ -8,9 +8,12 @@ import PieceDetail from "@/components/PieceDetail";
 import { buildMapStyle } from "@/lib/map-style";
 import {
   DENSITY_LAYERS,
-  MARKER_MIN_ZOOM,
-  createMarkerElement,
+  type Tier,
+  ZOOM,
+  createArtElement,
+  createPinElement,
   densityLayerSpecs,
+  tierForZoom,
   toGeoJson,
 } from "@/lib/markers";
 import { DEFAULT_VIEW, palette } from "@/lib/theme";
@@ -27,6 +30,9 @@ export default function MapCanvas() {
 
   const pieces = useRef<Piece[]>([]);
   const markers = useRef(new Map<number, Marker>());
+  // Crossing a tier boundary changes what every marker *is*, so they all get
+  // rebuilt rather than reconciled.
+  const tier = useRef<Tier>("density");
   // Latest-wins: panning fast would otherwise let a slow early response
   // overwrite the results for where the user actually ended up.
   const inflight = useRef<AbortController | null>(null);
@@ -34,29 +40,48 @@ export default function MapCanvas() {
   const resizeObs = useRef<ResizeObserver | null>(null);
 
   /**
-   * Reconciles DOM markers against the viewport. Only pieces in view, and only
-   * above MARKER_MIN_ZOOM — below that the clustered density glow takes over,
-   * because hundreds of DOM nodes at city zoom is unreadable and slow.
+   * Reconciles DOM markers against the viewport and the current zoom tier.
+   * Only pieces in view get DOM nodes; below the pin tier nothing is rendered
+   * in the DOM at all and the clustered density layer takes over.
    */
   const syncMarkers = useCallback(() => {
     const m = map.current;
     const gl = maplibre.current;
     if (!m || !gl) return;
 
-    const showArt = m.getZoom() >= MARKER_MIN_ZOOM;
+    const next = tierForZoom(m.getZoom());
+    if (next !== tier.current) {
+      // The representation changed, so every existing node is now the wrong kind.
+      for (const marker of markers.current.values()) marker.remove();
+      markers.current.clear();
+      tier.current = next;
+    }
+
     const bounds = m.getBounds();
     const wanted = new Set<number>();
 
-    if (showArt) {
+    if (next !== "density") {
+      let appeared = 0;
       for (const piece of pieces.current) {
         if (!bounds.contains([piece.lng, piece.lat])) continue;
         wanted.add(piece.id);
         if (markers.current.has(piece.id)) continue;
 
-        const el = createMarkerElement(piece);
+        const el =
+          next === "art"
+            ? createArtElement(piece, appeared)
+            : createPinElement(piece, appeared);
+        appeared++;
         el.addEventListener("click", (ev) => {
           ev.stopPropagation();
           setSelected(piece);
+          // Ease toward the piece so the detail card never covers its own subject.
+          m.easeTo({
+            center: [piece.lng, piece.lat],
+            offset: [0, -70],
+            duration: 550,
+            essential: true,
+          });
         });
         markers.current.set(
           piece.id,
@@ -74,10 +99,10 @@ export default function MapCanvas() {
       }
     }
 
-    // The density layer is the inverse of the art view.
+    // The density layer is only for the lowest tier.
     for (const id of [DENSITY_LAYERS.glow, DENSITY_LAYERS.count, DENSITY_LAYERS.single]) {
       if (m.getLayer(id)) {
-        m.setLayoutProperty(id, "visibility", showArt ? "none" : "visible");
+        m.setLayoutProperty(id, "visibility", next === "density" ? "visible" : "none");
       }
     }
   }, []);
@@ -168,7 +193,7 @@ export default function MapCanvas() {
           data: { type: "FeatureCollection", features: [] },
           cluster: true,
           clusterRadius: 60,
-          clusterMaxZoom: MARKER_MIN_ZOOM,
+          clusterMaxZoom: ZOOM.pins,
         });
         for (const spec of densityLayerSpecs()) {
           m.addLayer(spec);
@@ -219,7 +244,10 @@ export default function MapCanvas() {
           className="pointer-events-none absolute inset-0 grid place-items-center"
           style={{ background: palette.ink }}
         >
-          <p className="text-sm tracking-widest uppercase" style={{ color: palette.textMuted }}>
+          <p
+            className="got-loading text-sm tracking-widest uppercase"
+            style={{ color: palette.textMuted }}
+          >
             Finding the wall…
           </p>
         </div>
@@ -240,10 +268,18 @@ export default function MapCanvas() {
 
       {ready && total !== null && total > 0 && (
         <div
-          className="pointer-events-none absolute top-4 left-4 rounded-full px-3 py-1.5 text-xs tracking-wide"
-          style={{ background: "rgba(11,11,13,0.72)", color: palette.textMuted }}
+          className="got-chip pointer-events-none absolute top-4 left-4 flex items-center gap-2 rounded-full px-3 py-1.5 text-xs tracking-wide"
+          style={{
+            background: "rgba(11,11,13,0.72)",
+            color: palette.textMuted,
+            backdropFilter: "blur(8px)",
+          }}
         >
-          <span style={{ color: palette.text, fontWeight: 600 }}>{total}</span>{" "}
+          <span
+            className="got-live-dot inline-block h-1.5 w-1.5 rounded-full"
+            style={{ background: palette.accent }}
+          />
+          <span style={{ color: palette.text, fontWeight: 600 }}>{total}</span>
           {total === 1 ? "piece" : "pieces"} here
         </div>
       )}

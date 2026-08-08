@@ -21,30 +21,37 @@ export default function PieceDetail({
 }) {
   if (!piece) return null;
 
-  // The scene is the camera frame with the art burned in — the actual wall.
-  // Without one (web contributions, older rows) fall back to the bare art.
-  const hero = piece.sceneImagePath ?? piece.finalImagePath ?? piece.rawImagePath;
+  // The scene is the place it was painted; the art is layered on top rather than
+  // baked in, so it stays crisp and the background can be a photo of any format.
+  const art = piece.finalImagePath ?? piece.rawImagePath;
   const hasScene = Boolean(piece.sceneImagePath);
 
   return (
     <div
-      className="absolute right-3 bottom-3 left-3 mx-auto max-w-md overflow-hidden rounded-2xl sm:left-auto"
+      className="got-card absolute right-3 bottom-3 left-3 mx-auto max-w-md overflow-hidden rounded-2xl sm:left-auto"
       style={{
         background: "rgba(14,14,18,0.96)",
         border: `1px solid ${palette.building}`,
         boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
       }}
     >
-      <div className="relative">
+      <div className="relative" style={{ aspectRatio: "4 / 3", background: palette.ink }}>
+        {hasScene && (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={uploadUrl(piece.sceneImagePath!)}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        )}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={uploadUrl(hero)}
+          src={uploadUrl(art)}
           alt=""
-          className="block w-full"
+          className="absolute inset-0 m-auto"
           style={{
-            aspectRatio: "4 / 3",
-            objectFit: hasScene ? "cover" : "contain",
-            background: palette.ink,
+            width: hasScene ? "62%" : "80%",
+            filter: hasScene ? "drop-shadow(0 4px 10px rgba(0,0,0,0.55))" : "none",
           }}
         />
 

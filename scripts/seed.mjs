@@ -12,7 +12,8 @@
  *   DELETE FROM pieces WHERE session_id LIKE 'seed-%';
  */
 
-import { compositeOnScene, makeArt, makeScene } from "./lib/art.mjs";
+import { encodePng, makeArt, makeScene } from "./lib/art.mjs";
+import { fetchStreetView, hasKey } from "./lib/streetview.mjs";
 
 const BASE = (process.env.SEED_URL || process.env.SITE_URL || "http://localhost:3000").replace(/\/$/, "");
 const COUNT = Number(process.env.SEED_COUNT || 25);
@@ -25,26 +26,34 @@ const SPREAD = 0.0032; // ~350m
 
 // --- seeding ----------------------------------------------------------------
 
-console.log(`\nSeeding ${COUNT} placeholder pieces → ${BASE}\n`);
+console.log(`\nSeeding ${COUNT} placeholder pieces → ${BASE}`);
+console.log(hasKey ? "Street View: key present\n" : "Street View: no key, using generated walls\n");
 
 let ok = 0;
 const failures = [];
 
 for (let i = 0; i < COUNT; i++) {
   const art = makeArt();
-  // The scene is what the web shows: the wall it was painted on, with the art
-  // burned in — standing in for the iOS camera frame until #25/#29 land.
-  const scene = compositeOnScene(makeScene(), art);
+  const lat = CENTRE.lat + (Math.random() - 0.5) * SPREAD;
+  const lng = CENTRE.lng + (Math.random() - 0.5) * SPREAD * 1.6;
+  const heading = Math.random() * 360;
+
+  // Prefer a real photo of that spot facing the painted direction. The art is
+  // NOT burned in — the web overlays it, which keeps it crisp and means we never
+  // have to decode a JPEG here.
+  const sv = await fetchStreetView(lat, lng, heading);
+  const scene = sv ?? encodePng(640, 480, makeScene(640, 480).rgba);
+  const sceneType = sv ? "image/jpeg" : "image/png";
 
   const fd = new FormData();
   fd.append("image", new Blob([art.png], { type: "image/png" }), "art.png");
-  fd.append("scene", new Blob([scene], { type: "image/png" }), "scene.png");
+  fd.append("scene", new Blob([scene], { type: sceneType }), sv ? "scene.jpg" : "scene.png");
   fd.append(
     "meta",
     JSON.stringify({
-      lat: CENTRE.lat + (Math.random() - 0.5) * SPREAD,
-      lng: CENTRE.lng + (Math.random() - 0.5) * SPREAD * 1.6,
-      heading: Math.random() * 360,
+      lat,
+      lng,
+      heading,
       kind: Math.random() > 0.4 ? "spray" : "sticker",
       sessionId: `seed-${Date.now()}-${i}`,
       colors: art.colours,
