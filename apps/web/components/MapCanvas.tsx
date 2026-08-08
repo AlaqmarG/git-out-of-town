@@ -4,7 +4,6 @@ import type { Piece, PiecesResponse } from "@got/shared";
 import type { GeoJSONSource, Map as MapLibreMap, Marker } from "maplibre-gl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
-import PaintSheet from "@/components/PaintSheet";
 import PieceDetail from "@/components/PieceDetail";
 import { buildMapStyle } from "@/lib/map-style";
 import {
@@ -29,8 +28,6 @@ export default function MapCanvas() {
   const [total, setTotal] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Piece | null>(null);
-  // Captured when the sheet opens: reading the map ref during render is invalid.
-  const [painting, setPainting] = useState<{ lat: number; lng: number } | null>(null);
 
   const pieces = useRef<Piece[]>([]);
   const markers = useRef(new Map<number, Marker>());
@@ -293,42 +290,6 @@ export default function MapCanvas() {
           <span style={{ color: palette.text, fontWeight: 600 }}>{total}</span>
           {total === 1 ? "piece" : "pieces"} here
         </div>
-      )}
-
-      {!painting && (
-        <button
-          type="button"
-          onClick={() => {
-            const m = map.current;
-            const c = m?.getCenter();
-            setPainting(
-              c
-                ? { lat: c.lat, lng: c.lng }
-                : { lat: DEFAULT_VIEW.center[1], lng: DEFAULT_VIEW.center[0] },
-            );
-          }}
-          className="got-chip absolute bottom-8 left-1/2 -translate-x-1/2 rounded-full px-7 py-4 text-base font-semibold"
-          style={{
-            background: palette.accent,
-            color: "#fff",
-            boxShadow: "0 10px 30px rgba(255,82,48,0.35)",
-          }}
-        >
-          Paint here
-        </button>
-      )}
-
-      {painting && (
-        <PaintSheet
-          centre={painting}
-          onClose={() => setPainting(null)}
-          onPainted={() => {
-            // Show it immediately — waiting for the next moveend would make the
-            // contribution feel like it vanished.
-            const m = map.current;
-            if (m) void load(m);
-          }}
-        />
       )}
 
       <a
