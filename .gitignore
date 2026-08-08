@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+build/
+.env
+.env*.local
+.vercel
+.DS_Store
+*.pem
+npm-debug.log*
+.turbo
+coverage/
+.uploads/

@@ -1,0 +1,53 @@
+CREATE TABLE IF NOT EXISTS sessions (
+  id          TEXT PRIMARY KEY,
+  first_seen  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  city        TEXT,
+  country     TEXT,
+  device      TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pieces (
+  id               BIGSERIAL PRIMARY KEY,
+  lat              DOUBLE PRECISION NOT NULL,
+  lng              DOUBLE PRECISION NOT NULL,
+  heading          DOUBLE PRECISION,
+  accuracy_m       DOUBLE PRECISION,
+  raw_image_path   TEXT NOT NULL,
+  final_image_path TEXT,
+  kind             TEXT NOT NULL DEFAULT 'spray',
+  sticker_id       TEXT,
+  colors           JSONB,
+  stroke_count     INTEGER,
+  duration_ms      INTEGER,
+  city             TEXT,
+  country          TEXT,
+  session_id       TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+  deleted_at       TIMESTAMPTZ,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS views (
+  id         BIGSERIAL PRIMARY KEY,
+  piece_id   BIGINT REFERENCES pieces(id) ON DELETE CASCADE,
+  session_id TEXT,
+  viewed_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS pieces_bbox_idx    ON pieces (lat, lng) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS pieces_created_idx ON pieces (created_at DESC);
+CREATE INDEX IF NOT EXISTS pieces_country_idx ON pieces (country);
+CREATE INDEX IF NOT EXISTS views_piece_idx    ON views (piece_id);
+
+-- Live updates: LISTEN/NOTIFY feeds the SSE endpoint (replaces Supabase Realtime).
+CREATE OR REPLACE FUNCTION notify_new_piece() RETURNS trigger AS $$
+BEGIN
+  PERFORM pg_notify('new_piece', json_build_object(
+    'id', NEW.id, 'lat', NEW.lat, 'lng', NEW.lng, 'city', NEW.city
+  )::text);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS pieces_notify ON pieces;
+CREATE TRIGGER pieces_notify AFTER INSERT ON pieces
+  FOR EACH ROW EXECUTE FUNCTION notify_new_piece();
