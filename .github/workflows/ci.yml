@@ -4,10 +4,13 @@ name: CI
 # runs when something that can change the deployed artifact changes. Docs, markdown
 # and the iOS app never trigger a rebuild or a deploy.
 # Negations (`!`) exclude markdown living inside otherwise-relevant directories.
+#
+# NOTE: the path lists are duplicated on purpose — GitHub Actions does not support
+# YAML anchors/aliases, and using them silently stops the workflow from running.
 on:
   push:
     branches: [main]
-    paths: &web_paths
+    paths:
       - "apps/web/**"
       - "packages/shared/**"
       - "db/**"
@@ -20,7 +23,18 @@ on:
       - ".github/workflows/ci.yml"
       - "!**/*.md"
   pull_request:
-    paths: *web_paths
+    paths:
+      - "apps/web/**"
+      - "packages/shared/**"
+      - "db/**"
+      - "scripts/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "docker-compose.yaml"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/ci.yml"
+      - "!**/*.md"
   workflow_dispatch:
 
 concurrency:

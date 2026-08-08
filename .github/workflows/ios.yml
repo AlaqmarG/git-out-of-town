@@ -5,12 +5,15 @@ name: iOS
 on:
   push:
     branches: [main]
-    paths: &ios_paths
+    paths:
       - "apps/ios/**"
       - "!apps/ios/**/*.md"
       - ".github/workflows/ios.yml"
   pull_request:
-    paths: *ios_paths
+    paths:
+      - "apps/ios/**"
+      - "!apps/ios/**/*.md"
+      - ".github/workflows/ios.yml"
   workflow_dispatch:
 
 concurrency:
