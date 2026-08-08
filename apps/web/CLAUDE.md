@@ -32,6 +32,19 @@ legacy filter syntax, and layer ordering. Run it before touching the style.
 | `geocode.ts` | lat/lng → city/country | Best effort; never blocks a write |
 | `ratelimit.ts` | In-memory token bucket | Resets on deploy. Guards Replicate credits, not a quota. |
 
+## Developing without a local database
+
+You do **not** need Postgres or Docker to work on the UI. Point the dev server at a
+running deployment:
+
+```bash
+DEV_PROXY_ORIGIN=https://gitoutoftown.129-153-49-190.sslip.io npm run dev
+```
+
+`/api/*` and `/uploads/*` are rewritten to that origin (`next.config.ts`). The rewrites live
+in `beforeFiles` — our own `/api` routes exist on disk and would otherwise win. Unset in
+production, so it is inert there.
+
 ## Adding an endpoint
 
 1. Type it in `packages/shared/src/index.ts`
@@ -53,3 +66,13 @@ legacy filter syntax, and layer ordering. Run it before touching the style.
   **inline style**, not a utility class.
 - **Image bytes never stream through Node.** nginx serves `/uploads/*`; the map loads hundreds at
   once on a pan. Build URLs with `uploadUrl()` from `@got/shared`.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

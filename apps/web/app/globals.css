@@ -41,3 +41,43 @@ body {
 .maplibregl-ctrl-attrib a {
   color: var(--text-muted) !important;
 }
+
+/* Attribution is legally required (OSM is ODbL) but should not dominate the map.
+   Collapse it to a small circular "i" that expands only when clicked. */
+.maplibregl-ctrl-attrib.maplibregl-compact {
+  background: rgba(11, 11, 13, 0.6) !important;
+  border-radius: 999px;
+  min-height: 22px;
+}
+.maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show) .maplibregl-ctrl-attrib-inner {
+  display: none;
+}
+.maplibregl-ctrl-attrib-button {
+  opacity: 0.45;
+}
+.maplibregl-ctrl-attrib-button:hover {
+  opacity: 0.9;
+}
+
+/* Each piece of graffiti is its own marker — no pins. */
+.got-marker {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+  transform: rotate(var(--tilt, 0deg));
+  transition: transform 140ms ease, filter 140ms ease;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
+}
+.got-marker:hover,
+.got-marker:focus-visible {
+  transform: rotate(0deg) scale(1.12);
+  filter: drop-shadow(0 4px 14px rgba(255, 77, 46, 0.4));
+  outline: none;
+}
+.got-marker img {
+  image-rendering: auto;
+  user-select: none;
+}

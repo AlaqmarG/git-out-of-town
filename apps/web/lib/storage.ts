@@ -4,6 +4,8 @@ import path from "node:path";
 import { UPLOAD_DIR } from "@/lib/db";
 
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+/** Scene photos are camera frames, so they run larger than line art. */
+export const MAX_SCENE_BYTES = 12 * 1024 * 1024;
 
 const SIGNATURES: { ext: string; test: (b: Buffer) => boolean }[] = [
   { ext: "png", test: (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },

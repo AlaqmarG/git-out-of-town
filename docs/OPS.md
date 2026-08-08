@@ -114,6 +114,24 @@ deploys on *every* push including broken ones — which is why CI-gated deploy i
 ---
 ---
 
+## What triggers CI/CD
+
+Both workflows use **positive path filters**, so an unrelated change runs nothing.
+
+| Changed | Runs |
+|---|---|
+| `apps/web/**`, `packages/shared/**`, `db/**`, `scripts/**`, Dockerfile, compose, root manifests | **CI** → typecheck, lint, tests, build, docker, **deploy**, smoke |
+| `apps/ios/**` (excluding markdown) | **iOS** → unsigned simulator build |
+| Any `*.md`, `docs/**` | **nothing** |
+
+Markdown is excluded even inside otherwise-relevant directories (`!**/*.md`), so editing
+`apps/web/CLAUDE.md` never rebuilds or redeploys, and editing `apps/ios/CLAUDE.md` never burns a
+macOS runner — those bill at **10x** on private repos.
+
+There are no required status checks on `main`, so a skipped workflow cannot leave a PR hanging.
+
+---
+
 ## Storage
 
 Uploads live on the `uploads` volume at `/data/uploads`, written by the app and served by nginx at

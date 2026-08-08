@@ -19,3 +19,6 @@ ios/**/*.xcworkspace/xcuserdata/
 ios/**/DerivedData/
 ios/**/build/
 *.xcuserstate
+
+# Agent worktrees — never commit these
+.claude/worktrees/

@@ -45,9 +45,12 @@ export type Palette = Record<keyof typeof palette, string>;
 
 /** Where the map opens before it knows anything about the user. */
 export const DEFAULT_VIEW = {
-  /** Downtown Toronto — the hackathon city, and where seeding will concentrate. */
-  center: [-79.3832, 43.6532] as [number, number],
-  zoom: 12,
+  /**
+   * Stackt Market, Bathurst & Front — the hackathon venue. Opening here means
+   * judges land on the densest part of the wall instead of an empty city.
+   */
+  center: [-79.4042, 43.6413] as [number, number],
+  zoom: 16,
   minZoom: 1.5,
   maxZoom: 20,
 };

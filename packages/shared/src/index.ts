@@ -39,6 +39,12 @@ export interface Piece {
   rawImagePath: string;
   /** Path under /uploads — the Reve-transformed piece. Null until it lands. */
   finalImagePath: string | null;
+  /**
+   * Path under /uploads — the camera frame at the moment of painting, with the
+   * art composited on. This is what the web shows: the actual wall, not a
+   * stock street photo. Null for contributions made without a camera.
+   */
+  sceneImagePath: string | null;
   kind: PieceKind;
   stickerId: string | null;
   colors: Rgb[] | null;

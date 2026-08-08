@@ -10,7 +10,7 @@ import type {
 import { pool } from "@/lib/db";
 
 const COLS = `
-  id, lat, lng, heading, accuracy_m, raw_image_path, final_image_path,
+  id, lat, lng, heading, accuracy_m, raw_image_path, final_image_path, scene_image_path,
   kind, sticker_id, colors, stroke_count, duration_ms, city, country,
   client, surface_type, distance_m, device_pitch, used_geo_anchor, has_lidar,
   created_at
@@ -24,6 +24,7 @@ interface Row {
   accuracy_m: number | null;
   raw_image_path: string;
   final_image_path: string | null;
+  scene_image_path: string | null;
   kind: string;
   sticker_id: string | null;
   colors: Rgb[] | null;
@@ -50,6 +51,7 @@ function toPiece(r: Row): Piece {
     accuracyM: r.accuracy_m,
     rawImagePath: r.raw_image_path,
     finalImagePath: r.final_image_path,
+    sceneImagePath: r.scene_image_path,
     kind: r.kind as PieceKind,
     stickerId: r.sticker_id,
     colors: r.colors,
@@ -84,14 +86,16 @@ export async function insertPiece(
   meta: CreatePieceRequest,
   rawImagePath: string,
   place: { city: string | null; country: string | null },
+  sceneImagePath: string | null = null,
 ): Promise<Piece> {
   const { rows } = await pool.query<Row>(
     `INSERT INTO pieces (
        lat, lng, heading, accuracy_m, raw_image_path, kind, sticker_id, colors,
        stroke_count, duration_ms, city, country, session_id,
-       client, surface_type, distance_m, device_pitch, used_geo_anchor, has_lidar
+       client, surface_type, distance_m, device_pitch, used_geo_anchor, has_lidar,
+       scene_image_path
      ) VALUES (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
      ) RETURNING ${COLS}`,
     [
       meta.lat,
@@ -113,6 +117,7 @@ export async function insertPiece(
       meta.devicePitch ?? null,
       meta.usedGeoAnchor ?? false,
       meta.hasLidar ?? null,
+      sceneImagePath,
     ],
   );
   return toPiece(rows[0]!);

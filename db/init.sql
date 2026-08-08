@@ -12,8 +12,9 @@ CREATE TABLE IF NOT EXISTS pieces (
   lng              DOUBLE PRECISION NOT NULL,
   heading          DOUBLE PRECISION,
   accuracy_m       DOUBLE PRECISION,
-  raw_image_path   TEXT NOT NULL,
-  final_image_path TEXT,
+  raw_image_path   TEXT NOT NULL,        -- transparent art: AR anchor, map marker, Reve input
+  final_image_path TEXT,                 -- Reve-transformed art, once it lands
+  scene_image_path TEXT,                 -- the camera frame with the art burned in (web preview)
   kind             TEXT NOT NULL DEFAULT 'spray',
   sticker_id       TEXT,
   colors           JSONB,

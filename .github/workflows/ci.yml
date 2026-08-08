@@ -1,11 +1,26 @@
 name: CI
 
+# Positive path filters: this pipeline builds and deploys the web app, so it only
+# runs when something that can change the deployed artifact changes. Docs, markdown
+# and the iOS app never trigger a rebuild or a deploy.
+# Negations (`!`) exclude markdown living inside otherwise-relevant directories.
 on:
   push:
     branches: [main]
-    paths-ignore: ["apps/ios/**", "docs/**", "**/*.md"]
+    paths: &web_paths
+      - "apps/web/**"
+      - "packages/shared/**"
+      - "db/**"
+      - "scripts/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "docker-compose.yaml"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/ci.yml"
+      - "!**/*.md"
   pull_request:
-    paths-ignore: ["apps/ios/**", "docs/**", "**/*.md"]
+    paths: *web_paths
   workflow_dispatch:
 
 concurrency:

@@ -2,7 +2,7 @@ import { parseBBox } from "@got/shared";
 import { reverseGeocode } from "@/lib/geocode";
 import { insertPiece, listPieces, upsertSession, validateMeta } from "@/lib/pieces";
 import { clientIp, rateLimit } from "@/lib/ratelimit";
-import { MAX_IMAGE_BYTES, detectImage, saveImage } from "@/lib/storage";
+import { MAX_IMAGE_BYTES, MAX_SCENE_BYTES, detectImage, saveImage } from "@/lib/storage";
 
 // fs access + pg, so this must not run on the edge runtime.
 export const runtime = "nodejs";
@@ -59,7 +59,9 @@ export async function GET(req: Request) {
 
 /**
  * POST /api/pieces — multipart/form-data
- *   image: the PNG/JPEG/WebP
+ *   image: the transparent art (PNG/JPEG/WebP)
+ *   scene: OPTIONAL — the camera frame with the art composited on. This is what
+ *          the web shows: the actual wall it was painted on, not a stock photo.
  *   meta:  JSON, shape of CreatePieceRequest
  */
 export async function POST(req: Request) {
@@ -109,6 +111,23 @@ export async function POST(req: Request) {
   const ext = detectImage(buf);
   if (!ext) return bad(415, "image must be PNG, JPEG, or WebP");
 
+  // Optional scene photo. A bad scene must never lose the contribution, so a
+  // malformed one is dropped rather than failing the whole request.
+  let sceneBuf: Buffer | null = null;
+  let sceneExt: string | null = null;
+  const scene = form.get("scene");
+  if (scene instanceof File && scene.size > 0) {
+    if (scene.size > MAX_SCENE_BYTES) {
+      return bad(413, `scene exceeds ${MAX_SCENE_BYTES} bytes`);
+    }
+    const buf = Buffer.from(await scene.arrayBuffer());
+    const ext = detectImage(buf);
+    if (ext) {
+      sceneBuf = buf;
+      sceneExt = ext;
+    }
+  }
+
   try {
     // Best effort, never blocks the write — a piece without a city label is fine.
     const place = await reverseGeocode(meta.lat, meta.lng);
@@ -121,7 +140,9 @@ export async function POST(req: Request) {
     );
 
     const rawImagePath = await saveImage(buf, ext);
-    const piece = await insertPiece(meta, rawImagePath, place);
+    const sceneImagePath =
+      sceneBuf && sceneExt ? await saveImage(sceneBuf, sceneExt) : null;
+    const piece = await insertPiece(meta, rawImagePath, place, sceneImagePath);
 
     return Response.json(piece, { status: 201 });
   } catch (err) {
