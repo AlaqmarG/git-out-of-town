@@ -46,7 +46,9 @@ export default function DataLive({ initial }: { initial: Stats }) {
     };
   }, []);
 
-  const { totals, perHour, surfaces, cities, colours, clients } = stats;
+  const { totals, perHour, surfaces, cities, colours, clients, durations } = stats;
+  // A single-client split says nothing. Only worth showing once both exist.
+  const showClients = clients.length > 1;
   const anyViews = surfaces.some((s) => s.viewsPerPiece > 0);
 
   return (
@@ -118,15 +120,28 @@ export default function DataLive({ initial }: { initial: Stats }) {
           <PigmentBars rows={colours} />
         </Panel>
 
-        <Panel title="How they painted it" hint="Native AR versus the browser.">
-          {clients.length === 0 ? (
-            <NoData>No contributions yet.</NoData>
-          ) : (
+        <Panel
+          title={showClients ? "How they painted it" : "How long a piece takes"}
+          hint={
+            showClients
+              ? "Native AR versus the browser."
+              : "Time from first stroke to placing it on the wall."
+          }
+        >
+          {showClients ? (
             <BarList
               rows={clients.map((c) => ({
                 label: c.label === "ios" ? "in AR (iOS)" : "browser",
                 value: c.value,
               }))}
+              unit="pieces"
+              colour={CHART[3]}
+            />
+          ) : durations.every((d) => d.pieces === 0) ? (
+            <NoData>No contributions yet.</NoData>
+          ) : (
+            <BarList
+              rows={durations.map((d) => ({ label: d.label, value: d.pieces }))}
               unit="pieces"
               colour={CHART[3]}
             />

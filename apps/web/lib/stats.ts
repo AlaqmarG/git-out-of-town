@@ -38,6 +38,12 @@ export interface ColourRow {
   uses: number;
 }
 
+/** How long a piece took, bucketed. Always meaningful, unlike a client split. */
+export interface DurationRow {
+  label: string;
+  pieces: number;
+}
+
 export interface Stats {
   totals: Totals;
   perHour: HourPoint[];
@@ -45,13 +51,14 @@ export interface Stats {
   cities: Bucket[];
   colours: ColourRow[];
   clients: Bucket[];
+  durations: DurationRow[];
   generatedAt: string;
 }
 
 const LIVE = "deleted_at IS NULL";
 
 export async function getStats(): Promise<Stats> {
-  const [totals, perHour, surfaces, cities, colours, clients] = await Promise.all([
+  const [totals, perHour, surfaces, cities, colours, clients, durations] = await Promise.all([
     pool.query<{
       pieces: string;
       contributors: string;
@@ -118,6 +125,22 @@ export async function getStats(): Promise<Stats> {
       FROM pieces WHERE ${LIVE}
       GROUP BY client ORDER BY count(*) DESC
     `),
+
+    // Fixed buckets, ordered — a histogram must keep empty buckets so the shape
+    // of the distribution is readable.
+    pool.query<{ label: string; pieces: string; ord: string }>(`
+      WITH b(label, lo, hi, ord) AS (VALUES
+        ('under 10s', 0, 10000, 1),
+        ('10–30s', 10000, 30000, 2),
+        ('30–60s', 30000, 60000, 3),
+        ('1–2 min', 60000, 120000, 4),
+        ('over 2 min', 120000, 2147483647, 5)
+      )
+      SELECT b.label, count(p.id)::text AS pieces, b.ord::text AS ord
+      FROM b LEFT JOIN pieces p
+        ON p.duration_ms >= b.lo AND p.duration_ms < b.hi AND p.${LIVE}
+      GROUP BY b.label, b.ord ORDER BY b.ord
+    `),
   ]);
 
   const t = totals.rows[0]!;
@@ -141,6 +164,7 @@ export async function getStats(): Promise<Stats> {
     cities: cities.rows.map((r) => ({ label: r.label, value: Number(r.value) })),
     colours: colours.rows.map((r) => ({ hex: `#${r.hex}`, uses: Number(r.uses) })),
     clients: clients.rows.map((r) => ({ label: r.label, value: Number(r.value) })),
+    durations: durations.rows.map((r) => ({ label: r.label, pieces: Number(r.pieces) })),
     generatedAt: new Date().toISOString(),
   };
 }
