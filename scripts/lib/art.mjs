@@ -11,6 +11,7 @@
 
 import { deflateSync } from "node:zlib";
 import { layoutWord, randomWord } from "./letters.mjs";
+import { R } from "./rng.mjs";
 
 // --- PNG encoding -----------------------------------------------------------
 
@@ -57,7 +58,7 @@ export function encodePng(width, height, rgba) {
 
 // --- helpers ----------------------------------------------------------------
 
-const rnd = (a, b) => a + Math.random() * (b - a);
+const rnd = (a, b) => a + R.next() * (b - a);
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 function px(buf, w, h, x, y, r, g, b, a = 1) {
@@ -70,15 +71,22 @@ function px(buf, w, h, x, y, r, g, b, a = 1) {
   buf[i + 3] = Math.min(255, buf[i + 3] + 255 * a);
 }
 
-/** Soft round dab — the basis of a spray stroke. */
-function dab(buf, w, h, cx, cy, radius, r, g, b, alpha = 1) {
-  const rad = Math.ceil(radius);
+/**
+ * Round dab — the basis of a stroke.
+ *
+ * `feather` is the width of the soft rim in pixels, and it is small on purpose.
+ * A wide gradient falloff looks like the obvious way to render spray, but it is
+ * wrong: what it produces is an airbrushed glow around every stroke, and once
+ * the piece is composited onto a photograph that halo is the loudest tell in
+ * the frame. Real spray lays down a hard-edged film with a *speckled* fringe,
+ * which is a separate pass further down.
+ */
+function dab(buf, w, h, cx, cy, radius, r, g, b, alpha = 1, feather = 1.3) {
+  const rad = Math.ceil(radius + 1);
   for (let dy = -rad; dy <= rad; dy++) {
     for (let dx = -rad; dx <= rad; dx++) {
-      const d = Math.hypot(dx, dy);
-      if (d > radius) continue;
-      // Soft falloff at the rim, like overspray.
-      const a = alpha * clamp(1 - (d / radius) ** 2.2, 0, 1);
+      const a = alpha * clamp((radius - Math.hypot(dx, dy)) / feather, 0, 1);
+      if (a <= 0) continue;
       px(buf, w, h, Math.round(cx + dx), Math.round(cy + dy), r, g, b, a);
     }
   }
@@ -91,7 +99,7 @@ const PALETTE = [
 ];
 
 /** Draws a polyline as a continuous thick stroke of overlapping dabs. */
-function drawPolyline(buf, w, h, pts, radius, r, g, b, alpha = 1, dx = 0, dy = 0) {
+function drawPolyline(buf, w, h, pts, radius, r, g, b, alpha = 1, dx = 0, dy = 0, feather = 1.3) {
   for (let i = 0; i < pts.length - 1; i++) {
     const [x0, y0] = pts[i];
     const [x1, y1] = pts[i + 1];
@@ -99,7 +107,7 @@ function drawPolyline(buf, w, h, pts, radius, r, g, b, alpha = 1, dx = 0, dy = 0
     const steps = Math.max(2, Math.ceil(dist / (radius * 0.28)));
     for (let s = 0; s <= steps; s++) {
       const t = s / steps;
-      dab(buf, w, h, x0 + (x1 - x0) * t + dx, y0 + (y1 - y0) * t + dy, radius, r, g, b, alpha);
+      dab(buf, w, h, x0 + (x1 - x0) * t + dx, y0 + (y1 - y0) * t + dy, radius, r, g, b, alpha, feather);
     }
   }
 }
@@ -111,15 +119,15 @@ function drawPolyline(buf, w, h, pts, radius, r, g, b, alpha = 1, dx = 0, dy = 0
  * The layer order is what sells it — extrusion first so it sits *behind* the
  * letters, outline before fill so the fill nests inside it.
  */
-export function makeArt(size = 420) {
-  const rgba = Buffer.alloc(size * size * 4);
-  const word = randomWord();
+export function makeArt(width = 420, canvasH = width, { word = randomWord(), drips = true } = {}) {
+  const h = canvasH;
+  const rgba = Buffer.alloc(width * h * 4);
 
-  const pad = size * 0.1;
-  const { strokes, height } = layoutWord(word, size - pad * 2, size - pad * 2);
+  const pad = Math.min(width, h) * 0.1;
+  const { strokes, height } = layoutWord(word, width - pad * 2, h - pad * 2);
   const shifted = strokes.map((s) => s.map(([x, y]) => [x + pad, y + pad]));
 
-  const shuffled = [...PALETTE].sort(() => Math.random() - 0.5);
+  const shuffled = [...PALETTE].sort(() => R.next() - 0.5);
   const [fr, fg, fb] = shuffled[0];
   const [ar, ag, ab] = shuffled[1];
 
@@ -133,75 +141,91 @@ export function makeArt(size = 420) {
   for (let k = 6; k >= 1; k--) {
     const f = k / 6;
     for (const s of shifted) {
-      drawPolyline(rgba, size, size, s, outline * 0.95, 10, 10, 14, 1, ex * f, ey * f);
+      drawPolyline(rgba, width, h, s, outline * 0.95, 10, 10, 14, 1, ex * f, ey * f);
     }
   }
 
   // 2. A second-colour keyline just outside the outline, as most pieces have.
   for (const s of shifted) {
-    drawPolyline(rgba, size, size, s, outline * 1.22, ar, ag, ab, 0.95);
+    drawPolyline(rgba, width, h, s, outline * 1.14, ar, ag, ab, 0.95);
   }
 
   // 3. Hard black outline.
   for (const s of shifted) {
-    drawPolyline(rgba, size, size, s, outline, 10, 10, 14, 1);
+    drawPolyline(rgba, width, h, s, outline, 10, 10, 14, 1);
   }
 
   // 4. Colour fill, darkening downward so the letters have volume.
   for (const s of shifted) {
-    drawPolyline(rgba, size, size, s, weight, fr, fg, fb, 1);
+    drawPolyline(rgba, width, h, s, weight, fr, fg, fb, 1);
   }
   for (const s of shifted) {
-    const shaded = s.filter(([, y]) => y > size * 0.5);
+    const shaded = s.filter(([, y]) => y > h * 0.5);
     if (shaded.length > 1) {
-      drawPolyline(rgba, size, size, shaded, weight * 0.8,
+      drawPolyline(rgba, width, h, shaded, weight * 0.8,
         Math.max(0, fr - 60), Math.max(0, fg - 60), Math.max(0, fb - 60), 0.45);
     }
   }
 
   // 5. Highlight along the upper-left of each stroke.
   for (const s of shifted) {
-    drawPolyline(rgba, size, size, s, weight * 0.28,
+    drawPolyline(rgba, width, h, s, weight * 0.28,
       clamp(fr + 90, 0, 255), clamp(fg + 90, 0, 255), clamp(fb + 90, 0, 255),
       0.55, -weight * 0.3, -weight * 0.34);
   }
 
-  // 6. Overspray mist around the whole piece.
-  for (const s of shifted) {
-    for (const [x, y] of s) {
-      for (let i = 0; i < 6; i++) {
-        const ang = rnd(0, Math.PI * 2);
-        const d = outline * rnd(1.1, 2.4);
-        px(rgba, size, size, Math.round(x + Math.cos(ang) * d), Math.round(y + Math.sin(ang) * d),
-           fr, fg, fb, rnd(0.04, 0.16));
-      }
-    }
+  // 6. Overspray: individual droplets thrown past the edge of the stroke, not a
+  //    gradient. Density falls off with distance and each speck is a pixel or
+  //    two — which is what you actually see on a wall, and what a soft glow
+  //    conspicuously is not.
+  const specks = shifted.length * 240;
+  for (let i = 0; i < specks; i++) {
+    const s = shifted[Math.floor(R.next() * shifted.length)];
+    const seg = Math.floor(R.next() * (s.length - 1));
+    const t = R.next();
+    const bx = s[seg][0] + (s[seg + 1][0] - s[seg][0]) * t;
+    const by = s[seg][1] + (s[seg + 1][1] - s[seg][1]) * t;
+    const ang = rnd(0, Math.PI * 2);
+    // Cubed uniform: most droplets land close in, a few carry well past.
+    const d = outline * (1 + 2.6 * R.next() ** 3);
+    const a = rnd(0.12, 0.5) * clamp(1 - (d / (outline * 3.6)) ** 2, 0, 1);
+    const x = Math.round(bx + Math.cos(ang) * d);
+    const y = Math.round(by + Math.sin(ang) * d);
+    px(rgba, width, h, x, y, fr, fg, fb, a);
+    if (R.next() < 0.3) px(rgba, width, h, x + 1, y, fr, fg, fb, a * 0.7);
   }
 
-  // 7. Drips from the lowest points of a few strokes.
-  const drippers = shifted.filter(() => Math.random() < 0.4);
+  // 7. Drips from the lowest points of a few strokes. Suppressed on the ground,
+  //    where "down" points away from the camera and a drip would run uphill.
+  const drippers = drips ? shifted.filter(() => R.next() < 0.4) : [];
   for (const s of drippers) {
     const low = s.reduce((a, b) => (b[1] > a[1] ? b : a), s[0]);
-    const len = rnd(size * 0.05, size * 0.16);
+    const len = rnd(h * 0.09, h * 0.3);
     for (let t = 0; t < len; t++) {
       const taper = weight * 0.34 * (1 - t / len);
       if (taper < 0.5) break;
-      dab(rgba, size, size, low[0], low[1] + t, taper, fr, fg, fb, 0.92);
+      dab(rgba, width, h, low[0], low[1] + t, taper, fr, fg, fb, 0.92);
     }
-    dab(rgba, size, size, low[0], low[1] + len, weight * 0.3, fr, fg, fb, 0.85);
+    dab(rgba, width, h, low[0], low[1] + len, weight * 0.3, fr, fg, fb, 0.85);
   }
 
   const colours = [
     { r: fr, g: fg, b: fb },
     { r: ar, g: ag, b: ab },
   ];
-  return { png: encodePng(size, size, rgba), rgba, size, colours, word, strokeCount: shifted.length };
+  return {
+    png: encodePng(width, h, rgba),
+    rgba, colours, word,
+    width, height: h,
+    size: width, // square callers
+    strokeCount: shifted.length,
+  };
 }
 
 /** A plausible wall: brick or concrete, directional light, grain, vignette. */
 export function makeScene(w = 640, h = 480) {
   const rgba = Buffer.alloc(w * h * 4);
-  const brick = Math.random() > 0.45;
+  const brick = R.next() > 0.45;
 
   const base = brick ? [104, 68, 58] : [128, 126, 122];
   const brickH = h / rnd(11, 16);
@@ -228,7 +252,7 @@ export function makeScene(w = 640, h = 480) {
 
       // Quantised so the PNG still compresses; pure per-pixel noise ballooned
       // these to ~750KB each.
-      const grain = (Math.round(Math.random() * 3) - 1.5) * 6;
+      const grain = (Math.round(R.next() * 3) - 1.5) * 6;
       // Light from upper-left, falling off across the surface.
       const light = 1.16 - (x / w) * 0.2 - (y / h) * 0.22;
       // Vignette.

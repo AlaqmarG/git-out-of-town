@@ -10,6 +10,8 @@
  * available here, and letterforms only need to be recognisable at marker size.
  */
 
+import { R } from "./rng.mjs";
+
 const G = {
   A: [[[0.08, 1], [0.5, 0], [0.92, 1]], [[0.24, 0.62], [0.76, 0.62]]],
   B: [[[0.14, 0], [0.14, 1]], [[0.14, 0], [0.66, 0.06], [0.74, 0.26], [0.62, 0.48], [0.14, 0.5]],
@@ -57,7 +59,7 @@ export const WORDS = [
 ];
 
 export function randomWord() {
-  return WORDS[Math.floor(Math.random() * WORDS.length)];
+  return WORDS[Math.floor(R.next() * WORDS.length)];
 }
 
 /**
@@ -82,8 +84,8 @@ export function layoutWord(word, boxW, boxH, { overlap = 0.14, arc = 0.1 } = {})
     const ox = startX + i * unit * advance;
     // Arc + per-letter jitter so it never looks typeset.
     const t = chars.length === 1 ? 0 : i / (chars.length - 1) - 0.5;
-    const oy = baseY + t * t * arc * glyphH * 4 - arc * glyphH + (Math.random() - 0.5) * glyphH * 0.08;
-    const tilt = (Math.random() - 0.5) * 0.14;
+    const oy = baseY + t * t * arc * glyphH * 4 - arc * glyphH + (R.next() - 0.5) * glyphH * 0.08;
+    const tilt = (R.next() - 0.5) * 0.14;
 
     for (const stroke of G[c]) {
       strokes.push(
