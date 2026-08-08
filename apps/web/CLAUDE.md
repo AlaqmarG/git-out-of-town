@@ -7,8 +7,20 @@ Next.js 16 App Router. Frontend, API, and the `/data` dashboard.
 ```
 app/api/pieces/route.ts   POST + GET pieces
 app/api/health/route.ts   readiness probe
-lib/                      server-side building blocks
+components/MapCanvas.tsx  the map (client component)
+lib/                      server-side building blocks + map/theme
 ```
+
+## The map
+
+| File | Role |
+|---|---|
+| `lib/theme.ts` | **All colour lives here.** Swap these when the Reve art lands (#5/#6) and the map, UI and markers follow. Never hardcode a colour elsewhere. |
+| `lib/map-style.ts` | Hand-authored dark basemap over OpenFreeMap vector tiles (free, no API key). Not a stock style — a default basemap is what the rubric marks down. |
+| `components/MapCanvas.tsx` | Creates the map, fetches by bbox on `moveend` (latest-wins abort), empty state, error toast. Calls `onPiecesChange` — that is the hook #13 renders markers from. |
+
+`lib/map-style.test.ts` guards the traps: undeclared sources, unknown source-layers,
+legacy filter syntax, and layer ordering. Run it before touching the style.
 
 ## lib/
 
@@ -35,5 +47,9 @@ lib/                      server-side building blocks
   Maps key needs a rebuild, not a restart.
 - **No CDN geo headers.** Self-hosted behind our own Traefik, so no `x-vercel-ip-city` /
   `cf-ipcountry`. City comes from reverse-geocoding submitted GPS coords.
+- **maplibre-gl.css sets `.maplibregl-map { position: relative }`** on whatever element you hand
+  the map. That overrides a Tailwind `absolute` utility on the same node and collapses it to
+  height 0 — the map then renders nothing, with no error. Position the map container with an
+  **inline style**, not a utility class.
 - **Image bytes never stream through Node.** nginx serves `/uploads/*`; the map loads hundreds at
   once on a pan. Build URLs with `uploadUrl()` from `@got/shared`.

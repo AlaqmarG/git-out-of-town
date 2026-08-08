@@ -1,26 +1,43 @@
 @import "tailwindcss";
 
+/* Mirrors lib/theme.ts — keep the two in step. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --ink: #0b0b0d;
+  --text: #e8e8ec;
+  --text-muted: #8b8b98;
+  --accent: #ff4d2e;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--ink);
+  --color-foreground: var(--text);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  background: var(--ink);
+  color: var(--text);
+  overscroll-behavior: none;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* MapLibre's default controls are white chrome on a near-black map. */
+.maplibregl-ctrl-group {
+  background: #17171c !important;
+  border: 1px solid #26262e !important;
+  box-shadow: none !important;
+}
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid #26262e !important;
+}
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(1) opacity(0.65);
+}
+.maplibregl-ctrl-attrib {
+  background: rgba(11, 11, 13, 0.7) !important;
+  color: var(--text-muted) !important;
+}
+.maplibregl-ctrl-attrib a {
+  color: var(--text-muted) !important;
 }
