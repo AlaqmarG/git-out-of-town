@@ -35,5 +35,9 @@ lib/                      server-side building blocks
   Maps key needs a rebuild, not a restart.
 - **No CDN geo headers.** Self-hosted behind our own Traefik, so no `x-vercel-ip-city` /
   `cf-ipcountry`. City comes from reverse-geocoding submitted GPS coords.
+- **maplibre-gl.css sets `.maplibregl-map { position: relative }`** on whatever element you hand
+  the map. That overrides a Tailwind `absolute` utility on the same node and collapses it to
+  height 0 — the map then renders nothing, with no error. Position the map container with an
+  **inline style**, not a utility class.
 - **Image bytes never stream through Node.** nginx serves `/uploads/*`; the map loads hundreds at
   once on a pan. Build URLs with `uploadUrl()` from `@got/shared`.
