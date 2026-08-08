@@ -38,12 +38,12 @@
   <rect class="card" x="16" y="16" width="848" height="740" rx="12"/>
 
   <text class="h1" x="44" y="58">Git Out of Town — photo run</text>
-  <text class="h2" x="44" y="80">Sat Aug 8 · one photo per hour, locked · 16 pts on the board</text>
+  <text class="h2" x="44" y="80">Sat Aug 8 · one photo per hour, locked · 18 pts on the board · leaderboard #1</text>
 
   <g transform="translate(700,44)">
     <rect x="0" y="0" width="140" height="40" rx="8" fill="#11251A" stroke="#1F6F3D"/>
     <text class="tag" x="70" y="16" fill="#7EE2A0">BANKED</text>
-    <text class="pts" x="70" y="32" fill="#3FB950" style="font-size:15px">4 / 16 pts</text>
+    <text class="pts" x="70" y="32" fill="#3FB950" style="font-size:15px">8 / 18 pts</text>
   </g>
 
   <line class="spine" x1="176" y1="128" x2="176" y2="688" stroke="#2A3446" stroke-width="2.5" stroke-linecap="round"/>
@@ -53,7 +53,7 @@
     <text class="timeq" x="150" y="133">11:17</text>
     <text class="named" x="206" y="127">Milky's Cloud Room</text>
     <text class="sub" x="206" y="146">Inside Stackt · purchase · logged</text>
-    <g transform="translate(760,116)"><rect width="60" height="22" rx="6" fill="#11251A" stroke="#1F6F3D"/><text class="pts" x="30" y="15" fill="#3FB950">+1 pt</text></g>
+    <g transform="translate(760,116)"><rect width="60" height="22" rx="6" fill="#11251A" stroke="#1F6F3D"/><text class="pts" x="30" y="15" fill="#3FB950">+2 pts</text></g>
   </g>
   <g class="dot r0"><circle cx="176" cy="128" r="8" fill="#3FB950"/><path d="M172.3 128 l2.8 2.9 l5.0 -5.4" fill="none" stroke="#0F1117" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
   <text class="ride" x="206" y="164">already banked</text>
@@ -63,52 +63,51 @@
     <text class="timeq" x="150" y="203">12:21</text>
     <text class="named" x="206" y="197">Fungo Cafe</text>
     <text class="sub" x="206" y="216">King St W · purchase · logged</text>
-    <g transform="translate(760,186)"><rect width="60" height="22" rx="6" fill="#11251A" stroke="#1F6F3D"/><text class="pts" x="30" y="15" fill="#3FB950">+1 pt</text></g>
+    <g transform="translate(760,186)"><rect width="60" height="22" rx="6" fill="#11251A" stroke="#1F6F3D"/><text class="pts" x="30" y="15" fill="#3FB950">+2 pts</text></g>
   </g>
   <g class="dot r1"><circle cx="176" cy="198" r="8" fill="#3FB950"/><path d="M172.3 198 l2.8 2.9 l5.0 -5.4" fill="none" stroke="#0F1117" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
   <text class="ride" x="206" y="234">already banked</text>
 
   <!-- 1:21 Waterworks — now -->
   <g class="row r2">
-    <text class="time" x="150" y="273">1:21</text>
-    <text class="name" x="206" y="267">Waterworks Food Hall / The Well</text>
-    <text class="sub" x="206" y="286">Richmond &amp; Brant · free · you are here</text>
-    <g transform="translate(760,256)"><rect width="60" height="22" rx="6" fill="#2A1E06" stroke="#8A6212"/><text class="pts" x="30" y="15" fill="#F0A020">+2 pts</text></g>
+    <text class="timeq" x="150" y="273">1:24</text>
+    <text class="named" x="206" y="267">Waterworks Food Hall / The Well</text>
+    <text class="sub" x="206" y="286">Richmond &amp; Brant · free · logged</text>
+    <g transform="translate(760,256)"><rect width="60" height="22" rx="6" fill="#11251A" stroke="#1F6F3D"/><text class="pts" x="30" y="15" fill="#3FB950">+2 pts</text></g>
   </g>
-  <g class="dot r2">
-    <circle class="halo" cx="176" cy="268" r="9" fill="none" stroke="#F0A020" stroke-width="2"/>
-    <circle cx="176" cy="268" r="9" fill="#F0A020"/>
-    <circle cx="176" cy="268" r="3.4" fill="#0F1117"/>
-  </g>
-  <text class="ride" x="206" y="304">↓ 7 min ride — Richmond → Bathurst &amp; Dundas</text>
+  <g class="dot r2"><circle cx="176" cy="268" r="8" fill="#3FB950"/><path d="M172.3 268 l2.8 2.9 l5.0 -5.4" fill="none" stroke="#0F1117" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
+  <text class="ride" x="206" y="304">already banked</text>
 
   <!-- 2:21 Scadding Court -->
   <g class="row r3">
-    <text class="time" x="150" y="343">2:21</text>
-    <text class="name" x="206" y="337">Scadding Court Community Ctr</text>
-    <text class="sub" x="206" y="356">Bathurst &amp; Dundas · free</text>
-    <g transform="translate(760,326)"><rect width="60" height="22" rx="6" fill="#0D1F33" stroke="#1F5A8A"/><text class="pts" x="30" y="15" fill="#58A6FF">+2 pts</text></g>
-    <g class="warn" transform="translate(688,326)"><rect width="64" height="22" rx="6" fill="#2E1116" stroke="#8A2B36"/><text class="tag" x="32" y="15" fill="#FF7B72">CLOSES</text></g>
+    <text class="timeq" x="150" y="343">2:25</text>
+    <text class="named" x="206" y="337">Scadding Court Community Ctr</text>
+    <text class="sub" x="206" y="356">Bathurst &amp; Dundas · free · logged</text>
+    <g transform="translate(760,326)"><rect width="60" height="22" rx="6" fill="#11251A" stroke="#1F6F3D"/><text class="pts" x="30" y="15" fill="#3FB950">+2 pts</text></g>
   </g>
-  <g class="dot r3"><circle cx="176" cy="338" r="8" fill="#151924" stroke="#58A6FF" stroke-width="2.5"/></g>
+  <g class="dot r3"><circle cx="176" cy="338" r="8" fill="#3FB950"/><path d="M172.3 338 l2.8 2.9 l5.0 -5.4" fill="none" stroke="#0F1117" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
   <text class="ride" x="206" y="374">↓ 6 min ride — Bathurst → College &amp; Spadina</text>
 
   <!-- 3:21 Lillian H. Smith -->
   <g class="row r4">
-    <text class="time" x="150" y="413">3:21</text>
+    <text class="time" x="150" y="413">3:25</text>
     <text class="name" x="206" y="407">TPL Lillian H. Smith Branch</text>
-    <text class="sub" x="206" y="426">College &amp; Spadina · free · build block 2:35–4:05</text>
-    <g transform="translate(760,396)"><rect width="60" height="22" rx="6" fill="#0D1F33" stroke="#1F5A8A"/><text class="pts" x="30" y="15" fill="#58A6FF">+2 pts</text></g>
+    <text class="sub" x="206" y="426">College &amp; Spadina · free · unlocks next · build block 3:35–4:05</text>
+    <g transform="translate(760,396)"><rect width="60" height="22" rx="6" fill="#2A1E06" stroke="#8A6212"/><text class="pts" x="30" y="15" fill="#F0A020">+2 pts</text></g>
     <g class="warn" transform="translate(688,396)"><rect width="64" height="22" rx="6" fill="#2E1116" stroke="#8A2B36"/><text class="tag" x="32" y="15" fill="#FF7B72">CLOSES</text></g>
   </g>
-  <g class="dot r4"><circle cx="176" cy="408" r="8" fill="#151924" stroke="#58A6FF" stroke-width="2.5"/></g>
+  <g class="dot r4">
+    <circle class="halo" cx="176" cy="408" r="9" fill="none" stroke="#F0A020" stroke-width="2"/>
+    <circle cx="176" cy="408" r="9" fill="#F0A020"/>
+    <circle cx="176" cy="408" r="3.4" fill="#0F1117"/>
+  </g>
   <text class="ride" x="206" y="444">↓ 11 min ride — Spadina south to Fort York Blvd</text>
 
   <!-- 4:21 Fort York -->
   <g class="row r5">
-    <text class="time" x="150" y="483">4:21</text>
+    <text class="time" x="150" y="483">4:25</text>
     <text class="name" x="206" y="477">TPL Fort York Branch</text>
-    <text class="sub" x="206" y="496">Fort York Blvd · free · build block until 5:00</text>
+    <text class="sub" x="206" y="496">Fort York Blvd · free · build block until 5:00 · last free stop</text>
     <g transform="translate(760,466)"><rect width="60" height="22" rx="6" fill="#0D1F33" stroke="#1F5A8A"/><text class="pts" x="30" y="15" fill="#58A6FF">+2 pts</text></g>
     <g class="warn" transform="translate(688,466)"><rect width="64" height="22" rx="6" fill="#2E1116" stroke="#8A2B36"/><text class="tag" x="32" y="15" fill="#FF7B72">NO SUN</text></g>
   </g>
@@ -117,7 +116,7 @@
 
   <!-- 5:21 Botanic -->
   <g class="row r6">
-    <text class="time" x="150" y="553">5:21</text>
+    <text class="time" x="150" y="553">5:25</text>
     <text class="name" x="206" y="547">Botanic Coffee and Caphe</text>
     <text class="sub" x="206" y="566">Queen St W · purchase · Sunday-recoverable</text>
     <g transform="translate(760,536)"><rect width="60" height="22" rx="6" fill="#1C1233" stroke="#5B3B9E"/><text class="pts" x="30" y="15" fill="#A371F7">+2 pts</text></g>
@@ -127,7 +126,7 @@
 
   <!-- 6:21 ICHA -->
   <g class="row r7">
-    <text class="time" x="150" y="623">6:21</text>
+    <text class="time" x="150" y="623">6:25</text>
     <text class="name" x="206" y="617">ICHA TEA / Project Seoul / Cafe Foret</text>
     <text class="sub" x="206" y="636">Chinatown · purchase · Sunday-recoverable</text>
     <g transform="translate(760,606)"><rect width="60" height="22" rx="6" fill="#1C1233" stroke="#5B3B9E"/><text class="pts" x="30" y="15" fill="#A371F7">+2 pts</text></g>
@@ -137,7 +136,7 @@
 
   <!-- 7:21 Varda -->
   <g class="row r8">
-    <text class="time" x="150" y="693">7:21</text>
+    <text class="time" x="150" y="693">7:25</text>
     <text class="name" x="206" y="687">Varda</text>
     <text class="sub" x="206" y="706">King St W (TIFF) · purchase · Sunday-recoverable</text>
     <g transform="translate(760,676)"><rect width="60" height="22" rx="6" fill="#1C1233" stroke="#5B3B9E"/><text class="pts" x="30" y="15" fill="#A371F7">+2 pts</text></g>
