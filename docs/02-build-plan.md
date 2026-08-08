@@ -22,7 +22,7 @@ in our house style → anchored to a real place.
 | DB | Postgres 17 on our OCI VPS |
 | Storage | Mounted volume (~200GB), served by Caddy |
 | Live updates | Postgres `LISTEN/NOTIFY` → SSE |
-| Deploy | Docker Compose via Komodo, Caddy auto-HTTPS |
+| Deploy | Docker Compose via Komodo, behind the shared Traefik (auto-HTTPS) |
 | Map | MapLibre GL JS + custom dark style |
 | Drawing | Canvas 2D |
 | "AR" view | `getUserMedia` + `DeviceOrientationEvent` + `navigator.geolocation` |
@@ -123,7 +123,7 @@ That's Reve as the design backbone, which is their exact judging language.
 
 | Risk | Mitigation |
 |---|---|
-| OCI blocks 80/443 in *both* the Security List and host iptables | See `docs/04-deploy.md` — fix both, or the site is unreachable |
+| Host is ARM64 (Ampere) | Komodo builds on the server, so this is handled — never push an amd64 image to it |
 | iOS permissions fail on a stranger's phone | Build `/permissions` debug page early; test on 3+ real devices |
 | Judging is indoors, GPS poor, everything clusters at the venue | Make it a feature — pre-seed the venue as the densest hotspot. Manual pin fallback. |
 | Replicate slow or down | Optimistic UI: show raw scribble, swap when transformed |

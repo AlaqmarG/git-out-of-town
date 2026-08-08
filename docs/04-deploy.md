@@ -1,83 +1,102 @@
-# Deploy — Komodo on OCI
+# Deploy — Komodo on the OCI VPS
 
-Self-hosted: Next.js + Postgres + Caddy, all in one compose stack. No Supabase, no external DB.
+Deployed onto the existing `wayfare-vps-runner` box. **We do not run our own reverse proxy** — the
+shared Traefik already owns :80/:443. We attach to it with labels.
 
 ```
-Caddy (:80/:443, auto-HTTPS)
- ├── /uploads/*  → static files off the shared volume
- └── /*          → app:3000  (Next.js standalone)
-                      └── db:5432 (Postgres 17, 200GB volume)
+Traefik (shared, wayfarer-net, letsencrypt)
+ ├── Host(SITE_HOST) && PathPrefix(/uploads) → got-uploads (nginx, :80)  ← user art
+ └── Host(SITE_HOST)                        → got-app (Next.js, :3000)
+                                                  └── got-db (Postgres 17, internal only)
 ```
+
+## The host
+
+| | |
+|---|---|
+| SSH | `ssh wayfare-vps-runner` (`opc@129.153.49.190`, key `~/.ssh/wayfare-ampere.pem`) |
+| OS / arch | Oracle Linux 9.8, **aarch64 (Ampere)** |
+| Disk | 183G total, ~164G free |
+| Komodo | https://manage.wayfarerbx.com |
+| Proxy | Traefik v3.6, network `wayfarer-net`, certresolver `letsencrypt`, entrypoint `websecure` |
+
+### Why there is no Caddy and no multi-arch build
+- Traefik already binds :80/:443. A second proxy would fail to start with a port conflict.
+- The host is **ARM64**. Because Komodo builds the image *on the server*, this is a non-issue. If we
+  ever push from CI to a registry instead, the build must be multi-arch or the container dies with
+  `exec format error`.
 
 ---
 
-## ⚠️ Two OCI gotchas that will eat an hour
+## Hostname — no DNS purchase needed
 
-**1. Ports 80/443 are blocked twice.** OCI needs *both*:
-- **Security List / NSG** — add ingress rules for TCP 80 and 443 in the VCN subnet
-- **Host firewall** — Oracle images ship with iptables rules that drop everything:
-  ```bash
-  sudo iptables -I INPUT 1 -p tcp --dport 80  -j ACCEPT
-  sudo iptables -I INPUT 1 -p tcp --dport 443 -j ACCEPT
-  sudo netfilter-persistent save     # Ubuntu
-  ```
-  Opening only the Security List is the single most common "why is my site unreachable" on OCI.
+The box already uses **sslip.io** wildcard DNS (see `brockcsc.129-153-49-190.sslip.io`). Any
+`*.129-153-49-190.sslip.io` name resolves to the host automatically, and Let's Encrypt will issue for
+it. So we can go live immediately:
 
-**2. Ampere instances are ARM64.** If your VPS is an A1 (the free-tier ARM shape), images must be
-`linux/arm64`. This is why we let **Komodo build on the server** — it builds natively and the problem
-disappears. If you ever switch to a registry, you must build multi-arch or it will fail to start with
-an `exec format error`.
+```
+SITE_HOST=gitoutoftown.129-153-49-190.sslip.io
+```
+
+Swap in the real domain later by changing `SITE_HOST` and pointing an A record at `129.153.49.190`.
+Nothing else changes. **Buy the real domain anyway** — "permanent" is in the judging brief and an
+sslip.io URL undercuts it.
 
 ---
 
-## First-time setup
+## Komodo stack setup (one time)
 
-### 1. DNS
-Point an A record at the VPS public IP. Caddy needs this resolving *before* it can issue a cert.
+1. https://manage.wayfarerbx.com → **Stacks** → New → `gitoutoftown`
+2. **Source:** this Git repo, branch `main`, file `docker-compose.yaml`
+   - The repo is private, so Komodo needs a GitHub account/token configured with read access.
+3. **Environment:**
+   ```env
+   SITE_HOST=gitoutoftown.129-153-49-190.sslip.io
+   POSTGRES_PASSWORD=<strong random>
+   ADMIN_DELETE_SECRET=<strong random>
+   REPLICATE_API_TOKEN=<token>
+   NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=<key>
+   ```
+4. Deploy. Komodo clones and runs `docker compose up -d --build` on the host — building natively for
+   ARM64.
 
-### 2. Env file on the server
-Komodo injects environment into the stack. Set at minimum:
-
-```env
-SITE_DOMAIN=gitoutoftown.com
-POSTGRES_PASSWORD=<strong random>
-ADMIN_DELETE_SECRET=<strong random>
-REPLICATE_API_TOKEN=<token>
-NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=<key>
-```
-
-> `NEXT_PUBLIC_*` is **inlined at build time**, not read at runtime. It is wired as a Docker build arg
-> in `docker-compose.yaml`. If you change the Maps key you must **rebuild**, not just restart.
-
-### 3. Komodo stack
-1. Komodo → **Stacks** → New
-2. Source: this Git repo, branch `main`, file `docker-compose.yaml`
-3. Paste the env above into the stack's Environment
-4. Deploy
-
-Komodo clones the repo and runs `docker compose up -d --build` on the server. Because it builds
-locally, ARM64 is handled for free.
-
-### 4. Auto-deploy on push (the CD half)
-In Komodo, enable the stack's **webhook** and copy the URL, then:
-
-```
-GitHub repo → Settings → Webhooks → Add webhook
-  Payload URL:  <komodo webhook url>
-  Content type: application/json
-  Secret:       <komodo webhook secret>
-  Events:       Just the push event
-```
-
-Push to `main` → Komodo pulls, rebuilds, redeploys.
+> ⚠️ `NEXT_PUBLIC_*` is inlined at **build** time (wired as a build arg in the compose file).
+> Changing the Maps key requires a **rebuild**, not a restart.
 
 ---
 
-## CI
+## CD — GitHub Actions → Komodo
 
-`.github/workflows/ci.yml` runs on every push and PR: typecheck → lint → `next build` → Docker build
-verification. It does **not** push an image — deployment is Komodo's job. This keeps a broken
-Dockerfile from reaching the server without adding registry auth.
+`.github/workflows/ci.yml` runs `check → docker → deploy → smoke`. Deploy only fires on green
+commits to `main`, so a broken build never reaches the server.
+
+Add these repo secrets (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|---|---|
+| `KOMODO_URL` | `https://manage.wayfarerbx.com` |
+| `KOMODO_API_KEY` | Komodo → Settings → API Keys |
+| `KOMODO_API_SECRET` | issued alongside the key |
+| `KOMODO_STACK` | `gitoutoftown` |
+| `SITE_URL` | `https://gitoutoftown.129-153-49-190.sslip.io` |
+
+```bash
+gh secret set KOMODO_URL --repo AlaqmarG/git-out-of-town --body "https://manage.wayfarerbx.com"
+gh secret set KOMODO_API_KEY --repo AlaqmarG/git-out-of-town
+gh secret set KOMODO_API_SECRET --repo AlaqmarG/git-out-of-town
+gh secret set KOMODO_STACK --repo AlaqmarG/git-out-of-town --body "gitoutoftown"
+gh secret set SITE_URL --repo AlaqmarG/git-out-of-town --body "https://gitoutoftown.129-153-49-190.sslip.io"
+```
+
+Until they are set, the deploy and smoke jobs **skip with a notice** rather than failing — CI stays
+green while the rest is being wired.
+
+The deploy step calls `POST {KOMODO_URL}/execute` with `{"type":"DeployStack","params":{"stack":…}}`.
+If your Komodo version expects a different shape, that one `curl` in `ci.yml` is the only thing to
+change.
+
+**Alternative (no secrets):** point a plain GitHub webhook at Komodo's listener. Simpler, but it
+deploys on *every* push including broken ones — which is why CI-gated deploy is preferred.
 
 ---
 
@@ -85,53 +104,52 @@ Dockerfile from reaching the server without adding registry auth.
 
 ```bash
 cp .env.example .env
-docker compose up -d db          # Postgres only
+docker compose up -d got-db     # override file publishes 5432 for local dev
 npm install
 npm run dev
 ```
 
-Schema in `db/init.sql` runs automatically on **first** container start only. To re-apply after
-editing it:
+`db/init.sql` runs on **first** container start only. To re-apply after editing:
 
 ```bash
-docker compose down -v db && docker compose up -d db   # ⚠️ destroys local data
+docker compose down -v got-db && docker compose up -d got-db   # ⚠️ destroys local data
 ```
 
-> 📱 Camera, geolocation, and device orientation need **HTTPS**. They will not work on `localhost`
-> from a phone. Test against the deployed domain, or tunnel with `cloudflared`/`ngrok`.
+> 📱 Camera, geolocation, and device orientation require **HTTPS** — they will not work on
+> `localhost` from a phone. Test against the deployed URL.
 
 ---
 
 ## Storage
 
-Uploads go to the `uploads` volume at `/data/uploads`, served by Caddy at `/uploads/*` — Next.js
-never streams image bytes. Both `app` and `caddy` mount the same volume (Caddy read-only).
+Uploads live on the `uploads` volume at `/data/uploads`, written by the app and served by nginx at
+`/uploads/*`. Image bytes never pass through Node — the map pulls hundreds at once on a single pan.
 
-With ~200GB, storage is not a constraint. Write `<uuid>.png` and store the relative path in
-`pieces.raw_image_path` / `final_image_path`.
+Write `<uuid>.png`; store the relative path in `pieces.raw_image_path` / `final_image_path`.
 
 ---
 
-## Live updates (replaces Supabase Realtime)
+## Live updates
 
-`db/init.sql` installs a trigger that fires `pg_notify('new_piece', …)` on insert. Consume it with a
-dedicated (non-pooled) client in an SSE route:
+`db/init.sql` installs a trigger firing `pg_notify('new_piece', …)` on insert. Consume it in an SSE
+route with a **dedicated `pg.Client`** — never the shared `Pool`, since a pooled connection gets
+recycled and silently stops listening.
 
-```ts
-const client = new Client({ connectionString: process.env.DATABASE_URL });
-await client.connect();
-await client.query("LISTEN new_piece");
-client.on("notification", (msg) => { /* push down the SSE stream */ });
+Fallback: poll `/api/pieces?since=` every 3s. Fine at this scale; not worth losing an hour.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| 404 from Traefik | `SITE_HOST` mismatch, or container not on `wayfarer-net` |
+| Cert not issued | Hostname doesn't resolve to `129.153.49.190` yet |
+| `exec format error` | An amd64 image reached the ARM host — build on the server |
+| Uploads 404 but app works | `got-uploads` router priority lost to the catch-all; it is set to 100 |
+| DB connection refused | `got-db` is on `internal` only — the app must be on that network too |
+
+```bash
+ssh wayfare-vps-runner 'docker ps --filter name=got-'
+ssh wayfare-vps-runner 'docker logs --tail 50 gitoutoftown-got-app-1'
 ```
-
-Use a **dedicated `Client`**, never the shared `Pool` — a pooled connection can be handed to another
-query and silently stop listening.
-
-Fallback if SSE fights back: poll `/api/pieces?since=` every 3s. Perfectly acceptable at this scale,
-and not worth losing an hour over.
-
----
-
-## Health
-
-`GET /api/health` returns `{ ok: true }` once Postgres answers. Point Komodo's health check at it.

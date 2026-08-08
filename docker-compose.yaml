@@ -1,5 +1,10 @@
+# Deployed by Komodo on the OCI Ampere (aarch64) host.
+# TLS + routing are handled by the existing shared Traefik on `wayfarer-net`.
+# Service names are prefixed `got-` to avoid DNS alias collisions with other
+# projects sharing that network.
+
 services:
-  db:
+  got-db:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
@@ -9,47 +14,60 @@ services:
     volumes:
       - db-data:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks: [internal]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-graffiti}"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  app:
+  got-app:
     build:
       context: .
       args:
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-}
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-graffiti}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-graffiti}
+      DATABASE_URL: postgres://${POSTGRES_USER:-graffiti}:${POSTGRES_PASSWORD}@got-db:5432/${POSTGRES_DB:-graffiti}
       UPLOAD_DIR: /data/uploads
       REPLICATE_API_TOKEN: ${REPLICATE_API_TOKEN:-}
       ADMIN_DELETE_SECRET: ${ADMIN_DELETE_SECRET:-}
     volumes:
       - uploads:/data/uploads
+    networks: [internal, wayfarer-net]
     depends_on:
-      db:
+      got-db:
         condition: service_healthy
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: wayfarer-net
+      traefik.http.routers.gitoutoftown.rule: Host(`${SITE_HOST:?set SITE_HOST}`)
+      traefik.http.routers.gitoutoftown.entrypoints: websecure
+      traefik.http.routers.gitoutoftown.tls.certresolver: letsencrypt
+      traefik.http.services.gitoutoftown.loadbalancer.server.port: "3000"
 
-  caddy:
-    image: caddy:2-alpine
+  # Static file server for user-uploaded art. Keeps image bytes out of Node —
+  # the map loads hundreds of these at once on a single pan.
+  got-uploads:
+    image: nginx:alpine
     restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - uploads:/srv/uploads:ro
-      - caddy-data:/data
-      - caddy-config:/config
-    depends_on:
-      - app
+      - uploads:/usr/share/nginx/html/uploads:ro
+    networks: [wayfarer-net]
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: wayfarer-net
+      traefik.http.routers.gitoutoftown-uploads.rule: Host(`${SITE_HOST}`) && PathPrefix(`/uploads`)
+      traefik.http.routers.gitoutoftown-uploads.priority: "100"
+      traefik.http.routers.gitoutoftown-uploads.entrypoints: websecure
+      traefik.http.routers.gitoutoftown-uploads.tls.certresolver: letsencrypt
+      traefik.http.services.gitoutoftown-uploads.loadbalancer.server.port: "80"
+
+networks:
+  internal:
+  wayfarer-net:
+    external: true
 
 volumes:
   db-data:
   uploads:
-  caddy-data:
-  caddy-config:

@@ -1,0 +1,6 @@
+# Local development only. Publishes Postgres so `npm run dev` on the host can reach it.
+# Compose loads this automatically; Komodo deploys with an explicit -f so it is ignored.
+services:
+  got-db:
+    ports:
+      - "5432:5432"

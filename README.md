@@ -20,13 +20,13 @@ forever — on a living world map anyone can explore.
 
 ## Stack
 
-Next.js (App Router) · Postgres · MapLibre GL JS · Replicate (Reve) · Docker + Caddy on OCI via Komodo
+Next.js (App Router) · Postgres · MapLibre GL JS · Replicate (Reve) · Docker on OCI via Komodo, behind shared Traefik
 
 ## Getting started
 
 ```bash
 cp .env.example .env
-docker compose up -d db      # Postgres only
+docker compose up -d got-db  # Postgres only
 npm install
 npm run dev
 ```
