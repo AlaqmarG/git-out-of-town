@@ -33,11 +33,11 @@ const edgeLength = (q) =>
  * no plausible surface — the caller should try a different heading rather than
  * paint something silly.
  */
-export function paintPhoto(jpegBuf, { seed, word } = {}) {
+export function paintPhoto(jpegBuf, { seed, word, allowGround = false } = {}) {
   seedArt(seed);
   const photo = decodeJpeg(jpegBuf);
 
-  const surface = findSurface(photo, { rand: R.next });
+  const surface = findSurface(photo, { rand: R.next, allowGround });
   if (!surface) return null;
 
   // Render the artwork larger than it will appear, so the warp is always a
@@ -62,11 +62,16 @@ export function paintPhoto(jpegBuf, { seed, word } = {}) {
 /**
  * Fetch the view at these coordinates and paint it.
  *
- * Street View has no surface at every heading — a treed street, a car park, a
- * wall of glass — so try a few nearby bearings before giving up. `heading` is
- * honoured first, since it is the direction the piece was painted toward.
+ * Street View has no wall at every heading — a treed street, a car park, a
+ * wall of glass — so try every bearing before giving up. `heading` is honoured
+ * first, since it is the direction the piece was painted toward.
+ *
+ * Ground planes are deliberately never used. The geometry works, but tarmac and
+ * gravel simply never look right, and a throw-up in the middle of a road is not
+ * a thing that happens. Returning null and letting the caller skip the spot
+ * beats producing a picture nobody believes.
  */
-export async function paintStreetView(lat, lng, heading, { seed, word, tries = 4 } = {}) {
+export async function paintStreetView(lat, lng, heading, { seed, word, tries = 6 } = {}) {
   const offsets = [0, 90, 180, 270, 45, 225];
   for (let t = 0; t < Math.min(tries, offsets.length); t++) {
     const bearing = (heading + offsets[t] + 360) % 360;

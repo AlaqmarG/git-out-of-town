@@ -15,7 +15,7 @@
  * even when the perspective is only roughly right.
  */
 
-import { boxBlur, clamp, luminance, sampleRgba, smoothstep } from "./image.mjs";
+import { boxBlur, clamp, luminance, open, sampleRgba, smoothstep } from "./image.mjs";
 import { valueNoise } from "./rng.mjs";
 
 // --- homography -------------------------------------------------------------
@@ -134,21 +134,29 @@ export function paintOnPhoto(photo, art, surface, options = {}) {
   const k = clamp(bw / 900, 0.16, 0.45);
   for (let i = 0; i < wa.length; i++) wa[i] += (soft[i] - wa[i]) * k;
 
-  // --- read the surface ---------------------------------------------------
+  // --- read the surface at three scales -----------------------------------
+  //
+  // Which scale each pass reads from is the difference between paint and
+  // coloured glass. Texture and wear must see *fine* detail only — mortar
+  // joints, grit, grime. Given a wide reference they also pick up window
+  // reveals and door frames, and printing a whole window through the paint is
+  // what makes a piece look transparent rather than opaque. Illumination is the
+  // opposite: it must see only the broad sweep of sun and shade, or the paint
+  // gets darkened twice by the same mortar joint.
   const lum = surface.fields?.lum ?? luminance(photo);
-  const lumBlur = boxBlur(lum, w, h, 9);    // large-scale illumination
-  const lumFine = boxBlur(lum, w, h, 1, 1); // for the noise estimate
+  const lumFine = boxBlur(lum, w, h, 1, 1);  // denoised, for the wear input
+  const lumLocal = boxBlur(lum, w, h, 5);    // local reference: detail is what beats this
+  const lumShade = boxBlur(lum, w, h, 22);   // the illumination field alone
 
   let n = 0, sLum = 0, sR = 0, sG = 0, sB = 0;
-  const detail = [], hf = [];
+  const hf = [];
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
       if (wa[(y - y0) * bw + (x - x0)] < 0.02) continue;
       const i = y * w + x;
       n++;
-      sLum += lumBlur[i];
+      sLum += lumShade[i];
       sR += data[i * 4]; sG += data[i * 4 + 1]; sB += data[i * 4 + 2];
-      detail.push(Math.abs(lum[i] - lumBlur[i]));
       hf.push(Math.abs(lum[i] - lumFine[i]));
     }
   }
@@ -156,15 +164,29 @@ export function paintOnPhoto(photo, art, surface, options = {}) {
 
   const meanLum = Math.max(12, sLum / n);
   const illum = [sR / n / meanLum, sG / n / meanLum, sB / n / meanLum];
-  detail.sort((a, b) => a - b);
-  hf.sort((a, b) => a - b);
   // Median absolute deviation: robust to the one dark window in the region.
-  const sdDetail = Math.max(3, detail[detail.length >> 1] * 1.4826);
-  const sigma = clamp(hf[hf.length >> 1] * 1.2, 0.6, 6) * o.grain;
+  hf.sort((a, b) => a - b);
+  const sigma = clamp(hf[hf.length >> 1] * 1.4826, 0.5, 6) * o.grain;
 
   // Coverage wanders across a wall; a can does not lay down an even film.
   const patch = valueNoise(bw, bh, 26, 0x51ed);
   const speck = valueNoise(bw, bh, 4, 0x9a3f);
+
+  // --- what must stay unpainted -------------------------------------------
+  //
+  // The colour model flags anything that does not look like the surface, which
+  // catches the lamp post in front of the wall — but also the window frames
+  // *on* it, and punching those through the paint makes the piece look like
+  // coloured glass. Two guards. Opening deletes anything thinner than a few
+  // pixels, so frame lines and cable runs go while poles and cars survive. And
+  // the mask only gets full authority on a surface the model actually fits: on
+  // a box straddling brick and plywood its verdicts are mostly noise.
+  const reject = new Float32Array(bw * bh);
+  for (let y = 0; y < bh; y++) {
+    for (let x = 0; x < bw; x++) reject[y * bw + x] = 1 - model.member((y + y0) * w + x + x0);
+  }
+  const occluder = open(reject, bw, bh, 2);
+  const authority = 0.25 + 0.75 * smoothstep(0.5, 0.85, model.homogeneity ?? 1);
 
   // --- paint --------------------------------------------------------------
   for (let y = y0; y < y1; y++) {
@@ -175,23 +197,32 @@ export function paintOnPhoto(photo, art, surface, options = {}) {
       if (a < 0.004) continue;
       const i = y * w + x;
 
-      // 1. Membership. Whatever stands in front of the wall stays unpainted;
+      // 1. Occlusion. Whatever stands in front of the wall stays unpainted;
       //    a tag running across a lamp post is an instant giveaway.
-      a *= model.member(i);
+      a *= 1 - authority * occluder[q];
       if (a < 0.004) continue;
 
       const L = lum[i];
-      const Lb = Math.max(6, lumBlur[i]);
-      const relief = (L - Lb) / sdDetail; // −1 deep in a mortar joint, +1 on a proud brick
+      const Lloc = Math.max(6, lumLocal[i]);
 
       // 2. Coverage wear. The single most valuable pass. Spray travels in a
       //    straight line and simply does not reach into a recess, so the
       //    surface's own dark lines stay dark straight through the paint.
-      a *= 1 - o.wear * 0.94 * (1 - smoothstep(-1.2, 0.1, relief));
+      //
+      //    `shade` is how much darker this pixel is than its surroundings, as a
+      //    fraction of the local brightness — a physical quantity, not a
+      //    normalised one. That distinction matters: dividing by the region's
+      //    own variance turns JPEG noise on a smooth roller shutter into ±2
+      //    swings and punches holes through the paint at random. Measured
+      //    against local brightness, a mortar joint reads ≈ −1.5, a shutter's
+      //    shallow groove ≈ −0.7, and sensor noise ≈ −0.05 and is ignored.
+      //    Taken from the denoised luminance for the same reason.
+      const shade = (lumFine[i] - Lloc) / Math.max(Lloc * 0.17, 6);
+      a *= 1 - o.wear * 0.9 * (1 - smoothstep(-1.5, -0.15, shade));
       //    Plus slow variation in how much paint landed where.
       a *= 0.8 + 0.34 * patch(kx, ky);
       //    …and a fine dither, strongest where coverage is already thin.
-      a *= 1 - 0.5 * (1 - a) * speck(kx, ky);
+      a *= 1 - 0.3 * (1 - a) * speck(kx, ky);
       a *= o.opacity;
       if (a < 0.004) continue;
 
@@ -201,10 +232,17 @@ export function paintOnPhoto(photo, art, surface, options = {}) {
       let r = wc[wi] * inv, g = wc[wi + 1] * inv, b = wc[wi + 2] * inv;
 
       //    Texture through the paint: the wall's fine detail modulates it, so
-      //    mortar, bumps and grime keep reading under the colour.
-      const mod = clamp(1 + o.texture * ((L - Lb) / Math.max(Lb, 26)), 0.35, 1.9);
+      //    mortar, bumps and grime keep reading under the colour. Deliberately
+      //    taken from the *raw* luminance, noise and all — that carries the
+      //    photograph's own grain onto the paint, perfectly correlated with the
+      //    surrounding pixels in a way added noise can never be.
+      //    Through a soft knee, not a hard clamp: mortar (≈20% modulation)
+      //    passes almost linearly, while anything much stronger saturates.
+      //    Opaque paint hides structure; it does not hide grain.
+      const KNEE = 0.26;
+      const mod = 1 + o.texture * KNEE * Math.tanh((L - Lloc) / Math.max(Lloc, 26) / KNEE);
       //    Exposure: paint is lit by whatever is lighting this bit of wall.
-      const f = mod * clamp(Lb / 168, 0.4, 1.3);
+      const f = mod * clamp(lumShade[i] / 168, 0.4, 1.3);
       r *= f * (1 + o.tint * (illum[0] - 1));
       g *= f * (1 + o.tint * (illum[1] - 1));
       b *= f * (1 + o.tint * (illum[2] - 1));
@@ -215,9 +253,10 @@ export function paintOnPhoto(photo, art, surface, options = {}) {
       g = grey + (g - grey) * o.desaturate;
       b = grey + (b - grey) * o.desaturate;
 
-      // 4. Composite, then match the photograph's own grain — clean paint over
-      //    noisy brick separates out immediately to the eye.
-      const nz = (speck(kx, ky) - 0.5) * 2 * sigma * a;
+      // 4. Composite, with a little extra grain for the flat fills where the
+      //    texture pass clamps out. Clean paint over noisy brick separates
+      //    immediately to the eye.
+      const nz = (speck(kx, ky) - 0.5) * sigma * a;
       const j = i * 4;
       data[j] = clamp(r * a + data[j] * (1 - a) + nz, 0, 255);
       data[j + 1] = clamp(g * a + data[j + 1] * (1 - a) + nz, 0, 255);

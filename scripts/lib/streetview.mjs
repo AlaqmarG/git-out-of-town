@@ -28,7 +28,7 @@ let warned = false;
  */
 export async function fetchStreetView(
   lat, lng, heading,
-  { width = 640, height = 480, pitch = 0, fov = 80 } = {},
+  { width = 640, height = 480, pitch = 0, fov = 80, officialOnly = true } = {},
 ) {
   if (!KEY) return null;
 
@@ -55,6 +55,12 @@ export async function fetchStreetView(
       }
       return null;
     }
+
+    // User-contributed photospheres are indexed at the same coordinates as the
+    // road-level car imagery, and some of them are shot *indoors*. Painting a
+    // throw-up on a cafe table is worse than not painting at all, and the
+    // copyright line is the cheapest way to tell the two apart.
+    if (officialOnly && !String(meta.copyright ?? "").includes("Google")) return null;
 
     const res = await fetch(
       `${IMG}?size=${width}x${height}&location=${loc}&heading=${Math.round(heading)}&pitch=${pitch}&fov=${fov}&key=${KEY}`,

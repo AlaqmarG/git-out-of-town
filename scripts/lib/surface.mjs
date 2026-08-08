@@ -67,13 +67,28 @@ function skyMask(img, mag) {
   return sky;
 }
 
-/** Foliage: green-dominant. High-energy and never a surface anyone paints. */
+/**
+ * Vegetation — foliage, hedges, and above all *grass*, which is the single most
+ * dangerous false positive this module has. A lawn is flat, evenly textured and
+ * sits below the horizon, so it scores like a beautiful wall and produces a
+ * throw-up floating in the middle of a park.
+ *
+ * A green-dominant test misses it: dry late-season grass is olive, with red and
+ * green near equal. Testing hue instead catches the whole yellow-green through
+ * cyan-green band, which no masonry occupies.
+ */
 function vegMask(img) {
   const { data } = img;
   const veg = new Uint8Array(img.width * img.height);
   for (let p = 0; p < veg.length; p++) {
     const r = data[p * 4], g = data[p * 4 + 1], b = data[p * 4 + 2];
-    if (g > r + 5 && g > b + 5) veg[p] = 1;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    if (d < mx * 0.13 || mx < 24) continue; // grey: masonry, tarmac, concrete
+    let hue;
+    if (mx === r) hue = 60 * (((g - b) / d + 6) % 6);
+    else if (mx === g) hue = 60 * ((b - r) / d + 2);
+    else hue = 60 * ((r - g) / d + 4);
+    if (hue >= 46 && hue <= 178) veg[p] = 1;
   }
   return veg;
 }
@@ -109,15 +124,25 @@ export function surfaceModel(img, box) {
     mad.push(dev[dev.length >> 1]);
   }
   const tol = med.map((_, c) => 2.4 * mad[c] + 14);
-  return {
-    med,
-    mad,
-    member(i) {
-      let d = 0;
-      for (let c = 0; c < 3; c++) d = Math.max(d, Math.abs(data[i * 4 + c] - med[c]) / tol[c]);
-      return 1 - smoothstep(1.0, 2.3, d);
-    },
+  const member = (i) => {
+    let d = 0;
+    for (let c = 0; c < 3; c++) d = Math.max(d, Math.abs(data[i * 4 + c] - med[c]) / tol[c]);
+    return 1 - smoothstep(1.0, 2.3, d);
   };
+
+  // How well the model actually describes the box. A plain brick wall scores
+  // near 1; a box straddling brick, plywood and window reveals scores far
+  // lower, and its verdicts should not be trusted as hard evidence of an
+  // occluder. The compositor scales the mask's authority by this.
+  let inliers = 0, total = 0;
+  for (let y = box[1]; y < box[3]; y += 3) {
+    for (let x = box[0]; x < box[2]; x += 3) {
+      total++;
+      if (member(y * w + x) > 0.5) inliers++;
+    }
+  }
+
+  return { med, mad, member, homogeneity: total ? inliers / total : 0 };
 }
 
 // --- cell scoring -----------------------------------------------------------
@@ -209,7 +234,7 @@ function scoreCells(img, fields) {
       // never a surface. Every real material has some grain at this scale.
       q *= smoothstep(2.5, 7, meanMag);
       q *= 1 - smoothstep(0.02, 0.22, sSky / n);
-      q *= 1 - smoothstep(0.05, 0.42, sVeg / n);
+      q *= 1 - smoothstep(0.03, 0.20, sVeg / n);
       q *= smoothstep(28, 62, meanLum) * (1 - smoothstep(232, 251, meanLum));
 
       const y0 = cy * CELL;
@@ -219,7 +244,7 @@ function scoreCells(img, fields) {
       // lines anywhere nearby is the signature — dock it hard.
       const groundish =
         smoothstep(horizon + 15, horizon + 75, y0) *
-        (1 - smoothstep(0.16, 0.38, sat)) *
+        (1 - smoothstep(0.28, 0.5, sat)) *
         (1 - smoothstep(0.012, 0.06, sVert / n));
 
       wall[cy * gw + cx] =
@@ -259,7 +284,7 @@ const rectSum = (I, gw, x0, y0, x1, y1) =>
 function bestRect(field, gw, gh, w, h, kind, aspect) {
   const I = integral(field, gw, gh);
   const bad = new Float32Array(field.length);
-  for (let i = 0; i < field.length; i++) bad[i] = field[i] < 0.35 ? 1 : 0;
+  for (let i = 0; i < field.length; i++) bad[i] = field[i] < 0.38 ? 1 : 0;
   const Ibad = integral(bad, gw, gh);
 
   let best = null;
@@ -276,6 +301,8 @@ function bestRect(field, gw, gh, w, h, kind, aspect) {
       for (let y = 0; y + ch <= gh; y += 2) {
         for (let x = 0; x + cw <= gw; x += 2) {
           const cells = cw * ch;
+          // A box that averages well can still straddle three window reveals.
+          // Cap the share of outright bad cells, not just the mean.
           if (rectSum(Ibad, gw, x, y, x + cw, y + ch) / cells > 0.1) continue;
           const meanQ = rectSum(I, gw, x, y, x + cw, y + ch) / cells;
           if (meanQ < 0.42) continue;
@@ -545,7 +572,9 @@ function quadFromBox(plane, box, w, h, rand) {
  * a treed street, a car park, a wall of glass — and the caller should try
  * another heading rather than paint something silly.
  */
-export function findSurface(img, { fov = 80, prefer = "auto", rand = Math.random } = {}) {
+export function findSurface(img, {
+  fov = 80, prefer = "auto", rand = Math.random, allowGround = true,
+} = {}) {
   const nominalAspect = 2.2; // only shapes the candidate boxes; the quad measures its own
   const { width: w, height: h } = img;
   const f = w / 2 / Math.tan((fov * Math.PI) / 360);
@@ -566,17 +595,19 @@ export function findSurface(img, { fov = 80, prefer = "auto", rand = Math.random
   };
 
   const cells = scoreCells(img, fields);
+  const kinds = prefer === "auto" ? ["wall", "ground"] : [prefer];
   const options = [];
-  for (const kind of prefer === "auto" ? ["wall", "ground"] : [prefer]) {
+  for (const kind of kinds) {
+    if (kind === "ground" && !allowGround) continue;
     const rect = bestRect(cells[kind], cells.gw, cells.gh, w, h, kind, nominalAspect);
-    if (rect) options.push({ kind, ...rect });
+    if (!rect) continue;
+    // Tarmac is a genuinely poor canvas: it is coarse, it is walked and driven
+    // on, and a throw-up in the middle of a road is not a thing that happens.
+    // Take it only when there is no wall at all and the patch is a good one.
+    if (kind === "ground" && (options.length || rect.meanQ < 0.62)) continue;
+    options.push({ kind, ...rect });
   }
   if (!options.length) return null;
-
-  // Walls read better than ground at almost any angle, and are where graffiti
-  // actually goes; only fall to the ground when it is much the stronger find.
-  const bias = (o) => o.score * (o.kind === "wall" ? 2.0 : 1);
-  options.sort((a, b) => bias(b) - bias(a));
 
   for (const opt of options) {
     const model = surfaceModel(img, opt.box);

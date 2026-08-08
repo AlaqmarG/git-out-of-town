@@ -145,9 +145,14 @@ export function makeArt(width = 420, canvasH = width, { word = randomWord(), dri
     }
   }
 
-  // 2. A second-colour keyline just outside the outline, as most pieces have.
-  for (const s of shifted) {
-    drawPolyline(rgba, width, h, s, outline * 1.14, ar, ag, ab, 0.95);
+  // 2. A second-colour keyline just outside the outline. Only on some pieces,
+  //    and dimmed: a full-brightness contrasting rim around every letter is
+  //    what makes generated graffiti read as clip art rather than paint.
+  const keyline = R.next() < 0.55;
+  if (keyline) {
+    for (const s of shifted) {
+      drawPolyline(rgba, width, h, s, outline * 1.14, ar * 0.72, ag * 0.72, ab * 0.72, 0.95);
+    }
   }
 
   // 3. Hard black outline.

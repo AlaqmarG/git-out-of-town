@@ -2,6 +2,11 @@
 /**
  * Seeds placeholder graffiti around Stackt Market so the map has something to render.
  *
+ * Each piece is a real Street View still with the artwork composited into it in
+ * perspective — see scripts/lib/README.md. The transparent PNG still goes up as
+ * `image`, because the AR anchor and the bare marker need it, but the scene is
+ * now the finished picture rather than a backdrop for a CSS overlay.
+ *
  *   npm run seed                                  # 25 pieces around Toronto, localhost
  *   SEED_URL=https://… SEED_COUNT=40 npm run seed
  *
@@ -12,8 +17,8 @@
  *   DELETE FROM pieces WHERE session_id LIKE 'seed-%';
  */
 
-import { encodePng, makeArt, makeScene } from "./lib/art.mjs";
-import { fetchStreetView, hasKey } from "./lib/streetview.mjs";
+import { paintGeneratedWall, paintStreetView } from "./lib/graffiti.mjs";
+import { hasKey } from "./lib/streetview.mjs";
 
 const BASE = (process.env.SEED_URL || process.env.SITE_URL || "http://localhost:3000").replace(/\/$/, "");
 const COUNT = Number(process.env.SEED_COUNT || 25);
@@ -24,8 +29,6 @@ const COUNT = Number(process.env.SEED_COUNT || 25);
 const CENTRE = { lat: 43.6413, lng: -79.4042 };
 const SPREAD = 0.0032; // ~350m
 
-// Weighted toward walls, which is where graffiti actually goes.
-const SURFACES = ["wall", "wall", "wall", "wall", "wall", "door", "floor", "window"];
 
 // --- seeding ----------------------------------------------------------------
 
@@ -35,22 +38,35 @@ console.log(hasKey ? "Street View: key present\n" : "Street View: no key, using 
 let ok = 0;
 const failures = [];
 
-for (let i = 0; i < COUNT; i++) {
-  const art = makeArt();
-  const lat = CENTRE.lat + (Math.random() - 0.5) * SPREAD;
-  const lng = CENTRE.lng + (Math.random() - 0.5) * SPREAD * 1.6;
-  const heading = Math.random() * 360;
+// Only a minority of spots have a paintable wall in any direction — most are
+// trees, parked cars or glass. Allow several attempts per piece, each at fresh
+// coordinates, rather than lowering the bar for what counts as a wall.
+const MAX_ATTEMPTS = COUNT * 8;
 
-  // Prefer a real photo of that spot facing the painted direction. The art is
-  // NOT burned in — the web overlays it, which keeps it crisp and means we never
-  // have to decode a JPEG here.
-  const sv = await fetchStreetView(lat, lng, heading);
-  const scene = sv ?? encodePng(640, 480, makeScene(640, 480).rgba);
-  const sceneType = sv ? "image/jpeg" : "image/png";
+let attempts = 0;
+let skipped = 0;
+
+for (let i = 0; i < COUNT; i++) {
+  let piece = null;
+  let lat, lng, heading;
+
+  while (!piece && attempts < MAX_ATTEMPTS) {
+    attempts++;
+    lat = CENTRE.lat + (Math.random() - 0.5) * SPREAD;
+    lng = CENTRE.lng + (Math.random() - 0.5) * SPREAD * 1.6;
+    heading = Math.random() * 360;
+    piece = await paintStreetView(lat, lng, heading);
+    if (!piece) skipped++;
+  }
+  // Ran out of budget looking for real walls: fall back to a generated one.
+  if (!piece) piece = paintGeneratedWall();
+
+  const { art, jpeg } = piece;
+  if (piece.heading !== undefined) heading = piece.heading;
 
   const fd = new FormData();
   fd.append("image", new Blob([art.png], { type: "image/png" }), "art.png");
-  fd.append("scene", new Blob([scene], { type: sceneType }), sv ? "scene.jpg" : "scene.png");
+  fd.append("scene", new Blob([jpeg], { type: "image/jpeg" }), "scene.jpg");
   fd.append(
     "meta",
     JSON.stringify({
@@ -63,9 +79,7 @@ for (let i = 0; i < COUNT; i++) {
       strokeCount: 2 + Math.floor(Math.random() * 20),
       durationMs: 3000 + Math.floor(Math.random() * 25000),
       client: "web",
-      // Drives the perspective projection on the web (lib/surface.ts). Mostly
-      // walls, as real graffiti is.
-      surfaceType: SURFACES[Math.floor(Math.random() * SURFACES.length)],
+      surfaceType: piece.surfaceType,
     }),
   );
 
@@ -88,7 +102,7 @@ for (let i = 0; i < COUNT; i++) {
   }
 }
 
-console.log(`\n\n${ok}/${COUNT} seeded.`);
+console.log(`\n\n${ok}/${COUNT} seeded (${skipped} spots skipped for want of a wall).`);
 if (failures.length) {
   console.error(`${failures.length} failed. First: ${failures[0]}`);
   process.exit(1);

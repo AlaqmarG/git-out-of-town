@@ -1,6 +1,5 @@
 import { type Piece, uploadUrl } from "@got/shared";
 import type { LayerSpecification } from "maplibre-gl";
-import { projectionCss } from "@/lib/surface";
 import { palette } from "@/lib/theme";
 
 /**
@@ -72,8 +71,10 @@ export function createArtElement(piece: Piece, index = 0): HTMLElement {
   el.style.setProperty("--tilt", `${((piece.id * 37) % 15) - 7}deg`);
 
   if (piece.sceneImagePath) {
-    // The photo of the actual place is the marker. The artwork is painted into
-    // it in perspective, so the map shows what is really on that wall.
+    // The photo of the actual place is the marker, and the paint is already
+    // burned into it in perspective by scripts/lib/composite.mjs. Nothing is
+    // overlaid on top: that used to be a CSS 3D transform faking the angle,
+    // and it read as a sticker on a photo rather than paint on a wall.
     const scene = document.createElement("img");
     scene.className = "got-marker-scene";
     scene.src = uploadUrl(piece.sceneImagePath);
@@ -83,17 +84,17 @@ export function createArtElement(piece: Piece, index = 0): HTMLElement {
     scene.draggable = false;
     el.appendChild(scene);
     el.classList.add("has-scene");
+  } else {
+    // No photo of the place, so show the artwork plainly instead.
+    const art = document.createElement("img");
+    art.className = "got-marker-art bare";
+    art.src = uploadUrl(piece.finalImagePath ?? piece.rawImagePath);
+    art.alt = "";
+    art.loading = "lazy";
+    art.decoding = "async";
+    art.draggable = false;
+    el.appendChild(art);
   }
-
-  const art = document.createElement("img");
-  art.className = piece.sceneImagePath ? "got-marker-art" : "got-marker-art bare";
-  art.src = uploadUrl(piece.finalImagePath ?? piece.rawImagePath);
-  art.alt = "";
-  art.loading = "lazy";
-  art.decoding = "async";
-  art.draggable = false;
-  if (piece.sceneImagePath) art.setAttribute("style", projectionCss(piece));
-  el.appendChild(art);
 
   return el;
 }

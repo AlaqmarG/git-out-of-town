@@ -102,6 +102,38 @@ export function sobel(lum, w, h) {
   return { gx, gy, mag };
 }
 
+function rankFilter(src, w, h, r, pick) {
+  const tmp = new Float32Array(w * h);
+  const out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let v = src[y * w + x];
+      for (let d = -r; d <= r; d++) v = pick(v, src[y * w + clamp(x + d, 0, w - 1)]);
+      tmp[y * w + x] = v;
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let v = tmp[y * w + x];
+      for (let d = -r; d <= r; d++) v = pick(v, tmp[clamp(y + d, 0, h - 1) * w + x]);
+      out[y * w + x] = v;
+    }
+  }
+  return out;
+}
+
+/**
+ * Morphological opening: erode then dilate.
+ *
+ * Removes anything thinner than 2r while leaving larger blobs their original
+ * size. Used to tell a lamp post standing in front of a wall from a window
+ * frame painted on it — both are colour outliers, only one is an occluder.
+ */
+export function open(src, w, h, r) {
+  const eroded = rankFilter(src, w, h, r, Math.min);
+  return rankFilter(eroded, w, h, r, Math.max);
+}
+
 /** Bilinear sample of an RGBA buffer. Writes [r,g,b,a] into `out`; outside is transparent. */
 export function sampleRgba(buf, w, h, x, y, out) {
   const x0 = Math.floor(x), y0 = Math.floor(y);
