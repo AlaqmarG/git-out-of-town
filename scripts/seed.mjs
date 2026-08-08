@@ -105,6 +105,9 @@ for (let i = 0; i < COUNT; i++) {
       continue;
     }
     if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text()}`);
+    // Same reason as the 429 path: the 201 body is never looked at, but leaving
+    // it unread pins the connection in undici's pool.
+    await res.arrayBuffer();
     ok++;
     process.stdout.write(".");
   } catch (err) {
