@@ -24,6 +24,7 @@ jobs:
       # generates global types (LayoutProps, PageProps) that app code depends on.
       - run: npm run typecheck
       - run: npm run lint
+      - run: npm test
       - run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: 1
@@ -79,6 +80,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: deploy
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Wait for the site to come back healthy
         env:
           SITE_URL: ${{ secrets.SITE_URL }}
@@ -86,11 +91,18 @@ jobs:
           if [ -z "$SITE_URL" ]; then
             echo "::notice::SITE_URL not set — skipping smoke test."; exit 0
           fi
+          # Traefik takes a few seconds to rediscover a recreated container.
           for i in $(seq 1 30); do
-            code=$(curl -sS -o /tmp/health.json -w '%{http_code}' "${SITE_URL%/}/api/health" || echo 000)
-            if [ "$code" = "200" ]; then
-              echo "healthy after ${i} attempt(s)"; cat /tmp/health.json; exit 0
-            fi
+            code=$(curl -sS -o /dev/null -w '%{http_code}' "${SITE_URL%/}/api/health" || echo 000)
+            [ "$code" = "200" ] && { echo "healthy after ${i} attempt(s)"; break; }
             echo "attempt $i: HTTP $code — retrying in 10s"; sleep 10
           done
-          echo "::error::Site did not become healthy within 5 minutes"; exit 1
+      - name: Functional smoke test
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+        run: |
+          if [ -z "$SITE_URL" ]; then
+            echo "::notice::SITE_URL not set — skipping."; exit 0
+          fi
+          # Read-only: no admin delete endpoint yet (#17), so CI must not write.
+          npm run test:smoke
