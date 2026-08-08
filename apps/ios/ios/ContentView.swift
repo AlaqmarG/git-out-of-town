@@ -243,7 +243,8 @@ struct ContentView: View {
 
     private func loadLoop() async {
         while !Task.isCancelled {
-            if let loc = LocationService.shared.location {
+            if let loc = LocationService.shared.location,
+               loc.horizontalAccuracy >= 0, loc.horizontalAccuracy < 50 {
                 do {
                     let pieces = try await APIClient.listPieces(
                         lat: loc.coordinate.latitude,
@@ -259,6 +260,7 @@ struct ContentView: View {
                                 lat: $0.lat,
                                 lng: $0.lng,
                                 altitudeM: $0.altitudeM,
+                                surfaceType: $0.surfaceType,
                                 placementTransform: $0.placementTransform
                             )
                         }
