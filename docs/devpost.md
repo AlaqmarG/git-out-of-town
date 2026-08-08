@@ -1,104 +1,135 @@
-# Devpost draft — Git Out of Town
+# Devpost draft: Git Out of Town
 
-Cover image: [`assets/brand/devpost-cover-1200.png`](assets/brand/devpost-cover-1200.png) (1200×675).
-Hand-authored in the app's own palette — not model output, per the rubric's mark-down on generic AI visuals.
+Cover image: [`assets/brand/devpost-cover-1200.png`](assets/brand/devpost-cover-1200.png) (1200x675).
+Written by hand in HTML/SVG using the colours in `lib/theme.ts`, not generated.
+Source: [`assets/brand/cover.html`](assets/brand/cover.html). Re-render with:
 
-**Tracks:** Main · Best Use of Reve · TECHNATION Data Intelligence
-**Links:** https://gitoutoftown.129-153-49-190.sslip.io · repo
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu \
+  --hide-scrollbars --force-device-scale-factor=2 --window-size=1200,675 \
+  --screenshot=cover.png file://$PWD/docs/assets/brand/cover.html
+```
+
+**Tracks:** Main, Best Use of Reve, TECHNATION Data Intelligence
+**Links:** https://gitoutoftown.129-153-49-190.sslip.io and the repo
 
 ---
 
 ## Inspiration
 
-Graffiti is the original location-based social network. A wall means something because it's *that*
-wall — you have to go there. But real walls get buffed, and cities are hostile to the people who
-paint them.
+We wanted to tag a city without wrecking it.
 
-We wanted the permanence without the vandalism: a city you can actually mark, where your tag
-outlives you and a stranger on the other side of the world can walk up to it.
+Graffiti works because of where it is. You have to go to the wall to see it. But walls get painted
+over, and the people who paint them get fined. We wanted a version where your tag stays put, and
+someone on the other side of the world can still walk up to it.
 
 ## What it does
 
-Hold up your phone. Point it at a real wall. Finger-paint. Tap to place.
+Point your phone at a wall. Draw with your finger. Tap to place it.
 
-The piece anchors to that exact spot — GPS, compass bearing, and an ARKit raycast onto the real
-surface you aimed at — and it's live on a public world map seconds later. No install, no account:
-anyone opens the link and explores what the world painted. Zoom out and you see density; zoom in and
-you see the actual wall, photographed at the moment of painting, with the art burned into it.
+The drawing sticks to that spot. We save the GPS position, the compass bearing, and where the
+ARKit raycast landed on the real surface. A few seconds later it is on a public map. No app to
+install, no login. Anyone can open the link and look around.
 
-**The transformation:** a crude finger-scribble → a polished piece in our house style → welded to a
-real place, a real direction, and a real photograph of the surface it lives on.
+Zoom out and you see clusters. Zoom in and you see the wall itself, photographed while it was
+being painted.
 
-`/data` shows the artifact reasoning about itself: where contributors are painting from, which
-surfaces the world chooses (wall vs. floor vs. ceiling, straight off LiDAR mesh classification),
-and the map ticking up live as people paint.
+The transformation: a rough finger drawing goes in, a finished piece in our house style comes out,
+pinned to a real place and a real direction, with a photo of the actual surface.
+
+The `/data` page shows how the map is being used. Where people paint from, which surfaces they
+pick (wall, floor, ceiling, read straight off LiDAR), and the count going up live.
 
 ## How we built it
 
-Two clients, one contract.
+Two apps, one shared API contract.
 
-- **iOS** — SwiftUI + ARKit. You draw in 2D and we place it as a textured quad at the raycast hit,
-  not as paint in 3D space. `ARMeshClassification` at the hit point tells us what you painted on.
-  GPS + compass bearing is the anchoring floor; `ARGeoAnchor` is an upgrade we switch on only when
-  the venue supports it.
-- **Web** — Next.js 16 and MapLibre GL. The basemap is hand-authored, layer by layer, over free
-  OpenFreeMap vector tiles — no stock style, no map API key. Markers render in three zoom tiers:
-  clustered density glow → pins tinted with each piece's own dominant colour → the framed artwork
-  itself.
-- **Data** — Postgres. `LISTEN/NOTIFY` on insert feeds an SSE stream, so a piece painted on a phone
-  lands on every open map without a refresh.
-- **Infra** — Docker on an ARM64 OCI box behind shared Traefik, deployed by Komodo from `main`.
-  nginx serves uploads directly; image bytes never pass through Node, because a single pan of the
-  map pulls hundreds at once.
-- **Reve** — the visual identity. Every colour in the app comes from one palette file, so the art
-  direction propagates to the map, the UI and the markers at once.
+**iOS.** SwiftUI, ARKit and SceneKit. You draw in 2D with PencilKit. We put that drawing on a flat
+quad where your raycast hits, rather than trying to paint in 3D. `ARMeshClassification` tells us
+what you painted on. We take a camera snapshot with the art already on it, and that photo is what
+the website shows. GPS and compass are the baseline. `ARGeoAnchor` with a real altitude puts the
+piece back when you return to it.
+
+**Web.** Next.js 16 and MapLibre. We wrote the map style by hand, layer by layer, on free
+OpenFreeMap tiles. No stock style and no map key. Markers change with zoom: clusters when you are
+far out, coloured dots closer in, then the art itself.
+
+**Data.** Postgres. `LISTEN/NOTIFY` on insert feeds an SSE stream, so a piece painted on a phone
+appears on every open map without a refresh.
+
+**Infra.** Self hosted. Docker, TLS, deploys from `main` on push. Art files come from a separate
+static container so images never pass through Node. One pan of the map pulls hundreds of them.
+
+**Reve.** The visual identity. Every colour lives in one file, so changing it updates the map, the
+UI and the markers together.
 
 ## Challenges we ran into
 
-- **AR's hard problem isn't rendering, it's agreeing on *where*.** `ARGeoTracking` isn't available
-  everywhere, and judging is indoors where GPS is bad. We built the GPS + bearing fallback *first*
-  and treated precision as the upgrade, not the foundation.
-- **`maplibre-gl.css` sets `position: relative` on whatever element you hand the map**, silently
-  overriding a Tailwind `absolute` and collapsing the map to zero height. No error, no map.
-- **Transparent art on a dark basemap reads as spilled paint.** Framing each piece — backing card,
-  border, a tilt seeded off its ID so a wall of them looks hand-placed — was what made them read as
-  objects someone left behind.
-- **SSE on a pooled Postgres connection silently stops listening** when the pool recycles it. It
-  needs its own dedicated client.
-- **26 hours, two people, two clients.** We made the rule that web could never be blocked on iOS —
-  so if ARKit ate the night, there was still a live artifact.
+Placing something is easy. Agreeing on where it is turned out to be the hard part.
+`ARGeoTracking` is not available everywhere, and judging happens indoors where GPS is poor. So we
+built the GPS and compass version first and treated the precise version as a bonus.
+
+`maplibre-gl.css` sets `position: relative` on whatever element you hand the map. That quietly beat
+our Tailwind class and collapsed the map to zero height. No error, no map.
+
+Transparent art on a dark map looked like spilled paint. Putting each piece in a small frame with a
+slight tilt fixed it. They read as objects someone left behind.
+
+SSE on a pooled Postgres connection stops listening when the pool recycles it. It needs its own
+client.
+
+26 hours, two people, two apps. We made a rule that the website could never wait on the iOS app.
 
 ## Accomplishments that we're proud of
 
-- It's **public and live**, not a laptop demo. You can open it right now and it has other people's
-  work in it.
-- The look is ours. Hand-authored basemap, one palette file, a marker system we designed — nothing
-  templated, nothing straight out of a model.
-- The AR path produces a dataset **no web-only project can**: what real surface, at what distance,
-  at what device pitch, each piece was painted on.
-- The map updates while you watch it. We can paint something mid-pitch and the judges' screen moves.
+It is live and public. You can open it right now and other people's work is already in it.
+
+The look is ours. A map style we wrote, one colour file, a marker system we designed.
+
+The AR side records things a web only project cannot: what surface, how far away, at what angle.
+
+The map updates while you watch it. We can paint something during the pitch and the judges see it
+show up.
 
 ## What we learned
 
-Anchoring is a product decision, not a technical one — the moment you accept "roughly here, facing
-that way," the whole thing becomes buildable in a night. We also learned that visual craft was
-scored, not decorative, and building a palette-first system early meant we could restyle the entire
-app by editing one file at 3 AM.
+How precise "here" needs to be was a product decision, not a technical one. Once we settled on
+"roughly this spot, facing that way", the rest got much easier.
+
+The visual work was scored, not decoration. Putting every colour in one file early meant we could
+restyle the whole app at 3am by editing one thing.
 
 ## What's next for Git Out of Town
 
-- `ARGeoAnchor` everywhere for centimetre-accurate placement that survives across sessions
-- Walls and crews — a shared surface that fills up, and the people who claim it
-- Time-lapse: scrub a wall's history and watch it get painted over
-- Android via WebXR, and a browser capture path so the barrier is a link, not an install
-- Moderation that scales past a delete button, because this is public UGC pinned to real addresses
+- Two phones at the same wall agreeing on a piece down to the centimetre
+- Walls and crews. A surface that fills up, and the people who claim it
+- Time lapse. Scrub back through a wall and watch it get covered
+- Android through WebXR, and a browser version so the barrier is a link instead of an install
+- Community moderation. This is public art on real streets, and the neighbourhood should get a say
 
 ---
 
 ## Tags
 
 ```
-augmented-reality, arkit, ios, swift, swiftui, realitykit, lidar, geolocation, maplibre,
+augmented-reality, arkit, ios, swift, swiftui, scenekit, lidar, geolocation, maplibre,
 mapping, nextjs, typescript, postgresql, server-sent-events, realtime, reve, generative-art,
 graffiti, street-art, community, docker, self-hosted, data-visualization, dashboard, geospatial
 ```
+
+---
+
+## Before the 1 PM submission
+
+The draft describes the project as pitched. Checked against `main` as of the iOS geo anchor merge:
+
+| Claim | State |
+|---|---|
+| AR paint, placement, scene photo | Done, on `main` (PencilKit, SceneKit, `ARGeoAnchor`) |
+| Public live map, three zoom levels | Done, on `main` |
+| Live updates without refresh | Done, `/api/stream` |
+| `/data` page, the whole TECHNATION claim | In flight, not on `main` |
+| Reve brand and the drawing to house style step | Not built. The palette is hand picked, not from Reve |
+
+Cut or soften any row that is still unfinished at 11 AM. If the palette changes again, re-render
+the cover so it still matches the app.
