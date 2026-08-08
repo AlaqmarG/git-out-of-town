@@ -7,8 +7,20 @@ Next.js 16 App Router. Frontend, API, and the `/data` dashboard.
 ```
 app/api/pieces/route.ts   POST + GET pieces
 app/api/health/route.ts   readiness probe
-lib/                      server-side building blocks
+components/MapCanvas.tsx  the map (client component)
+lib/                      server-side building blocks + map/theme
 ```
+
+## The map
+
+| File | Role |
+|---|---|
+| `lib/theme.ts` | **All colour lives here.** Swap these when the Reve art lands (#5/#6) and the map, UI and markers follow. Never hardcode a colour elsewhere. |
+| `lib/map-style.ts` | Hand-authored dark basemap over OpenFreeMap vector tiles (free, no API key). Not a stock style — a default basemap is what the rubric marks down. |
+| `components/MapCanvas.tsx` | Creates the map, fetches by bbox on `moveend` (latest-wins abort), empty state, error toast. Calls `onPiecesChange` — that is the hook #13 renders markers from. |
+
+`lib/map-style.test.ts` guards the traps: undeclared sources, unknown source-layers,
+legacy filter syntax, and layer ordering. Run it before touching the style.
 
 ## lib/
 

@@ -36,7 +36,12 @@ export const palette = {
   textMuted: "#8b8b98",
 } as const;
 
-export type Palette = typeof palette;
+/**
+ * The shape, not the literal values — `palette` is `as const`, so deriving the
+ * type directly would pin each key to its exact hex string and make overrides
+ * (tests, a future light theme) impossible.
+ */
+export type Palette = Record<keyof typeof palette, string>;
 
 /** Where the map opens before it knows anything about the user. */
 export const DEFAULT_VIEW = {
