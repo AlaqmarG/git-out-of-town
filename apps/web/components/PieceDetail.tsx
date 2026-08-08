@@ -1,9 +1,7 @@
 "use client";
 
 import { type Piece, uploadUrl } from "@got/shared";
-import type { CSSProperties } from "react";
 import { useEffect } from "react";
-import { projectionFor } from "@/lib/surface";
 import { palette } from "@/lib/theme";
 
 function when(iso: string): string {
@@ -38,7 +36,6 @@ export default function PieceDetail({
 
   if (!piece) return null;
 
-  const proj = projectionFor(piece);
   const hasScene = Boolean(piece.sceneImagePath);
   const art = piece.finalImagePath ?? piece.rawImagePath;
 
@@ -65,24 +62,17 @@ export default function PieceDetail({
             />
           )}
 
-          {/* Projected onto the surface rather than pasted flat — see lib/surface.ts. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={uploadUrl(art)}
-            alt=""
-            className="absolute inset-0 m-auto"
-            style={
-              hasScene
-                ? ({
-                    width: "58%",
-                    transform: proj.transform,
-                    mixBlendMode: proj.blend,
-                    opacity: proj.opacity,
-                    filter: "drop-shadow(0 6px 16px rgba(0,0,0,0.5))",
-                  } as CSSProperties)
-                : { width: "76%" }
-            }
-          />
+          {/* The scene photo already contains the art (it's the AR view snapshot),
+              so only overlay the art when there is no scene photo. */}
+          {!hasScene && (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={uploadUrl(art)}
+              alt=""
+              className="absolute inset-0 m-auto"
+              style={{ width: "76%" }}
+            />
+          )}
 
           <button
             type="button"
