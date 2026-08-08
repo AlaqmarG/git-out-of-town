@@ -15,6 +15,9 @@
  * "the data is real and current, not fabricated" is an explicit rubric line:
  *
  *   DELETE FROM pieces WHERE session_id LIKE 'seed-%';
+ *
+ * Rows written by this version are tagged `seed-baked-%`, so a run can be
+ * rolled back without touching an older batch — or real contributions.
  */
 
 import { paintGeneratedWall, paintStreetView } from "./lib/graffiti.mjs";
@@ -45,6 +48,7 @@ const MAX_ATTEMPTS = COUNT * 8;
 
 let attempts = 0;
 let skipped = 0;
+let throttled = 0;
 
 for (let i = 0; i < COUNT; i++) {
   let piece = null;
@@ -74,7 +78,7 @@ for (let i = 0; i < COUNT; i++) {
       lng,
       heading,
       kind: Math.random() > 0.4 ? "spray" : "sticker",
-      sessionId: `seed-${Date.now()}-${i}`,
+      sessionId: `seed-baked-${Date.now()}-${i}`,
       colors: art.colours,
       strokeCount: 2 + Math.floor(Math.random() * 20),
       durationMs: 3000 + Math.floor(Math.random() * 25000),
@@ -87,9 +91,16 @@ for (let i = 0; i < COUNT; i++) {
     const res = await fetch(`${BASE}/api/pieces`, { method: "POST", body: fd });
     if (res.status === 429) {
       // The API allows a burst then refills 1 per 6s. Wait it out rather than fail.
+      //
+      // Draining the body is not optional. An unread response body holds its
+      // connection open in undici's pool, and after a handful of un-drained 429s
+      // the pool is exhausted and every later fetch() hangs forever — the run
+      // dies silently on an unsettled top-level await, having seeded four rows.
+      await res.arrayBuffer();
       const wait = Number(res.headers.get("retry-after") || 7);
-      process.stdout.write(` (rate limited, ${wait}s)`);
+      process.stdout.write(`~`);
       await new Promise((r) => setTimeout(r, wait * 1000));
+      if (++throttled > COUNT * 4) throw new Error("rate limited too many times");
       i--;
       continue;
     }
