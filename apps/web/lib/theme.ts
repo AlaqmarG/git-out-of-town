@@ -1,39 +1,52 @@
 /**
  * Visual tokens — the single source of truth for colour.
  *
- * Contrast note: these are tuned to survive a projector. The first pass was
- * several steps darker and vanished entirely when not viewed on a good display —
- * the pitch is judged on a projected screen, so legibility wins over moodiness.
+ * Design intent
+ * -------------
+ * The artwork is loud and multicoloured, so the interface is almost monochrome:
+ * a cool, blue-shifted neutral ramp (concrete at night, not generic dashboard
+ * grey) with exactly one saturated accent. Anything competing with the graffiti
+ * for attention is wrong.
  *
- * The Reve-made brand art (#5/#6) does not exist yet. When it lands, replace the
- * values here and the whole app follows: map, UI, markers. Do not hardcode
- * colours anywhere else.
+ * Contrast is tuned to survive a projector. An earlier pass was several steps
+ * darker and vanished on anything but a good display — the pitch is judged on a
+ * projected screen, so legibility beats moodiness.
+ *
+ * Charts draw from SPRAY, the same pigments the artwork is painted with, so the
+ * data visualisation and the art read as one system.
  */
 
 export const palette = {
-  /** Page and map background. Near-black so the art is the only bright thing. */
-  ink: "#0b0b0d",
+  /** Page and map background. Blue-black rather than neutral black. */
+  ink: "#0a0b0f",
   /** Land mass. */
-  surface: "#17171c",
-  /** Water — darker than land, so coastlines read without a hard line. */
-  water: "#05060e",
-  park: "#131c15",
-  building: "#22222a",
-  roadMinor: "#30303a",
-  roadMajor: "#4d4d5c",
-  boundary: "#3a3a48",
+  surface: "#15171e",
+  /** Panels and cards that sit above the map. */
+  raised: "#1c1f28",
+  /** Hairlines and borders. */
+  line: "#272b36",
 
-  label: "#83838f",
-  labelBright: "#b4b4c2",
+  /** Water — darker than land, so coastlines read without a hard edge. */
+  water: "#05060d",
+  park: "#121a17",
+  building: "#232733",
+  roadMinor: "#31363f",
+  roadMajor: "#4e5462",
+  boundary: "#3a3f4c",
+
+  label: "#848b9c",
+  labelBright: "#b6bccb",
   /** Halo behind labels so they stay legible over any fill. */
-  labelHalo: "#08080a",
+  labelHalo: "#07080c",
 
-  /** Spray-can orange. The one saturated colour in the system. */
-  accent: "#ff4d2e",
-  accentDim: "#7a2417",
+  /** Spray-can red. The only saturated colour in the interface. */
+  accent: "#ff5230",
+  accentDim: "#7c2716",
+  /** For hovers and glows built from the accent. */
+  accentSoft: "rgba(255, 82, 48, 0.24)",
 
-  text: "#e8e8ec",
-  textMuted: "#8b8b98",
+  text: "#e9ecf4",
+  textMuted: "#8a90a0",
 } as const;
 
 /**
@@ -58,21 +71,6 @@ export const SPRAY = [
   "#a277ff", // violet
   "#9be855", // lime
   "#ff5fa8", // pink
-] as const;
-
-/**
- * The chart scale. Same hues as SPRAY, stepped down into the OKLCH lightness
- * band that survives a dark surface (L 0.48–0.67). Verified with the palette
- * validator: lightness band, chroma floor, CVD separation, normal-vision floor
- * and contrast all pass. Do not hand-edit these without re-running it.
- */
-export const CHART = [
-  "#eb3d19", // red
-  "#00a6bd", // cyan
-  "#c57900", // amber
-  "#8659de", // violet
-  "#63ac00", // lime
-  "#d63786", // pink
 ] as const;
 
 /** Sequential ramp for density and heat, cold to hot. */
