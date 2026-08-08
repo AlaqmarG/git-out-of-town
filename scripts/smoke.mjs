@@ -156,6 +156,28 @@ await check("rejects a malformed view body", () =>
     body: "{not json",
   }));
 
+console.log("\nmoderation");
+await check("admin listing requires the key", () =>
+  expectStatus("/api/admin/pieces", 401));
+
+await check("admin delete requires the key", () =>
+  expectStatus("/api/admin/pieces", 401, {
+    method: "DELETE",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: 1 }),
+  }));
+
+await check("a wrong key is rejected", () =>
+  expectStatus("/api/admin/pieces", 401, {
+    headers: { "x-admin-secret": "definitely-not-the-key" },
+  }));
+
+await check("/admin renders", async () => {
+  const res = await expectStatus("/admin", 200);
+  const html = await res.text();
+  assert(html.includes("Moderation"), "/admin did not render the moderation page");
+});
+
 console.log("\nquery validation");
 await check("rejects a malformed bbox", () => expectStatus("/api/pieces?bbox=1,2,3", 400));
 await check("rejects a bbox with a blank part", () => expectStatus("/api/pieces?bbox=1,,3,4", 400));
