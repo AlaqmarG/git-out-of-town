@@ -42,13 +42,14 @@ PHOTOS = [
     ("1324-waterworks", "Waterworks Food Hall / The Well", "Sat Aug 8 · 1:24 PM · new spot", True),
     ("1425-scadding", "Scadding Court Community Ctr", "Sat Aug 8 · 2:25 PM · new spot", False),
     ("1526-lillian", "TPL Lillian H. Smith Branch", "Sat Aug 8 · 3:26 PM · new spot", False),
+    ("1631-fortyork", "TPL Fort York Branch", "Sat Aug 8 · 4:31 PM · new spot", True),
+    ("1739-studio", "The Studio", "Sat Aug 8 · 5:39 PM · off-list", False),
 ]
 
 PENDING = [
-    ("4-26-fortyork", "TPL Fort York Branch", "Sat Aug 8 · 4:26 PM · unlogged"),
-    ("5-26-botanic", "Botanic Coffee and Caphe", "Sat Aug 8 · 5:26 PM · unlogged"),
-    ("6-26-icha", "ICHA Tea / Project Seoul", "Sat Aug 8 · 6:26 PM · unlogged"),
-    ("7-26-varda", "Varda", "Sat Aug 8 · 7:26 PM · unlogged"),
+    ("6-39-botanic", "Botanic Coffee and Caphe", "Sat Aug 8 · 6:39 PM · closes 7 PM"),
+    ("7-39-icha", "ICHA Tea / Project Seoul", "Sat Aug 8 · 7:39 PM · unlogged"),
+    ("8-39-varda", "Varda", "Sat Aug 8 · 8:39 PM · unlogged"),
 ]
 
 
@@ -182,7 +183,7 @@ def build(slug, title, meta, photo=None, contain=False):
     caption_block(d, PAD + PHOTO_H + 9 * SCALE, title, meta, ink, accent)
 
     if photo:
-        b = badge("+2 pts")
+        b = badge("+2 pts" if "new spot" in meta else "+1 pt")
         card.alpha_composite(b, (CARD_W - PAD - BADGE_D + 6 * SCALE, PAD - 6 * SCALE))
 
     mask = stamp_mask(CARD_W, CARD_H)
