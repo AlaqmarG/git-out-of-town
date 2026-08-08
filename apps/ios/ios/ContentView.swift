@@ -1,3 +1,4 @@
+import CoreLocation
 import PencilKit
 import SwiftUI
 
@@ -17,6 +18,10 @@ struct ContentView: View {
     @State private var drawingImage: UIImage?
     @State private var drawingPNG: Data?
 
+    @State private var sessionId: String
+    @State private var remotePieces: [RemotePiece] = []
+    @State private var ownPieceIDs: Set<Int> = []
+
     private let palette: [UIColor] = [
         UIColor(red: 1.00, green: 0.84, blue: 0.00, alpha: 1), // yellow
         UIColor(red: 1.00, green: 0.00, blue: 0.50, alpha: 1), // pink
@@ -25,6 +30,17 @@ struct ContentView: View {
         UIColor(red: 1.00, green: 1.00, blue: 1.00, alpha: 1), // white
     ]
 
+    init() {
+        let key = "got.sessionId"
+        if let existing = UserDefaults.standard.string(forKey: key), existing.count >= 8 {
+            _sessionId = State(initialValue: existing)
+        } else {
+            let id = "ios-" + UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(24).description
+            UserDefaults.standard.set(id, forKey: key)
+            _sessionId = State(initialValue: id)
+        }
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             ARPaintView(
@@ -32,9 +48,13 @@ struct ContentView: View {
                 clearToken: clearToken,
                 showDebug: showDebug,
                 drawingImage: drawingImage,
+                remotePieces: remotePieces,
                 onPlace: { classification in
                     piecesPlaced += 1
                     lastSurface = classification
+                },
+                onPiecePlaced: { snapshot in
+                    upload(snapshot)
                 },
                 onStatus: { status = $0 },
                 onHint: { hint = $0 }
@@ -116,6 +136,7 @@ struct ContentView: View {
                         clearToken += 1
                         piecesPlaced = 0
                         lastSurface = "none yet"
+                        remotePieces = []
                     } label: {
                         Image(systemName: "trash")
                             .frame(width: 44, height: 34)
@@ -160,6 +181,10 @@ struct ContentView: View {
                     .navigationBarTitleDisplayMode(.inline)
             }
         }
+        .task {
+            LocationService.shared.start()
+            await loadLoop()
+        }
         .onChange(of: hint) { _, newValue in
             guard newValue != nil else { return }
             Task {
@@ -168,6 +193,85 @@ struct ContentView: View {
             }
         }
     }
+
+    // MARK: - Save
+
+    private func upload(_ snapshot: PlacementSnapshot) {
+        let imageData = drawingPNG ?? coloredSquarePNG(color: selectedColor)
+        let meta = MetaDTO(
+            lat: snapshot.lat,
+            lng: snapshot.lng,
+            heading: snapshot.heading,
+            accuracyM: snapshot.accuracyM,
+            kind: "spray",
+            sessionId: sessionId,
+            client: "ios",
+            surfaceType: snapshot.surfaceType,
+            distanceM: snapshot.distanceM,
+            devicePitch: snapshot.devicePitch,
+            usedGeoAnchor: snapshot.usedGeoAnchor,
+            hasLidar: snapshot.hasLidar,
+            altitudeM: snapshot.altitudeM,
+            placementTransform: snapshot.placementTransform
+        )
+        Task {
+            do {
+                let piece = try await APIClient.uploadPiece(
+                    imagePNG: imageData,
+                    sceneData: snapshot.sceneData,
+                    meta: meta
+                )
+                await MainActor.run { ownPieceIDs.insert(piece.id) }
+            } catch {
+                await MainActor.run { hint = "Couldn't save — check connection" }
+            }
+        }
+    }
+
+    private func coloredSquarePNG(color: UIColor) -> Data {
+        let format = UIGraphicsImageRendererFormat.default()
+        format.preferredRange = .standard
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 512, height: 512), format: format)
+        let image = renderer.image { _ in
+            color.setFill()
+            UIRectFill(CGRect(x: 0, y: 0, width: 512, height: 512))
+        }
+        return image.pngData() ?? Data()
+    }
+
+    // MARK: - Load
+
+    private func loadLoop() async {
+        while !Task.isCancelled {
+            if let loc = LocationService.shared.location {
+                do {
+                    let pieces = try await APIClient.listPieces(
+                        lat: loc.coordinate.latitude,
+                        lng: loc.coordinate.longitude,
+                        radiusMeters: 300
+                    )
+                    let remote = pieces
+                        .filter { !ownPieceIDs.contains($0.id) && $0.client == "ios" }
+                        .map {
+                            RemotePiece(
+                                id: $0.id,
+                                imagePath: $0.finalImagePath ?? $0.rawImagePath,
+                                lat: $0.lat,
+                                lng: $0.lng,
+                                altitudeM: $0.altitudeM,
+                                placementTransform: $0.placementTransform
+                            )
+                        }
+                    await MainActor.run { remotePieces = remote }
+                } catch {
+                    // Network hiccup; try again next tick.
+                }
+            }
+            try? await Task.sleep(for: .seconds(3))
+        }
+    }
+
+    // MARK: - Drawing export
 
     private func commitDrawing() {
         let drawing = draftDrawing

@@ -13,7 +13,7 @@ const COLS = `
   id, lat, lng, heading, accuracy_m, raw_image_path, final_image_path, scene_image_path,
   kind, sticker_id, colors, stroke_count, duration_ms, city, country,
   client, surface_type, distance_m, device_pitch, used_geo_anchor, has_lidar,
-  created_at
+  altitude_m, placement_transform, created_at
 `;
 
 interface Row {
@@ -38,6 +38,8 @@ interface Row {
   device_pitch: number | null;
   used_geo_anchor: boolean;
   has_lidar: boolean | null;
+  altitude_m: number | null;
+  placement_transform: number[] | null;
   created_at: Date;
 }
 
@@ -65,6 +67,8 @@ function toPiece(r: Row): Piece {
     devicePitch: r.device_pitch,
     usedGeoAnchor: r.used_geo_anchor,
     hasLidar: r.has_lidar,
+    altitudeM: r.altitude_m,
+    placementTransform: r.placement_transform,
     createdAt: r.created_at.toISOString(),
   };
 }
@@ -93,9 +97,9 @@ export async function insertPiece(
        lat, lng, heading, accuracy_m, raw_image_path, kind, sticker_id, colors,
        stroke_count, duration_ms, city, country, session_id,
        client, surface_type, distance_m, device_pitch, used_geo_anchor, has_lidar,
-       scene_image_path
+       scene_image_path, altitude_m, placement_transform
      ) VALUES (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
      ) RETURNING ${COLS}`,
     [
       meta.lat,
@@ -118,6 +122,8 @@ export async function insertPiece(
       meta.usedGeoAnchor ?? false,
       meta.hasLidar ?? null,
       sceneImagePath,
+      meta.altitudeM ?? null,
+      meta.placementTransform ? JSON.stringify(meta.placementTransform) : null,
     ],
   );
   return toPiece(rows[0]!);
@@ -228,6 +234,21 @@ export function validateMeta(raw: unknown): { ok: true; meta: CreatePieceRequest
     return { ok: false, error: "stickerId must be a string of at most 64 chars" };
   }
 
+  const altitudeM = num(m.altitudeM);
+  if (altitudeM !== undefined && (altitudeM < -500 || altitudeM > 10000)) {
+    return { ok: false, error: "altitudeM must be a sane number in metres" };
+  }
+
+  const placementTransform = m.placementTransform;
+  if (
+    placementTransform !== undefined &&
+    (!Array.isArray(placementTransform) ||
+      placementTransform.length !== 16 ||
+      placementTransform.some((n) => typeof n !== "number" || !Number.isFinite(n)))
+  ) {
+    return { ok: false, error: "placementTransform must be a 16-number row-major 4x4" };
+  }
+
   return {
     ok: true,
     meta: {
@@ -247,6 +268,8 @@ export function validateMeta(raw: unknown): { ok: true; meta: CreatePieceRequest
       devicePitch: num(m.devicePitch),
       usedGeoAnchor: typeof m.usedGeoAnchor === "boolean" ? m.usedGeoAnchor : undefined,
       hasLidar: typeof m.hasLidar === "boolean" ? m.hasLidar : undefined,
+      altitudeM: altitudeM as number | undefined,
+      placementTransform: placementTransform as number[] | undefined,
     },
   };
 }
