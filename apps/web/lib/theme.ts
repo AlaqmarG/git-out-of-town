@@ -43,6 +43,48 @@ export const palette = {
  */
 export type Palette = Record<keyof typeof palette, string>;
 
+/**
+ * The spray-can palette. These are the pigments the artwork is generated with,
+ * and the categorical scale every chart uses — so a colour means the same thing
+ * whether it appears on a wall or in the dashboard.
+ *
+ * Ordered so the first four stay distinguishable under the common forms of
+ * colour blindness: red/green are never adjacent.
+ */
+export const SPRAY = [
+  "#ff5230", // red
+  "#35d0e8", // cyan
+  "#ffb021", // amber
+  "#a277ff", // violet
+  "#9be855", // lime
+  "#ff5fa8", // pink
+] as const;
+
+/**
+ * The chart scale. Same hues as SPRAY, stepped down into the OKLCH lightness
+ * band that survives a dark surface (L 0.48–0.67). Verified with the palette
+ * validator: lightness band, chroma floor, CVD separation, normal-vision floor
+ * and contrast all pass. Do not hand-edit these without re-running it.
+ */
+export const CHART = [
+  "#eb3d19", // red
+  "#00a6bd", // cyan
+  "#c57900", // amber
+  "#8659de", // violet
+  "#63ac00", // lime
+  "#d63786", // pink
+] as const;
+
+/** Sequential ramp for density and heat, cold to hot. */
+export const HEAT = [
+  "#1c1f28",
+  "#4a2a2c",
+  "#8a3524",
+  "#c8451f",
+  "#ff5230",
+  "#ffb021",
+] as const;
+
 /** Where the map opens before it knows anything about the user. */
 export const DEFAULT_VIEW = {
   /**
