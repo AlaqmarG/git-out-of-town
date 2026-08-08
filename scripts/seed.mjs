@@ -75,6 +75,12 @@ for (let i = 0; i < COUNT; i++) {
     const res = await fetch(`${BASE}/api/pieces`, { method: "POST", body: fd });
     if (res.status === 429) {
       // The API allows a burst then refills 1 per 6s. Wait it out rather than fail.
+      //
+      // Drain before retrying. An unread response body keeps its connection
+      // checked out of undici's pool, and a throttled run does this once per
+      // piece — enough pinned connections and every later fetch() fails or hangs
+      // forever, so the run reports exit 0 having seeded a handful of rows.
+      await res.arrayBuffer();
       const wait = Number(res.headers.get("retry-after") || 7);
       process.stdout.write(` (rate limited, ${wait}s)`);
       await new Promise((r) => setTimeout(r, wait * 1000));
@@ -82,6 +88,7 @@ for (let i = 0; i < COUNT; i++) {
       continue;
     }
     if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text()}`);
+    await res.arrayBuffer(); // same reason — the 201 body is never looked at
     ok++;
     process.stdout.write(".");
   } catch (err) {
