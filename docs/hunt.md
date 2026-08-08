@@ -15,25 +15,29 @@ Next photo unlocks **3:25 PM**. Team code `FTA8PD` — Alaqmar, Connor.
 
 <table>
 <tr>
-<td width="33%" align="center"><img src="assets/photos/1117-milkys.jpg" width="100%"><br><b>11:17</b> · Milky's Cloud Room<br><sub>+2 · new spot</sub></td>
-<td width="33%" align="center"><img src="assets/photos/1221-fungo.jpg" width="100%"><br><b>12:21</b> · Fungo Cafe<br><sub>+2 · new spot</sub></td>
-<td width="33%" align="center"><img src="assets/photos/1324-waterworks.jpg" width="100%"><br><b>1:24</b> · Waterworks / The Well<br><sub>+2 · new spot</sub></td>
+<td width="33%"><img src="assets/photos/1117-milkys-stamp.png" width="100%" alt="Milky's Cloud Room — Sat Aug 8, 11:17 AM, new spot, +2 pts"></td>
+<td width="33%"><img src="assets/photos/1221-fungo-stamp.png" width="100%" alt="Fungo Cafe — Sat Aug 8, 12:21 PM, new spot, +2 pts"></td>
+<td width="33%"><img src="assets/photos/1324-waterworks-stamp.png" width="100%" alt="Waterworks Food Hall / The Well — Sat Aug 8, 1:24 PM, new spot, +2 pts"></td>
 </tr>
 <tr>
-<td align="center"><img src="assets/photos/1425-scadding.jpg" width="100%"><br><b>2:25</b> · Scadding Court<br><sub>+2 · new spot</sub></td>
-<td align="center"><img src="assets/photos/_pending.svg" width="100%"><br><b>3:25</b> · TPL Lillian H. Smith</td>
-<td align="center"><img src="assets/photos/_pending.svg" width="100%"><br><b>4:25</b> · TPL Fort York</td>
+<td><img src="assets/photos/1425-scadding-stamp.png" width="100%" alt="Scadding Court Community Ctr — Sat Aug 8, 2:25 PM, new spot, +2 pts"></td>
+<td><img src="assets/photos/3-25-lillian-stamp.png" width="100%" alt="TPL Lillian H. Smith — 3:25 PM slot, unlogged"></td>
+<td><img src="assets/photos/4-25-fortyork-stamp.png" width="100%" alt="TPL Fort York Branch — 4:25 PM slot, unlogged"></td>
 </tr>
 <tr>
-<td align="center"><img src="assets/photos/_pending.svg" width="100%"><br><b>5:25</b> · Botanic Coffee</td>
-<td align="center"><img src="assets/photos/_pending.svg" width="100%"><br><b>6:25</b> · ICHA Tea</td>
-<td align="center"><img src="assets/photos/_pending.svg" width="100%"><br><b>7:25</b> · Varda</td>
+<td><img src="assets/photos/5-25-botanic-stamp.png" width="100%" alt="Botanic Coffee and Caphe — 5:25 PM slot, unlogged"></td>
+<td><img src="assets/photos/6-25-icha-stamp.png" width="100%" alt="ICHA Tea / Project Seoul — 6:25 PM slot, unlogged"></td>
+<td><img src="assets/photos/7-25-varda-stamp.png" width="100%" alt="Varda — 7:25 PM slot, unlogged"></td>
 </tr>
 </table>
 
 > Everyone in frame, lanyards visible, or it doesn't count. Organizers review every photo after
-> standings lock. Save new shots to `docs/assets/photos/` as `HHMM-slug.jpg` and swap the
-> `_pending.svg` path above.
+> standings lock.
+>
+> To add one: drop the shot in `docs/assets/photos/` as `HHMM-slug.jpg`, move its row from
+> `PENDING` to `PHOTOS` in [`scripts/make-stamps.py`](../scripts/make-stamps.py), and run
+> `python3 scripts/make-stamps.py`. The frame, crop, badge and caption are all generated —
+> the stamp border is lifted from the portal's own `.trek-stamp` so the log matches the site.
 
 ---
 
