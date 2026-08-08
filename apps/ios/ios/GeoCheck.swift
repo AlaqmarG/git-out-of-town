@@ -12,6 +12,7 @@
 //    NOT        -> ARWorldTrackingConfiguration + GPS bearing fallback (build this first regardless)
 
 import ARKit
+import Combine  // @Published
 import CoreLocation
 import SwiftUI
 
