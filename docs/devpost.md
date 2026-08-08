@@ -47,9 +47,9 @@ Two clients, one contract.
   itself.
 - **Data** — Postgres. `LISTEN/NOTIFY` on insert feeds an SSE stream, so a piece painted on a phone
   lands on every open map without a refresh.
-- **Infra** — Docker on an ARM64 OCI box behind shared Traefik, deployed by Komodo from `main`.
-  nginx serves uploads directly; image bytes never pass through Node, because a single pan of the
-  map pulls hundreds at once.
+- **Infra** — self-hosted. Docker, TLS, deployed straight from `main` on push. Uploaded art is
+  served by a separate static container, so image bytes never pass through Node — a single pan of
+  the map pulls hundreds of them at once.
 - **Reve** — the visual identity. Every colour in the app comes from one palette file, so the art
   direction propagates to the map, the UI and the markers at once.
 
@@ -91,7 +91,8 @@ app by editing one file at 3 AM.
 - Walls and crews — a shared surface that fills up, and the people who claim it
 - Time-lapse: scrub a wall's history and watch it get painted over
 - Android via WebXR, and a browser capture path so the barrier is a link, not an install
-- Moderation that scales past a delete button, because this is public UGC pinned to real addresses
+- Community moderation — this is public art pinned to real addresses, and the neighbourhood should
+  get a say in what stays up
 
 ---
 
