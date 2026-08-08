@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Seeds placeholder graffiti so the map has something to render.
+ * Seeds placeholder graffiti around Stackt Market so the map has something to render.
  *
  *   npm run seed                                  # 25 pieces around Toronto, localhost
  *   SEED_URL=https://… SEED_COUNT=40 npm run seed
@@ -17,9 +17,12 @@ import { deflateSync } from "node:zlib";
 const BASE = (process.env.SEED_URL || process.env.SITE_URL || "http://localhost:3000").replace(/\/$/, "");
 const COUNT = Number(process.env.SEED_COUNT || 25);
 
-// Downtown Toronto — matches DEFAULT_VIEW in apps/web/lib/theme.ts.
-const CENTRE = { lat: 43.6532, lng: -79.3832 };
-const SPREAD = 0.045;
+// Stackt Market, Bathurst & Front — the venue. Matches DEFAULT_VIEW in
+// apps/web/lib/theme.ts. Tight spread so pieces land on the surrounding blocks
+// rather than scattering across the city.
+const CENTRE = { lat: 43.6413, lng: -79.4042 };
+const SPREAD = 0.0032; // ~350m
+
 
 const PALETTE = [
   [255, 77, 46], [255, 209, 46], [46, 204, 255],
