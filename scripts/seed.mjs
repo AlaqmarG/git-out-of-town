@@ -12,8 +12,7 @@
  *   DELETE FROM pieces WHERE session_id LIKE 'seed-%';
  */
 
-import { encodePng, makeArt, makeScene } from "./lib/art.mjs";
-import { fetchStreetView, hasKey } from "./lib/streetview.mjs";
+import { compositeOnScene, makeArt, makeScene } from "./lib/art.mjs";
 
 const BASE = (process.env.SEED_URL || process.env.SITE_URL || "http://localhost:3000").replace(/\/$/, "");
 const COUNT = Number(process.env.SEED_COUNT || 25);
@@ -30,7 +29,7 @@ const SURFACES = ["wall", "wall", "wall", "wall", "wall", "door", "floor", "wind
 // --- seeding ----------------------------------------------------------------
 
 console.log(`\nSeeding ${COUNT} placeholder pieces → ${BASE}`);
-console.log(hasKey ? "Street View: key present\n" : "Street View: no key, using generated walls\n");
+console.log("Scenes: generated walls with the art baked in (see the contract in @got/shared)\n");
 
 let ok = 0;
 const failures = [];
@@ -41,12 +40,15 @@ for (let i = 0; i < COUNT; i++) {
   const lng = CENTRE.lng + (Math.random() - 0.5) * SPREAD * 1.6;
   const heading = Math.random() * 360;
 
-  // Prefer a real photo of that spot facing the painted direction. The art is
-  // NOT burned in — the web overlays it, which keeps it crisp and means we never
-  // have to decode a JPEG here.
-  const sv = await fetchStreetView(lat, lng, heading);
-  const scene = sv ?? encodePng(640, 480, makeScene(640, 480).rgba);
-  const sceneType = sv ? "image/jpeg" : "image/png";
+  // CONTRACT: sceneImagePath must already contain the artwork (see @got/shared).
+  // iOS sends the AR snapshot with the paint burned in, so seeds must match —
+  // otherwise the map shows a bare wall where a piece should be.
+  //
+  // Compositing onto a real Street View JPEG needs a decoder we do not have here;
+  // that is what the graffiti-realism work adds. Until then, seeds bake onto a
+  // generated wall so the contract holds and the map is never wrong.
+  const scene = compositeOnScene(makeScene(640, 480), art);
+  const sceneType = "image/png";
 
   const fd = new FormData();
   fd.append("image", new Blob([art.png], { type: "image/png" }), "art.png");
