@@ -59,3 +59,23 @@ through the same API; the `client` column distinguishes them.
 
 ✅ Repo, CI/CD, VPS, Postgres, TLS, `POST`/`GET /api/pieces`, `/api/health`
 ❌ Web map & `/data` (#12–#17) · iOS app (#23–#31) · Reve art (#5, #6)
+
+---
+
+## ⚠️ Agents: always work in a git worktree
+
+Several agents run against this repo at once. Editing the shared working tree causes real damage
+we have already hit: a `git checkout` blocked by another agent's uncommitted file, a branch cut
+from the wrong base, and a PR left `CONFLICTING` — which silently prevents CI from ever running
+on it, because GitHub cannot build a merge ref for a dirty PR.
+
+**Every spawned agent must be launched with `isolation: "worktree"`.** No exceptions, including
+short tasks — the damage comes from overlap, not from duration.
+
+If you are an agent and you are NOT in a worktree, say so and stop before editing anything.
+
+Rules that follow from this:
+- Branch from the CURRENT `origin/main`, never from another feature branch.
+- `main` is protected: work on a branch, open a PR.
+- Rebase before asking for a merge. Main moves fast here.
+- Never touch files outside your task's scope; another agent probably owns them.

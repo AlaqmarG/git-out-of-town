@@ -1,6 +1,5 @@
 import { type Piece, uploadUrl } from "@got/shared";
 import type { LayerSpecification } from "maplibre-gl";
-import { projectionCss } from "@/lib/surface";
 import { palette } from "@/lib/theme";
 
 /**
@@ -72,8 +71,9 @@ export function createArtElement(piece: Piece, index = 0): HTMLElement {
   el.style.setProperty("--tilt", `${((piece.id * 37) % 15) - 7}deg`);
 
   if (piece.sceneImagePath) {
-    // The photo of the actual place is the marker. The artwork is painted into
-    // it in perspective, so the map shows what is really on that wall.
+    // The scene photo ALREADY contains the artwork — it is the AR view snapshot,
+    // or a pre-composited still. Overlaying the art again would draw it twice.
+    // The photo alone is the marker.
     const scene = document.createElement("img");
     scene.className = "got-marker-scene";
     scene.src = uploadUrl(piece.sceneImagePath);
@@ -83,17 +83,18 @@ export function createArtElement(piece: Piece, index = 0): HTMLElement {
     scene.draggable = false;
     el.appendChild(scene);
     el.classList.add("has-scene");
-  }
 
-  const art = document.createElement("img");
-  art.className = piece.sceneImagePath ? "got-marker-art" : "got-marker-art bare";
-  art.src = uploadUrl(piece.finalImagePath ?? piece.rawImagePath);
-  art.alt = "";
-  art.loading = "lazy";
-  art.decoding = "async";
-  art.draggable = false;
-  if (piece.sceneImagePath) art.setAttribute("style", projectionCss(piece));
-  el.appendChild(art);
+  } else {
+    // No scene photo, so show the bare artwork instead.
+    const art = document.createElement("img");
+    art.className = "got-marker-art bare";
+    art.src = uploadUrl(piece.finalImagePath ?? piece.rawImagePath);
+    art.alt = "";
+    art.loading = "lazy";
+    art.decoding = "async";
+    art.draggable = false;
+    el.appendChild(art);
+  }
 
   return el;
 }

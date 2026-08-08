@@ -40,9 +40,14 @@ export interface Piece {
   /** Path under /uploads — the Reve-transformed piece. Null until it lands. */
   finalImagePath: string | null;
   /**
-   * Path under /uploads — the camera frame at the moment of painting, with the
-   * art composited on. This is what the web shows: the actual wall, not a
-   * stock street photo. Null for contributions made without a camera.
+   * Path under /uploads — the camera frame at the moment of painting.
+   *
+   * ⚠️ CONTRACT: this image ALREADY CONTAINS THE ARTWORK. It is the AR view as
+   * the painter saw it, so the art is burned in. Clients must render it alone —
+   * overlaying `rawImagePath` on top draws the piece twice.
+   *
+   * Null when a contribution was made without a camera (the browser path), in
+   * which case clients show the bare artwork instead.
    */
   sceneImagePath: string | null;
   kind: PieceKind;
