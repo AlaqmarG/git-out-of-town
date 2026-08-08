@@ -1,11 +1,16 @@
 name: iOS
 
+# Only builds when Swift or the workflow itself changes. Markdown inside apps/ios
+# (CLAUDE.md) must not burn a macOS runner — they bill at 10x on private repos.
 on:
   push:
     branches: [main]
-    paths: ["apps/ios/**", ".github/workflows/ios.yml"]
+    paths: &ios_paths
+      - "apps/ios/**"
+      - "!apps/ios/**/*.md"
+      - ".github/workflows/ios.yml"
   pull_request:
-    paths: ["apps/ios/**", ".github/workflows/ios.yml"]
+    paths: *ios_paths
   workflow_dispatch:
 
 concurrency:
