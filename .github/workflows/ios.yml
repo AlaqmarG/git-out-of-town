@@ -1,0 +1,45 @@
+name: iOS
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/ios/**", ".github/workflows/ios.yml"]
+  pull_request:
+    paths: ["apps/ios/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # macOS runners bill at 10x on private repos. Once this repo is public it is free.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: xcodebuild -version
+
+      # Simulator build with signing disabled — catches every compile error with
+      # no Apple Developer account, no certificates, no provisioning profiles.
+      # Device builds and TestFlight need signing; see docs/OPS.md.
+      - name: Build (simulator, unsigned)
+        working-directory: apps/ios
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project ios.xcodeproj \
+            -scheme ios \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            | xcbeautify || xcodebuild build \
+                -project ios.xcodeproj \
+                -scheme ios \
+                -destination 'generic/platform=iOS Simulator' \
+                -configuration Debug \
+                CODE_SIGNING_ALLOWED=NO \
+                CODE_SIGNING_REQUIRED=NO
