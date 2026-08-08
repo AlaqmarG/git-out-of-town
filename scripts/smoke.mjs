@@ -32,21 +32,35 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
+/**
+ * Fetches `path` and returns a fully buffered stand-in for the Response.
+ *
+ * The body is read even when a check only cares about the status, and that is
+ * deliberate: an unread response body keeps its connection checked out of
+ * undici's pool, and most checks here assert on status alone. Leave them
+ * undrained and a run pins a connection per check until fetch() hangs forever
+ * with no error — the suite dies mid-way having reported everything green.
+ *
+ * `.json()` / `.text()` / `.headers` / `.status` all still work at call sites.
+ */
 async function expectStatus(path, want, init) {
   let res = await fetch(`${BASE}${path}`, init);
 
   // The write path is rate limited (burst 10, refill 1/6s). Repeated smoke runs
   // legitimately exhaust it, so honour Retry-After once rather than reporting a
-  // false failure.
+  // false failure. Drain the 429 before retrying, for the reason above.
   if (res.status === 429 && want !== 429) {
+    await res.arrayBuffer();
     const wait = Math.min(15, Number(res.headers.get("retry-after") || 7));
     console.log(`      rate limited, waiting ${wait}s…`);
     await new Promise((r) => setTimeout(r, wait * 1000));
     res = await fetch(`${BASE}${path}`, init);
   }
 
+  // Before the assert, so a failing check drains too.
+  const body = await res.text();
   assert(res.status === want, `${path} → expected ${want}, got ${res.status}`);
-  return res;
+  return { status: res.status, headers: res.headers, text: () => body, json: () => JSON.parse(body) };
 }
 
 /** Smallest valid PNG: 1x1 transparent. */
