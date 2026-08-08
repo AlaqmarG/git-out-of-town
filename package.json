@@ -18,5 +18,8 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "devDependencies": {
+    "jpeg-js": "^0.4.4"
   }
 }

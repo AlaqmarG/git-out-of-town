@@ -2,10 +2,12 @@
 
 /* Mirrors lib/theme.ts — keep the two in step. */
 :root {
-  --ink: #0b0b0d;
-  --text: #e8e8ec;
-  --text-muted: #8b8b98;
-  --accent: #ff4d2e;
+  --ink: #0a0b0f;
+  --raised: #1c1f28;
+  --line: #272b36;
+  --text: #e9ecf4;
+  --text-muted: #8a90a0;
+  --accent: #ff5230;
 }
 
 @theme inline {
@@ -24,18 +26,18 @@ body {
 
 /* MapLibre's default controls are white chrome on a near-black map. */
 .maplibregl-ctrl-group {
-  background: #17171c !important;
-  border: 1px solid #26262e !important;
+  background: #1c1f28 !important;
+  border: 1px solid #272b36 !important;
   box-shadow: none !important;
 }
 .maplibregl-ctrl-group button + button {
-  border-top: 1px solid #26262e !important;
+  border-top: 1px solid #272b36 !important;
 }
 .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
   filter: invert(1) opacity(0.65);
 }
 .maplibregl-ctrl-attrib {
-  background: rgba(11, 11, 13, 0.7) !important;
+  background: rgba(10, 11, 15, 0.7) !important;
   color: var(--text-muted) !important;
 }
 .maplibregl-ctrl-attrib a {
@@ -45,7 +47,7 @@ body {
 /* Attribution is legally required (OSM is ODbL) but should not dominate the map.
    Collapse it to a small circular "i" that expands only when clicked. */
 .maplibregl-ctrl-attrib.maplibregl-compact {
-  background: rgba(11, 11, 13, 0.6) !important;
+  background: rgba(10, 11, 15, 0.6) !important;
   border-radius: 999px;
   min-height: 22px;
 }
@@ -67,9 +69,9 @@ body {
   width: 14px;
   height: 14px;
   padding: 0;
-  border: 1.5px solid rgba(11, 11, 13, 0.85);
+  border: 1.5px solid rgba(10, 11, 15, 0.85);
   border-radius: 999px;
-  background: var(--pin, #ff4d2e);
+  background: var(--pin, #ff5230);
   cursor: pointer;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 2px 6px rgba(0, 0, 0, 0.6);
   transition: transform 130ms ease, box-shadow 130ms ease;
@@ -77,7 +79,7 @@ body {
 .got-pin:hover,
 .got-pin:focus-visible {
   transform: scale(1.55);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3), 0 0 14px 2px var(--pin, #ff4d2e);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3), 0 0 14px 2px var(--pin, #ff5230);
   outline: none;
 }
 
@@ -90,7 +92,7 @@ body {
   padding: 4px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
-  background: linear-gradient(160deg, #1b1b21, #101014);
+  background: linear-gradient(160deg, #232733, #14161d);
   cursor: pointer;
   overflow: hidden;
   transform: rotate(var(--tilt, 0deg));
@@ -101,8 +103,8 @@ body {
 .got-marker:hover,
 .got-marker:focus-visible {
   transform: rotate(0deg) scale(1.22);
-  border-color: rgba(255, 77, 46, 0.6);
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.72), 0 0 26px rgba(255, 77, 46, 0.3);
+  border-color: rgba(255, 82, 48, 0.6);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.72), 0 0 26px rgba(255, 82, 48, 0.3);
   outline: none;
   z-index: 3;
 }

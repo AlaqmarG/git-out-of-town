@@ -44,24 +44,21 @@ pick (wall, floor, ceiling, read straight off LiDAR), and the count going up liv
 
 Two apps, one shared API contract.
 
-**iOS.** SwiftUI, ARKit and SceneKit. You draw in 2D with PencilKit. We put that drawing on a flat
-quad where your raycast hits, rather than trying to paint in 3D. `ARMeshClassification` tells us
-what you painted on. We take a camera snapshot with the art already on it, and that photo is what
-the website shows. GPS and compass are the baseline. `ARGeoAnchor` with a real altitude puts the
-piece back when you return to it.
-
-**Web.** Next.js 16 and MapLibre. We wrote the map style by hand, layer by layer, on free
-OpenFreeMap tiles. No stock style and no map key. Markers change with zoom: clusters when you are
-far out, coloured dots closer in, then the art itself.
-
-**Data.** Postgres. `LISTEN/NOTIFY` on insert feeds an SSE stream, so a piece painted on a phone
-appears on every open map without a refresh.
-
-**Infra.** Self hosted. Docker, TLS, deploys from `main` on push. Art files come from a separate
-static container so images never pass through Node. One pan of the map pulls hundreds of them.
-
-**Reve.** The visual identity. Every colour lives in one file, so changing it updates the map, the
-UI and the markers together.
+- **iOS** — SwiftUI + ARKit. You draw in 2D and we place it as a textured quad at the raycast hit,
+  not as paint in 3D space. `ARMeshClassification` at the hit point tells us what you painted on.
+  GPS + compass bearing is the anchoring floor; `ARGeoAnchor` is an upgrade we switch on only when
+  the venue supports it.
+- **Web** — Next.js 16 and MapLibre GL. The basemap is hand-authored, layer by layer, over free
+  OpenFreeMap vector tiles — no stock style, no map API key. Markers render in three zoom tiers:
+  clustered density glow → pins tinted with each piece's own dominant colour → the framed artwork
+  itself.
+- **Data** — Postgres. `LISTEN/NOTIFY` on insert feeds an SSE stream, so a piece painted on a phone
+  lands on every open map without a refresh.
+- **Infra** — self-hosted. Docker, TLS, deployed straight from `main` on push. Uploaded art is
+  served by a separate static container, so image bytes never pass through Node — a single pan of
+  the map pulls hundreds of them at once.
+- **Reve** — the visual identity. Every colour in the app comes from one palette file, so the art
+  direction propagates to the map, the UI and the markers at once.
 
 ## Challenges we ran into
 
@@ -101,11 +98,12 @@ restyle the whole app at 3am by editing one thing.
 
 ## What's next for Git Out of Town
 
-- Two phones at the same wall agreeing on a piece down to the centimetre
-- Walls and crews. A surface that fills up, and the people who claim it
-- Time lapse. Scrub back through a wall and watch it get covered
-- Android through WebXR, and a browser version so the barrier is a link instead of an install
-- Community moderation. This is public art on real streets, and the neighbourhood should get a say
+- `ARGeoAnchor` everywhere for centimetre-accurate placement that survives across sessions
+- Walls and crews — a shared surface that fills up, and the people who claim it
+- Time-lapse: scrub a wall's history and watch it get painted over
+- Android via WebXR, and a browser capture path so the barrier is a link, not an install
+- Community moderation — this is public art pinned to real addresses, and the neighbourhood should
+  get a say in what stays up
 
 ---
 

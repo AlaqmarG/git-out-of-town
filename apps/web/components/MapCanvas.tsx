@@ -16,6 +16,7 @@ import {
   tierForZoom,
   toGeoJson,
 } from "@/lib/markers";
+import { sessionId } from "@/lib/session";
 import { DEFAULT_VIEW, palette } from "@/lib/theme";
 
 export default function MapCanvas() {
@@ -75,6 +76,13 @@ export default function MapCanvas() {
         el.addEventListener("click", (ev) => {
           ev.stopPropagation();
           setSelected(piece);
+          // Attention data for /data. Fire and forget — never block the UI.
+          void fetch("/api/views", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pieceId: piece.id, sessionId: sessionId() }),
+            keepalive: true,
+          }).catch(() => {});
           // Ease toward the piece so the detail card never covers its own subject.
           m.easeTo({
             center: [piece.lng, piece.lat],
@@ -283,6 +291,19 @@ export default function MapCanvas() {
           {total === 1 ? "piece" : "pieces"} here
         </div>
       )}
+
+      <a
+        href="/data"
+        className="got-chip absolute top-4 right-4 rounded-full px-3 py-1.5 text-xs tracking-wide transition-colors"
+        style={{
+          background: "rgba(10,11,15,0.72)",
+          color: palette.textMuted,
+          border: `1px solid ${palette.line}`,
+          backdropFilter: "blur(8px)",
+        }}
+      >
+        What the wall knows →
+      </a>
 
       {error && (
         <div
