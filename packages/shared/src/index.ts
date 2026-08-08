@@ -5,6 +5,22 @@
 
 export type PieceKind = "spray" | "sticker";
 
+export type Client = "ios" | "web";
+
+/**
+ * ARKit `ARMeshClassification`. Only the iOS client with LiDAR can produce this —
+ * it is the basis of the "what surfaces does the world get painted on?" insight.
+ */
+export type SurfaceType =
+  | "wall"
+  | "floor"
+  | "ceiling"
+  | "table"
+  | "seat"
+  | "door"
+  | "window"
+  | "none";
+
 export interface Rgb {
   r: number;
   g: number;
@@ -31,6 +47,17 @@ export interface Piece {
   city: string | null;
   country: string | null;
   createdAt: string;
+
+  // --- native AR only; null from web clients ---
+  client: Client;
+  surfaceType: SurfaceType | null;
+  /** Camera-to-anchor distance in metres at placement time. */
+  distanceM: number | null;
+  /** Device pitch in degrees; negative means aimed downward. */
+  devicePitch: number | null;
+  /** True when placed with ARGeoAnchor rather than the GPS-bearing fallback. */
+  usedGeoAnchor: boolean;
+  hasLidar: boolean | null;
 }
 
 /** POST /api/pieces — multipart; `image` is the PNG, this is the JSON `meta` part. */
@@ -45,6 +72,14 @@ export interface CreatePieceRequest {
   strokeCount?: number;
   durationMs?: number;
   sessionId: string;
+
+  // --- native AR only ---
+  client?: Client;
+  surfaceType?: SurfaceType;
+  distanceM?: number;
+  devicePitch?: number;
+  usedGeoAnchor?: boolean;
+  hasLidar?: boolean;
 }
 
 /** GET /api/pieces?bbox=west,south,east,north */

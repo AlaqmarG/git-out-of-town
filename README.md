@@ -32,7 +32,7 @@ npm run dev
 ```
 
 > ⚠️ Camera, geolocation, and device orientation **require HTTPS** — they will not work on
-> `localhost` from a phone. Test against the Vercel preview URL.
+> `localhost` from a phone. Test against https://gitoutoftown.129-153-49-190.sslip.io
 
 ## Repo layout
 

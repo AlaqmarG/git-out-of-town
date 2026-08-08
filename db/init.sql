@@ -22,6 +22,13 @@ CREATE TABLE IF NOT EXISTS pieces (
   city             TEXT,
   country          TEXT,
   session_id       TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+  -- Native AR only (null from web clients).
+  client           TEXT NOT NULL DEFAULT 'web',   -- 'ios' | 'web'
+  surface_type     TEXT,        -- ARMeshClassification: wall/floor/ceiling/table/seat/door/window
+  distance_m       DOUBLE PRECISION,  -- camera -> anchor at placement time
+  device_pitch     DOUBLE PRECISION,  -- degrees; negative = aimed down
+  used_geo_anchor  BOOLEAN NOT NULL DEFAULT false,
+  has_lidar        BOOLEAN,
   deleted_at       TIMESTAMPTZ,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -37,6 +44,8 @@ CREATE INDEX IF NOT EXISTS pieces_bbox_idx    ON pieces (lat, lng) WHERE deleted
 CREATE INDEX IF NOT EXISTS pieces_created_idx ON pieces (created_at DESC);
 CREATE INDEX IF NOT EXISTS pieces_country_idx ON pieces (country);
 CREATE INDEX IF NOT EXISTS views_piece_idx    ON views (piece_id);
+CREATE INDEX IF NOT EXISTS pieces_surface_idx  ON pieces (surface_type) WHERE surface_type IS NOT NULL;
+CREATE INDEX IF NOT EXISTS pieces_client_idx   ON pieces (client);
 
 -- Live updates: LISTEN/NOTIFY feeds the SSE endpoint (replaces Supabase Realtime).
 CREATE OR REPLACE FUNCTION notify_new_piece() RETURNS trigger AS $$
