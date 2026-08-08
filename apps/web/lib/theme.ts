@@ -73,6 +73,21 @@ export const SPRAY = [
   "#ff5fa8", // pink
 ] as const;
 
+/**
+ * The chart scale. Same hues as SPRAY, stepped down into the OKLCH lightness
+ * band that survives a dark surface (L 0.48–0.67). Verified with the palette
+ * validator: lightness band, chroma floor, CVD separation, normal-vision floor
+ * and contrast all pass. Do not hand-edit these without re-running it.
+ */
+export const CHART = [
+  "#eb3d19", // red
+  "#00a6bd", // cyan
+  "#c57900", // amber
+  "#8659de", // violet
+  "#63ac00", // lime
+  "#d63786", // pink
+] as const;
+
 /** Sequential ramp for density and heat, cold to hot. */
 export const HEAT = [
   "#1c1f28",

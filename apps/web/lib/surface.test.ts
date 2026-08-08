@@ -8,7 +8,7 @@ const piece = (id: number, surfaceType: SurfaceType | null = null): Piece => ({
   kind: "spray", stickerId: null, colors: null, strokeCount: null, durationMs: null,
   city: null, country: null, createdAt: new Date().toISOString(),
   client: "ios", surfaceType, distanceM: null, devicePitch: null,
-  usedGeoAnchor: false, hasLidar: null,
+  usedGeoAnchor: false, hasLidar: null, altitudeM: null, placementTransform: null,
 });
 
 describe("projectionFor", () => {
