@@ -10,6 +10,7 @@
  */
 
 import { deflateSync } from "node:zlib";
+import { layoutWord, randomWord } from "./letters.mjs";
 
 // --- PNG encoding -----------------------------------------------------------
 
@@ -86,88 +87,115 @@ function dab(buf, w, h, cx, cy, radius, r, g, b, alpha = 1) {
 const PALETTE = [
   [255, 77, 46], [255, 196, 0], [46, 190, 255],
   [124, 240, 60], [255, 60, 170], [245, 245, 250],
+  [168, 92, 255], [0, 232, 198],
 ];
 
+/** Draws a polyline as a continuous thick stroke of overlapping dabs. */
+function drawPolyline(buf, w, h, pts, radius, r, g, b, alpha = 1, dx = 0, dy = 0) {
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x0, y0] = pts[i];
+    const [x1, y1] = pts[i + 1];
+    const dist = Math.hypot(x1 - x0, y1 - y0);
+    const steps = Math.max(2, Math.ceil(dist / (radius * 0.28)));
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps;
+      dab(buf, w, h, x0 + (x1 - x0) * t + dx, y0 + (y1 - y0) * t + dy, radius, r, g, b, alpha);
+    }
+  }
+}
+
 /**
- * One flowing stroke: dark outline underneath, bright fill on top, a highlight
- * pass, overspray speckle, and a couple of drips. Roughly how a real tag is built.
+ * A graffiti piece, built the way a real one is: 3D extrusion behind, hard
+ * outline, colour fill, highlight glints, overspray and drips.
+ *
+ * The layer order is what sells it — extrusion first so it sits *behind* the
+ * letters, outline before fill so the fill nests inside it.
  */
-function stroke(buf, w, h, colour) {
-  const [r, g, b] = colour;
-  const pts = [];
-  const width = rnd(h * 0.05, h * 0.09);
-  const steps = Math.round(rnd(190, 300));
+export function makeArt(size = 420) {
+  const rgba = Buffer.alloc(size * size * 4);
+  const word = randomWord();
 
-  // Start on the left of a central band and sweep rightward, so strokes overlap
-  // into a single piece instead of scattering.
-  let x = rnd(w * 0.1, w * 0.3);
-  let y = rnd(h * 0.3, h * 0.7);
-  let angle = rnd(-0.6, 0.6);
-  let curl = rnd(-0.05, 0.05);
+  const pad = size * 0.1;
+  const { strokes, height } = layoutWord(word, size - pad * 2, size - pad * 2);
+  const shifted = strokes.map((s) => s.map(([x, y]) => [x + pad, y + pad]));
 
-  for (let i = 0; i < steps; i++) {
-    // Slow, continuous turning gives flowing curves; the occasional kick adds
-    // the sharp direction changes a real tag has.
-    curl += rnd(-0.012, 0.012);
-    curl = clamp(curl, -0.09, 0.09);
-    if (Math.random() < 0.02) curl = -curl * 1.8;
-    angle += curl;
+  const shuffled = [...PALETTE].sort(() => Math.random() - 0.5);
+  const [fr, fg, fb] = shuffled[0];
+  const [ar, ag, ab] = shuffled[1];
 
-    const speed = 2.9;
-    x += Math.cos(angle) * speed + 0.55; // bias rightward
-    y += Math.sin(angle) * speed;
+  const weight = height * 0.17;
+  const outline = weight * 1.34;
+  const depth = weight * 0.85;
 
-    // Bounce off the margins rather than clamping flat against them.
-    if (x < width || x > w - width) { angle = Math.PI - angle; x = clamp(x, width, w - width); }
-    if (y < width || y > h - width) { angle = -angle; y = clamp(y, width, h - width); }
-
-    pts.push([x, y]);
-  }
-
-  // Outline first, so the fill sits inside it.
-  for (const [pxx, pyy] of pts) dab(buf, w, h, pxx, pyy, width * 0.62, 12, 12, 16, 0.85);
-  for (const [pxx, pyy] of pts) dab(buf, w, h, pxx, pyy, width * 0.44, r, g, b, 0.95);
-  // Highlight offset up-left, as if lit from that side.
-  for (const [pxx, pyy] of pts) {
-    dab(buf, w, h, pxx - width * 0.1, pyy - width * 0.12, width * 0.16,
-        clamp(r + 70, 0, 255), clamp(g + 70, 0, 255), clamp(b + 70, 0, 255), 0.5);
-  }
-
-  // Overspray: fine mist around the line.
-  for (let i = 0; i < steps * 5; i++) {
-    const [sx, sy] = pts[Math.floor(Math.random() * pts.length)];
-    const ang = rnd(0, Math.PI * 2);
-    const dist = width * rnd(0.5, 1.8);
-    px(buf, w, h, Math.round(sx + Math.cos(ang) * dist), Math.round(sy + Math.sin(ang) * dist),
-       r, g, b, rnd(0.05, 0.3));
-  }
-
-  // Drips from a few low points.
-  for (let d = 0; d < Math.round(rnd(1, 4)); d++) {
-    const [dx, dy] = pts[Math.floor(rnd(pts.length * 0.3, pts.length))];
-    const len = rnd(h * 0.05, h * 0.22);
-    for (let t = 0; t < len; t++) {
-      const taper = width * 0.2 * (1 - t / len);
-      if (taper < 0.4) break;
-      dab(buf, w, h, dx, dy + t, taper, r, g, b, 0.9);
+  // 1. Extrusion — an offset dark copy giving the letters thickness.
+  const ex = depth * 0.75;
+  const ey = depth * 0.6;
+  for (let k = 6; k >= 1; k--) {
+    const f = k / 6;
+    for (const s of shifted) {
+      drawPolyline(rgba, size, size, s, outline * 0.95, 10, 10, 14, 1, ex * f, ey * f);
     }
   }
 
-  return { r, g, b };
-}
-
-/** Transparent graffiti art. Returns the PNG and the palette actually used. */
-export function makeArt(size = 320) {
-  const rgba = Buffer.alloc(size * size * 4);
-  const colours = [];
-  const n = Math.round(rnd(2, 5));
-  const shuffled = [...PALETTE].sort(() => Math.random() - 0.5);
-  for (let i = 0; i < n; i++) {
-    const c = shuffled[i % shuffled.length];
-    stroke(rgba, size, size, c);
-    colours.push({ r: c[0], g: c[1], b: c[2] });
+  // 2. A second-colour keyline just outside the outline, as most pieces have.
+  for (const s of shifted) {
+    drawPolyline(rgba, size, size, s, outline * 1.22, ar, ag, ab, 0.95);
   }
-  return { png: encodePng(size, size, rgba), rgba, size, colours };
+
+  // 3. Hard black outline.
+  for (const s of shifted) {
+    drawPolyline(rgba, size, size, s, outline, 10, 10, 14, 1);
+  }
+
+  // 4. Colour fill, darkening downward so the letters have volume.
+  for (const s of shifted) {
+    drawPolyline(rgba, size, size, s, weight, fr, fg, fb, 1);
+  }
+  for (const s of shifted) {
+    const shaded = s.filter(([, y]) => y > size * 0.5);
+    if (shaded.length > 1) {
+      drawPolyline(rgba, size, size, shaded, weight * 0.8,
+        Math.max(0, fr - 60), Math.max(0, fg - 60), Math.max(0, fb - 60), 0.45);
+    }
+  }
+
+  // 5. Highlight along the upper-left of each stroke.
+  for (const s of shifted) {
+    drawPolyline(rgba, size, size, s, weight * 0.28,
+      clamp(fr + 90, 0, 255), clamp(fg + 90, 0, 255), clamp(fb + 90, 0, 255),
+      0.55, -weight * 0.3, -weight * 0.34);
+  }
+
+  // 6. Overspray mist around the whole piece.
+  for (const s of shifted) {
+    for (const [x, y] of s) {
+      for (let i = 0; i < 6; i++) {
+        const ang = rnd(0, Math.PI * 2);
+        const d = outline * rnd(1.1, 2.4);
+        px(rgba, size, size, Math.round(x + Math.cos(ang) * d), Math.round(y + Math.sin(ang) * d),
+           fr, fg, fb, rnd(0.04, 0.16));
+      }
+    }
+  }
+
+  // 7. Drips from the lowest points of a few strokes.
+  const drippers = shifted.filter(() => Math.random() < 0.4);
+  for (const s of drippers) {
+    const low = s.reduce((a, b) => (b[1] > a[1] ? b : a), s[0]);
+    const len = rnd(size * 0.05, size * 0.16);
+    for (let t = 0; t < len; t++) {
+      const taper = weight * 0.34 * (1 - t / len);
+      if (taper < 0.5) break;
+      dab(rgba, size, size, low[0], low[1] + t, taper, fr, fg, fb, 0.92);
+    }
+    dab(rgba, size, size, low[0], low[1] + len, weight * 0.3, fr, fg, fb, 0.85);
+  }
+
+  const colours = [
+    { r: fr, g: fg, b: fb },
+    { r: ar, g: ag, b: ab },
+  ];
+  return { png: encodePng(size, size, rgba), rgba, size, colours, word, strokeCount: shifted.length };
 }
 
 /** A plausible wall: brick or concrete, directional light, grain, vignette. */

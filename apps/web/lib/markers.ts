@@ -1,42 +1,99 @@
 import { type Piece, uploadUrl } from "@got/shared";
 import type { LayerSpecification } from "maplibre-gl";
+import { projectionCss } from "@/lib/surface";
 import { palette } from "@/lib/theme";
 
 /**
- * Below this zoom we draw a density glow instead of individual art. Hundreds of
- * DOM markers at city zoom is both unreadable and slow.
+ * Three zoom tiers, not two.
+ *
+ * A single threshold meant art either dominated the screen or vanished. Now the
+ * map stays calm at street level (quiet pins) and only commits screen space to
+ * the artwork once you are close enough for it to be the subject.
  */
-export const MARKER_MIN_ZOOM = 14;
+export const ZOOM = {
+  /** Below this: clustered density glow only. */
+  pins: 13,
+  /** At or above this: the framed artwork itself. */
+  art: 16,
+} as const;
 
-/** Rendered size in CSS px. Sticker-sized: readable, not dominating the map. */
-const SIZE = 56;
+export type Tier = "density" | "pins" | "art";
+
+export function tierForZoom(zoom: number): Tier {
+  if (zoom >= ZOOM.art) return "art";
+  if (zoom >= ZOOM.pins) return "pins";
+  return "density";
+}
+
+/** Rendered size of a framed piece, in CSS px. Bigger than a pin because at
+ *  this zoom the artwork IS the content, not an indicator of it. */
+const CARD_W = 132;
+const CARD_H = 99; // 4:3, matching the captured frame
+
+/** Dominant colour of a piece, used to tint its pin. Falls back to the accent. */
+function dominant(piece: Piece): string {
+  const c = piece.colors?.[0];
+  return c ? `rgb(${c.r},${c.g},${c.b})` : palette.accent;
+}
 
 /**
- * Each piece is rendered as its own artwork — never a pin. Zoomed in, the map
- * becomes a collage of what people actually painted, which is the whole point.
+ * Mid-zoom representation: a small uniform dot tinted with the piece's own
+ * dominant colour. Reads as "something is here" without competing for attention.
  */
-export function createMarkerElement(piece: Piece): HTMLElement {
+export function createPinElement(piece: Piece, index = 0): HTMLElement {
+  const el = document.createElement("button");
+  el.type = "button";
+  el.className = "got-pin";
+  // Staggered so a viewport of pieces arrives as a wave, not a pop.
+  el.style.setProperty("--delay", `${Math.min(index * 14, 420)}ms`);
+  el.setAttribute("aria-label", `Graffiti at ${piece.lat.toFixed(4)}, ${piece.lng.toFixed(4)}`);
+  el.style.setProperty("--pin", dominant(piece));
+  return el;
+}
+
+/**
+ * Close-zoom representation: the artwork in a frame.
+ *
+ * The frame matters. Transparent PNGs sitting straight on the basemap read as
+ * spilled paint; a backing card and border make each piece read as an object
+ * someone placed.
+ */
+export function createArtElement(piece: Piece, index = 0): HTMLElement {
   const el = document.createElement("button");
   el.type = "button";
   el.className = "got-marker";
+  el.style.setProperty("--delay", `${Math.min(index * 22, 520)}ms`);
+  el.style.width = `${CARD_W}px`;
+  el.style.height = `${CARD_H}px`;
   el.setAttribute("aria-label", `Graffiti at ${piece.lat.toFixed(4)}, ${piece.lng.toFixed(4)}`);
 
-  const img = document.createElement("img");
-  // Show the finished piece once the transformation lands, else the raw scribble.
-  img.src = uploadUrl(piece.finalImagePath ?? piece.rawImagePath);
-  img.alt = "";
-  img.loading = "lazy";
-  img.decoding = "async";
-  img.draggable = false;
-  img.width = SIZE;
-  img.height = SIZE;
+  // Seeded off the id so a piece keeps its tilt across re-renders, and a wall of
+  // them looks hand-placed rather than gridded.
+  el.style.setProperty("--tilt", `${((piece.id * 37) % 15) - 7}deg`);
 
-  el.appendChild(img);
+  if (piece.sceneImagePath) {
+    // The photo of the actual place is the marker. The artwork is painted into
+    // it in perspective, so the map shows what is really on that wall.
+    const scene = document.createElement("img");
+    scene.className = "got-marker-scene";
+    scene.src = uploadUrl(piece.sceneImagePath);
+    scene.alt = "";
+    scene.loading = "lazy";
+    scene.decoding = "async";
+    scene.draggable = false;
+    el.appendChild(scene);
+    el.classList.add("has-scene");
+  }
 
-  // Slight random rotation so a wall of pieces looks hand-placed, not gridded.
-  // Seeded off the id so it stays put across re-renders.
-  const tilt = ((piece.id * 37) % 21) - 10;
-  el.style.setProperty("--tilt", `${tilt}deg`);
+  const art = document.createElement("img");
+  art.className = piece.sceneImagePath ? "got-marker-art" : "got-marker-art bare";
+  art.src = uploadUrl(piece.finalImagePath ?? piece.rawImagePath);
+  art.alt = "";
+  art.loading = "lazy";
+  art.decoding = "async";
+  art.draggable = false;
+  if (piece.sceneImagePath) art.setAttribute("style", projectionCss(piece));
+  el.appendChild(art);
 
   return el;
 }
@@ -60,12 +117,12 @@ export const DENSITY_LAYERS = {
   single: "pieces-single",
 } as const;
 
-/** Circle + count layers for the clustered view. Uses the accent as the one hot colour. */
+/** Circle + count layers for the clustered view. The accent is the one hot colour. */
 export function densityLayerSpecs(): LayerSpecification[] {
   return [
     {
       id: DENSITY_LAYERS.glow,
-      type: "circle" as const,
+      type: "circle",
       source: DENSITY_LAYERS.source,
       filter: ["has", "point_count"],
       paint: {
@@ -77,7 +134,7 @@ export function densityLayerSpecs(): LayerSpecification[] {
     },
     {
       id: DENSITY_LAYERS.count,
-      type: "symbol" as const,
+      type: "symbol",
       source: DENSITY_LAYERS.source,
       filter: ["has", "point_count"],
       layout: {
@@ -90,7 +147,7 @@ export function densityLayerSpecs(): LayerSpecification[] {
     {
       // Unclustered singles at low zoom: a dot, so a lone piece is still findable.
       id: DENSITY_LAYERS.single,
-      type: "circle" as const,
+      type: "circle",
       source: DENSITY_LAYERS.source,
       filter: ["!", ["has", "point_count"]],
       paint: {
