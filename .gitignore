@@ -23,5 +23,5 @@ ios/**/build/
 # Agent worktrees — never commit these
 .claude/worktrees/
 
-# Cached Street View stills (billed per fetch; never commit)
+# Cached Street View stills (seeding scratch)
 .cache/

@@ -71,10 +71,9 @@ export function createArtElement(piece: Piece, index = 0): HTMLElement {
   el.style.setProperty("--tilt", `${((piece.id * 37) % 15) - 7}deg`);
 
   if (piece.sceneImagePath) {
-    // The photo of the actual place is the marker, and the paint is already
-    // burned into it in perspective by scripts/lib/composite.mjs. Nothing is
-    // overlaid on top: that used to be a CSS 3D transform faking the angle,
-    // and it read as a sticker on a photo rather than paint on a wall.
+    // The scene photo ALREADY contains the artwork — it is the AR view snapshot,
+    // or a pre-composited still. Overlaying the art again would draw it twice.
+    // The photo alone is the marker.
     const scene = document.createElement("img");
     scene.className = "got-marker-scene";
     scene.src = uploadUrl(piece.sceneImagePath);
@@ -84,8 +83,9 @@ export function createArtElement(piece: Piece, index = 0): HTMLElement {
     scene.draggable = false;
     el.appendChild(scene);
     el.classList.add("has-scene");
+
   } else {
-    // No photo of the place, so show the artwork plainly instead.
+    // No scene photo, so show the bare artwork instead.
     const art = document.createElement("img");
     art.className = "got-marker-art bare";
     art.src = uploadUrl(piece.finalImagePath ?? piece.rawImagePath);

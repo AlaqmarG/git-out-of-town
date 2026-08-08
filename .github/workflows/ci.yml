@@ -4,10 +4,13 @@ name: CI
 # runs when something that can change the deployed artifact changes. Docs, markdown
 # and the iOS app never trigger a rebuild or a deploy.
 # Negations (`!`) exclude markdown living inside otherwise-relevant directories.
+#
+# NOTE: the path lists are duplicated on purpose — GitHub Actions does not support
+# YAML anchors/aliases, and using them silently stops the workflow from running.
 on:
   push:
     branches: [main]
-    paths: &web_paths
+    paths:
       - "apps/web/**"
       - "packages/shared/**"
       - "db/**"
@@ -20,7 +23,18 @@ on:
       - ".github/workflows/ci.yml"
       - "!**/*.md"
   pull_request:
-    paths: *web_paths
+    paths:
+      - "apps/web/**"
+      - "packages/shared/**"
+      - "db/**"
+      - "scripts/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "docker-compose.yaml"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/ci.yml"
+      - "!**/*.md"
   workflow_dispatch:
 
 concurrency:
@@ -67,7 +81,18 @@ jobs:
     runs-on: ubuntu-latest
     needs: [check, docker]
     environment: production
+    outputs:
+      before: ${{ steps.before.outputs.build }}
     steps:
+      - name: Record the build that is live now
+        id: before
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+        run: |
+          before=$(curl -sS --max-time 20 "${SITE_URL%/}/api/health" | sed -n 's/.*"build":"\([^"]*\)".*/\1/p' || echo "")
+          echo "build=$before" >> "$GITHUB_OUTPUT"
+          echo "currently live: ${before:-unknown}"
+
       - name: Trigger Komodo deploy
         env:
           KOMODO_URL: ${{ secrets.KOMODO_URL }}
@@ -101,19 +126,27 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Wait for the site to come back healthy
+      - name: Wait for the NEW build to be serving
         env:
           SITE_URL: ${{ secrets.SITE_URL }}
+          BEFORE: ${{ needs.deploy.outputs.before }}
         run: |
           if [ -z "$SITE_URL" ]; then
             echo "::notice::SITE_URL not set — skipping smoke test."; exit 0
           fi
-          # Traefik takes a few seconds to rediscover a recreated container.
-          for i in $(seq 1 30); do
-            code=$(curl -sS -o /dev/null -w '%{http_code}' "${SITE_URL%/}/api/health" || echo 000)
-            [ "$code" = "200" ] && { echo "healthy after ${i} attempt(s)"; break; }
-            echo "attempt $i: HTTP $code — retrying in 10s"; sleep 10
+          # Waiting for HTTP 200 is NOT enough: the old container answers 200 the
+          # entire time Komodo rebuilds, so the suite would test the previous
+          # release. That is exactly how /data and /api/stats 404'd here once.
+          # Wait for Next's BUILD_ID to actually change.
+          for i in $(seq 1 40); do
+            now=$(curl -sS --max-time 20 "${SITE_URL%/}/api/health" | sed -n 's/.*"build":"\([^"]*\)".*/\1/p' || echo "")
+            if [ -n "$now" ] && [ "$now" != "$BEFORE" ]; then
+              echo "new build live: $now (was ${BEFORE:-unknown})"; exit 0
+            fi
+            echo "attempt $i: still ${now:-no-response} — waiting 10s"; sleep 10
           done
+          echo "::error::New build never appeared — smoke would have tested the previous release"
+          exit 1
       - name: Functional smoke test
         env:
           SITE_URL: ${{ secrets.SITE_URL }}

@@ -66,7 +66,13 @@ export async function fetchStreetView(
       `${IMG}?size=${width}x${height}&location=${loc}&heading=${Math.round(heading)}&pitch=${pitch}&fov=${fov}&key=${KEY}`,
       { signal: AbortSignal.timeout(15_000) },
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // Drain before bailing. An unread body keeps its connection checked out of
+      // undici's pool; with the Static API disabled every image 403s, which pins
+      // one connection per piece and eventually wedges every later fetch.
+      await res.arrayBuffer();
+      return null;
+    }
 
     const buf = Buffer.from(await res.arrayBuffer());
     // A JPEG starts FFD8FF; an error page does not.

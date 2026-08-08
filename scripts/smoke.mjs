@@ -32,21 +32,35 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
+/**
+ * Fetches `path` and returns a fully buffered stand-in for the Response.
+ *
+ * The body is read even when a check only cares about the status, and that is
+ * deliberate: an unread response body keeps its connection checked out of
+ * undici's pool, and most checks here assert on status alone. Leave them
+ * undrained and a run pins a connection per check until fetch() hangs forever
+ * with no error — the suite dies mid-way having reported everything green.
+ *
+ * `.json()` / `.text()` / `.headers` / `.status` all still work at call sites.
+ */
 async function expectStatus(path, want, init) {
   let res = await fetch(`${BASE}${path}`, init);
 
   // The write path is rate limited (burst 10, refill 1/6s). Repeated smoke runs
   // legitimately exhaust it, so honour Retry-After once rather than reporting a
-  // false failure.
+  // false failure. Drain the 429 before retrying, for the reason above.
   if (res.status === 429 && want !== 429) {
+    await res.arrayBuffer();
     const wait = Math.min(15, Number(res.headers.get("retry-after") || 7));
     console.log(`      rate limited, waiting ${wait}s…`);
     await new Promise((r) => setTimeout(r, wait * 1000));
     res = await fetch(`${BASE}${path}`, init);
   }
 
+  // Before the assert, so a failing check drains too.
+  const body = await res.text();
   assert(res.status === want, `${path} → expected ${want}, got ${res.status}`);
-  return res;
+  return { status: res.status, headers: res.headers, text: () => body, json: () => JSON.parse(body) };
 }
 
 /** Smallest valid PNG: 1x1 transparent. */
@@ -101,6 +115,81 @@ await check("GET /api/pieces accepts a bbox", async () => {
     assert(p.lat >= 43.5 && p.lat <= 43.8, `piece ${p.id} lat ${p.lat} outside bbox`);
     assert(p.lng >= -79.6 && p.lng <= -79.2, `piece ${p.id} lng ${p.lng} outside bbox`);
   }
+});
+
+console.log("\ndashboard");
+await check("GET /data renders our page, not a framework default", async () => {
+  const res = await expectStatus("/data", 200);
+  const html = await res.text();
+  // A stale image once served the Next.js starter page while every API check
+  // passed — assert on our own content, not just a 200.
+  assert(html.includes("What the wall knows"), "/data did not contain our heading");
+  assert(!html.includes("Create Next App"), "/data is serving the Next.js starter page");
+});
+
+await check("GET / renders the map page", async () => {
+  const res = await expectStatus("/", 200);
+  const html = await res.text();
+  assert(html.includes("Git Out of Town"), "homepage title missing");
+  assert(!html.includes("Create Next App"), "homepage is serving the Next.js starter page");
+});
+
+await check("GET /api/stats returns a well-formed payload", async () => {
+  const res = await expectStatus("/api/stats", 200);
+  const s = await res.json();
+  for (const key of ["totals", "perHour", "surfaces", "cities", "colours", "clients", "generatedAt"]) {
+    assert(key in s, `stats missing '${key}'`);
+  }
+  for (const key of ["pieces", "contributors", "cities", "paintSeconds", "lastHour"]) {
+    assert(typeof s.totals[key] === "number", `totals.${key} is not a number`);
+  }
+  // 24 hourly buckets, gaps filled — a missing hour must read as zero, not absent.
+  assert(s.perHour.length === 24, `expected 24 hourly buckets, got ${s.perHour.length}`);
+  assert(s.perHour.every((p) => typeof p.pieces === "number"), "a bucket has no count");
+});
+
+await check("stats are computed fresh, not cached", async () => {
+  const a = await fetch(`${BASE}/api/stats`).then((r) => r.json());
+  await new Promise((r) => setTimeout(r, 1100));
+  const b = await fetch(`${BASE}/api/stats`).then((r) => r.json());
+  assert(a.generatedAt !== b.generatedAt, "generatedAt did not change — response is cached");
+});
+
+console.log("\nview tracking");
+await check("rejects a view with a non-integer piece id", () =>
+  expectStatus("/api/views", 400, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ pieceId: "nope" }),
+  }));
+
+await check("rejects a malformed view body", () =>
+  expectStatus("/api/views", 400, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{not json",
+  }));
+
+console.log("\nmoderation");
+await check("admin listing requires the key", () =>
+  expectStatus("/api/admin/pieces", 401));
+
+await check("admin delete requires the key", () =>
+  expectStatus("/api/admin/pieces", 401, {
+    method: "DELETE",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: 1 }),
+  }));
+
+await check("a wrong key is rejected", () =>
+  expectStatus("/api/admin/pieces", 401, {
+    headers: { "x-admin-secret": "definitely-not-the-key" },
+  }));
+
+await check("/admin renders", async () => {
+  const res = await expectStatus("/admin", 200);
+  const html = await res.text();
+  assert(html.includes("Moderation"), "/admin did not render the moderation page");
 });
 
 console.log("\nquery validation");

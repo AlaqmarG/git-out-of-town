@@ -28,6 +28,7 @@ struct RemotePiece: Identifiable {
     let lat: Double
     let lng: Double
     let altitudeM: Double?
+    let surfaceType: String?
     let placementTransform: [Double]?
 }
 
@@ -96,6 +97,9 @@ extension ARPaintView {
         private var lastStatus = ""
         private var renderedRemoteIDs: Set<Int> = []
         private var remoteNodes: [Int: SCNNode] = [:]
+        private var fallbackNodes: [Int: SCNNode] = [:]
+        private var fallbackPieces: [Int: RemotePiece] = [:]
+        private var lastReanchor = Date.distantPast
         private var usingGeoAnchor = false
         private var checkedGeoTracking = false
         private struct PendingGeoPiece {
@@ -137,20 +141,36 @@ extension ARPaintView {
 
         private func maybeEnableGeoTracking() {
             guard !checkedGeoTracking, !usingGeoAnchor, let scnView else { return }
-            guard ARGeoTrackingConfiguration.isSupported,
-                  let loc = LocationService.shared.location,
-                  loc.horizontalAccuracy >= 0, loc.horizontalAccuracy < 30 else {
+            guard ARGeoTrackingConfiguration.isSupported else {
                 checkedGeoTracking = true
+                return
+            }
+            // Wait for a decent fix rather than giving up on the first (bad) one.
+            guard let loc = LocationService.shared.location,
+                  loc.horizontalAccuracy >= 0, loc.horizontalAccuracy < 30 else {
                 return
             }
             checkedGeoTracking = true
             ARGeoTrackingConfiguration.checkAvailability(at: loc.coordinate) { [weak self] available, _ in
                 Task { @MainActor in
-                    guard let self, let scnView = self.scnView, available else { return }
+                    guard let self, let scnView = self.scnView else { return }
+                    guard available else {
+                        self.onStatus("geo-tracking not available here — using GPS placement")
+                        return
+                    }
                     let geo = ARGeoTrackingConfiguration()
                     geo.planeDetection = [.horizontal, .vertical]
                     scnView.session.run(geo, options: [.resetTracking, .removeExistingAnchors])
                     self.usingGeoAnchor = true
+                    // Drop any GPS-fallback nodes; they'll be re-added via geo anchors.
+                    for (_, node) in self.remoteNodes {
+                        node.removeFromParentNode()
+                    }
+                    self.remoteNodes.removeAll()
+                    self.renderedRemoteIDs.removeAll()
+                    self.fallbackNodes.removeAll()
+                    self.fallbackPieces.removeAll()
+                    self.pendingGeoPieces.removeAll()
                     self.onStatus("geo-tracking active — pieces pin to exact spots")
                 }
             }
@@ -160,6 +180,7 @@ extension ARPaintView {
             Task { @MainActor [weak self] in
                 self?.publishStatus()
                 self?.maybeEnableGeoTracking()
+                self?.maybeReanchor()
             }
         }
 
@@ -218,6 +239,8 @@ extension ARPaintView {
             remoteNodes.removeAll()
             renderedRemoteIDs.removeAll()
             pendingGeoPieces.removeAll()
+            fallbackNodes.removeAll()
+            fallbackPieces.removeAll()
         }
 
         // MARK: - Placing a piece
@@ -405,13 +428,18 @@ extension ARPaintView {
                 }
 
                 guard let frame = scnView.session.currentFrame,
-                      let loc = LocationService.shared.location else { return }
+                      let loc = LocationService.shared.location else {
+                    self.renderedRemoteIDs.remove(piece.id)
+                    return
+                }
+                guard self.isUsableFix(loc) else {
+                    // Bad or stale fix — hold off and retry on a later tick.
+                    self.renderedRemoteIDs.remove(piece.id)
+                    return
+                }
 
                 let camPos = simd_float3(frame.camera.transform.columns.3.x, frame.camera.transform.columns.3.y, frame.camera.transform.columns.3.z)
-                let eastDelta = (piece.lng - loc.coordinate.longitude) * 111320 * cos(loc.coordinate.latitude * .pi / 180)
-                let northDelta = (piece.lat - loc.coordinate.latitude) * 111320
-                let upDelta = (piece.altitudeM ?? loc.altitude) - loc.altitude
-                let position = camPos + simd_float3(Float(eastDelta), Float(upDelta), Float(-northDelta))
+                let position = self.worldPosition(for: piece, from: loc, cameraPos: camPos)
 
                 let rotation = piece.placementTransform.flatMap(unflatten) ?? matrix_identity_float4x4
                 let node = SCNNode()
@@ -431,6 +459,53 @@ extension ARPaintView {
                 node.simdTransform = world
                 scnView.scene.rootNode.addChildNode(node)
                 self.remoteNodes[piece.id] = node
+                self.fallbackNodes[piece.id] = node
+                self.fallbackPieces[piece.id] = piece
+            }
+        }
+
+        // MARK: - Reconstruction helpers (GPS fallback)
+
+        /// A fix we trust enough to hang world positions off: fresh and reasonably accurate.
+        private func isUsableFix(_ loc: CLLocation) -> Bool {
+            loc.horizontalAccuracy >= 0 && loc.horizontalAccuracy <= 25 &&
+                Date().timeIntervalSince(loc.timestamp) < 5
+        }
+
+        /// Where a piece should sit in world space, given our current pose + fix.
+        /// Vertical comes from the surface type, not GPS altitude (which is very
+        /// noisy) — floor near the ground, ceiling overhead, everything else at eye height.
+        private func worldPosition(for piece: RemotePiece, from loc: CLLocation, cameraPos: SIMD3<Float>) -> SIMD3<Float> {
+            let eastDelta = (piece.lng - loc.coordinate.longitude) * 111320 * cos(loc.coordinate.latitude * .pi / 180)
+            let northDelta = (piece.lat - loc.coordinate.latitude) * 111320
+            let upDelta = heightForSurface(piece.surfaceType) - 1.4
+            return cameraPos + simd_float3(Float(eastDelta), Float(upDelta), Float(-northDelta))
+        }
+
+        private func heightForSurface(_ type: String?) -> Double {
+            switch type {
+            case "floor": return 0.1
+            case "ceiling": return 2.6
+            default: return 1.4
+            }
+        }
+
+        /// As the GPS fix settles, slide fallback pieces to their corrected spots.
+        private func maybeReanchor() {
+            guard Date().timeIntervalSince(lastReanchor) > 2 else { return }
+            lastReanchor = Date()
+            guard let scnView, !fallbackNodes.isEmpty else { return }
+            guard let frame = scnView.session.currentFrame,
+                  let loc = LocationService.shared.location, isUsableFix(loc) else { return }
+            let camPos = simd_float3(frame.camera.transform.columns.3.x, frame.camera.transform.columns.3.y, frame.camera.transform.columns.3.z)
+            for (id, node) in fallbackNodes {
+                guard let piece = fallbackPieces[id] else { continue }
+                let desired = worldPosition(for: piece, from: loc, cameraPos: camPos)
+                if simd_distance(node.simdPosition, desired) > 0.5 {
+                    var t = node.simdTransform
+                    t.columns.3 = simd_float4(desired.x, desired.y, desired.z, 1)
+                    node.simdTransform = t
+                }
             }
         }
 

@@ -51,7 +51,14 @@ export async function reverseGeocode(lat: number, lng: number): Promise<Place> {
         signal: ctrl.signal,
         headers: { "User-Agent": CONTACT, Accept: "application/json" },
       });
-      if (!res.ok) return { city: null, country: null };
+      if (!res.ok) {
+        // Drain before bailing out. An unread response body keeps its connection
+        // checked out of undici's pool, and Nominatim rejects in bursts (403/429),
+        // so one pinned connection per rejection eventually wedges every later
+        // lookup — silently, since this path is best-effort and swallows errors.
+        await res.arrayBuffer();
+        return { city: null, country: null };
+      }
 
       const body = (await res.json()) as {
         address?: Record<string, string | undefined>;
