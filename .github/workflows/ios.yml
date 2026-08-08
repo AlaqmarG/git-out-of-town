@@ -24,6 +24,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The project targets iOS 26.2 and uses SWIFT_DEFAULT_ACTOR_ISOLATION,
+      # which requires Xcode 26. The runner's default Xcode (16.x) ignores the
+      # setting and fails on MainActor isolation.
+      - name: Select Xcode 26
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "26"
+
       - name: Show toolchain
         run: xcodebuild -version
 
