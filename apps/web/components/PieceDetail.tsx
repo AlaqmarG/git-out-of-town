@@ -1,6 +1,9 @@
 "use client";
 
 import { type Piece, uploadUrl } from "@got/shared";
+import type { CSSProperties } from "react";
+import { useEffect } from "react";
+import { projectionFor } from "@/lib/surface";
 import { palette } from "@/lib/theme";
 
 function when(iso: string): string {
@@ -12,6 +15,11 @@ function when(iso: string): string {
   return `${Math.round(hrs / 24)}d ago`;
 }
 
+/**
+ * Opening a piece is the moment this project is about, so it takes over the
+ * screen rather than sitting in a corner. The artwork is the subject; the map
+ * recedes behind a blur.
+ */
 export default function PieceDetail({
   piece,
   onClose,
@@ -19,87 +27,121 @@ export default function PieceDetail({
   piece: Piece | null;
   onClose: () => void;
 }) {
+  useEffect(() => {
+    if (!piece) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [piece, onClose]);
+
   if (!piece) return null;
 
-  // The scene is the place it was painted; the art is layered on top rather than
-  // baked in, so it stays crisp and the background can be a photo of any format.
-  const art = piece.finalImagePath ?? piece.rawImagePath;
+  const proj = projectionFor(piece);
   const hasScene = Boolean(piece.sceneImagePath);
+  const art = piece.finalImagePath ?? piece.rawImagePath;
 
   return (
     <div
-      className="got-card absolute right-3 bottom-3 left-3 mx-auto max-w-md overflow-hidden rounded-2xl sm:left-auto"
-      style={{
-        background: "rgba(14,14,18,0.96)",
-        border: `1px solid ${palette.building}`,
-        boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
-      }}
+      className="got-lightbox fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8"
+      style={{ background: "rgba(6,6,9,0.82)", backdropFilter: "blur(14px)" }}
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
     >
-      <div className="relative" style={{ aspectRatio: "4 / 3", background: palette.ink }}>
-        {hasScene && (
-          /* eslint-disable-next-line @next/next/no-img-element */
+      <div
+        className="got-lightbox-panel relative w-full max-w-3xl overflow-hidden rounded-3xl"
+        style={{ border: `1px solid ${palette.building}`, boxShadow: "0 30px 90px rgba(0,0,0,0.7)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="relative" style={{ aspectRatio: "4 / 3", background: palette.ink }}>
+          {hasScene && (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={uploadUrl(piece.sceneImagePath!)}
+              alt="The place this was painted"
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          )}
+
+          {/* Projected onto the surface rather than pasted flat — see lib/surface.ts. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={uploadUrl(piece.sceneImagePath!)}
+            src={uploadUrl(art)}
             alt=""
-            className="absolute inset-0 h-full w-full object-cover"
+            className="absolute inset-0 m-auto"
+            style={
+              hasScene
+                ? ({
+                    width: "58%",
+                    transform: proj.transform,
+                    mixBlendMode: proj.blend,
+                    opacity: proj.opacity,
+                    filter: "drop-shadow(0 6px 16px rgba(0,0,0,0.5))",
+                  } as CSSProperties)
+                : { width: "76%" }
+            }
           />
-        )}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={uploadUrl(art)}
-          alt=""
-          className="absolute inset-0 m-auto"
-          style={{
-            width: hasScene ? "62%" : "80%",
-            filter: hasScene ? "drop-shadow(0 4px 10px rgba(0,0,0,0.55))" : "none",
-          }}
-        />
 
-        {hasScene && (
-          <span
-            className="absolute top-2 left-2 rounded-full px-2 py-1 text-[10px] tracking-widest uppercase"
-            style={{ background: "rgba(0,0,0,0.6)", color: palette.textMuted }}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="absolute top-3 right-3 grid h-9 w-9 place-items-center rounded-full text-lg transition-transform hover:scale-110"
+            style={{ background: "rgba(0,0,0,0.55)", color: palette.text, backdropFilter: "blur(6px)" }}
           >
-            On the wall
-          </span>
-        )}
+            ×
+          </button>
 
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="absolute top-2 right-2 grid h-7 w-7 place-items-center rounded-full text-sm"
-          style={{ background: "rgba(0,0,0,0.6)", color: palette.text }}
-        >
-          ×
-        </button>
-      </div>
-
-      <div className="flex items-center gap-3 px-4 py-3">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold" style={{ color: palette.text }}>
-            {piece.kind === "sticker" ? "Sticker" : "Spray"}
-            {piece.city ? ` · ${piece.city}` : ""}
-          </p>
-          <p className="mt-0.5 text-xs" style={{ color: palette.textMuted }}>
-            {when(piece.createdAt)}
-            {piece.strokeCount ? ` · ${piece.strokeCount} strokes` : ""}
-            {piece.client === "ios" ? " · painted in AR" : ""}
-            {piece.surfaceType ? ` · on a ${piece.surfaceType}` : ""}
-          </p>
+          {hasScene && (
+            <span
+              className="absolute top-3 left-3 rounded-full px-2.5 py-1 text-[10px] tracking-widest uppercase"
+              style={{
+                background: "rgba(0,0,0,0.55)",
+                color: palette.textMuted,
+                backdropFilter: "blur(6px)",
+              }}
+            >
+              {piece.surfaceType && piece.surfaceType !== "none"
+                ? `on a ${piece.surfaceType}`
+                : "on the wall"}
+            </span>
+          )}
         </div>
 
-        {piece.colors && piece.colors.length > 0 && (
-          <div className="flex shrink-0 gap-1">
-            {piece.colors.slice(0, 6).map((c, i) => (
-              <span
-                key={i}
-                className="h-3.5 w-3.5 rounded-full"
-                style={{ background: `rgb(${c.r},${c.g},${c.b})` }}
-              />
-            ))}
+        <div
+          className="flex items-center gap-4 px-5 py-4"
+          style={{ background: "rgba(14,14,18,0.96)" }}
+        >
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-base font-semibold" style={{ color: palette.text }}>
+              {piece.kind === "sticker" ? "Sticker" : "Spray"}
+              {piece.city ? ` · ${piece.city}` : ""}
+            </p>
+            <p className="mt-1 text-xs" style={{ color: palette.textMuted }}>
+              {when(piece.createdAt)}
+              {piece.strokeCount ? ` · ${piece.strokeCount} strokes` : ""}
+              {piece.durationMs ? ` · ${Math.round(piece.durationMs / 1000)}s to paint` : ""}
+              {piece.client === "ios" ? " · painted in AR" : ""}
+            </p>
           </div>
-        )}
+
+          {piece.colors && piece.colors.length > 0 && (
+            <div className="flex shrink-0 gap-1.5">
+              {piece.colors.slice(0, 6).map((c, i) => (
+                <span
+                  key={i}
+                  className="h-4 w-4 rounded-full"
+                  style={{
+                    background: `rgb(${c.r},${c.g},${c.b})`,
+                    boxShadow: "0 0 0 1px rgba(255,255,255,0.15)",
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

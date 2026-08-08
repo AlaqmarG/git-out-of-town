@@ -24,6 +24,9 @@ const COUNT = Number(process.env.SEED_COUNT || 25);
 const CENTRE = { lat: 43.6413, lng: -79.4042 };
 const SPREAD = 0.0032; // ~350m
 
+// Weighted toward walls, which is where graffiti actually goes.
+const SURFACES = ["wall", "wall", "wall", "wall", "wall", "door", "floor", "window"];
+
 // --- seeding ----------------------------------------------------------------
 
 console.log(`\nSeeding ${COUNT} placeholder pieces → ${BASE}`);
@@ -60,6 +63,9 @@ for (let i = 0; i < COUNT; i++) {
       strokeCount: 2 + Math.floor(Math.random() * 20),
       durationMs: 3000 + Math.floor(Math.random() * 25000),
       client: "web",
+      // Drives the perspective projection on the web (lib/surface.ts). Mostly
+      // walls, as real graffiti is.
+      surfaceType: SURFACES[Math.floor(Math.random() * SURFACES.length)],
     }),
   );
 

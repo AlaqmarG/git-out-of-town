@@ -1,5 +1,6 @@
 import { type Piece, uploadUrl } from "@got/shared";
 import type { LayerSpecification } from "maplibre-gl";
+import { projectionCss } from "@/lib/surface";
 import { palette } from "@/lib/theme";
 
 /**
@@ -24,8 +25,10 @@ export function tierForZoom(zoom: number): Tier {
   return "density";
 }
 
-/** Rendered size of a framed piece, in CSS px. */
-const ART_SIZE = 64;
+/** Rendered size of a framed piece, in CSS px. Bigger than a pin because at
+ *  this zoom the artwork IS the content, not an indicator of it. */
+const CARD_W = 132;
+const CARD_H = 99; // 4:3, matching the captured frame
 
 /** Dominant colour of a piece, used to tint its pin. Falls back to the accent. */
 function dominant(piece: Piece): string {
@@ -60,26 +63,37 @@ export function createArtElement(piece: Piece, index = 0): HTMLElement {
   el.type = "button";
   el.className = "got-marker";
   el.style.setProperty("--delay", `${Math.min(index * 22, 520)}ms`);
+  el.style.width = `${CARD_W}px`;
+  el.style.height = `${CARD_H}px`;
   el.setAttribute("aria-label", `Graffiti at ${piece.lat.toFixed(4)}, ${piece.lng.toFixed(4)}`);
-
-  const img = document.createElement("img");
-  // The transformed piece once it exists, else the raw scribble. The scene photo
-  // is deliberately not used here — at 64px it is mostly wall texture.
-  img.src = uploadUrl(piece.finalImagePath ?? piece.rawImagePath);
-  img.alt = "";
-  img.loading = "lazy";
-  img.decoding = "async";
-  img.draggable = false;
-  img.width = ART_SIZE;
-  img.height = ART_SIZE;
-  el.appendChild(img);
 
   // Seeded off the id so a piece keeps its tilt across re-renders, and a wall of
   // them looks hand-placed rather than gridded.
-  el.style.setProperty("--tilt", `${((piece.id * 37) % 17) - 8}deg`);
+  el.style.setProperty("--tilt", `${((piece.id * 37) % 15) - 7}deg`);
 
-  // A piece painted in AR onto a real wall gets a subtle marker of that.
-  if (piece.sceneImagePath) el.classList.add("has-scene");
+  if (piece.sceneImagePath) {
+    // The photo of the actual place is the marker. The artwork is painted into
+    // it in perspective, so the map shows what is really on that wall.
+    const scene = document.createElement("img");
+    scene.className = "got-marker-scene";
+    scene.src = uploadUrl(piece.sceneImagePath);
+    scene.alt = "";
+    scene.loading = "lazy";
+    scene.decoding = "async";
+    scene.draggable = false;
+    el.appendChild(scene);
+    el.classList.add("has-scene");
+  }
+
+  const art = document.createElement("img");
+  art.className = piece.sceneImagePath ? "got-marker-art" : "got-marker-art bare";
+  art.src = uploadUrl(piece.finalImagePath ?? piece.rawImagePath);
+  art.alt = "";
+  art.loading = "lazy";
+  art.decoding = "async";
+  art.draggable = false;
+  if (piece.sceneImagePath) art.setAttribute("style", projectionCss(piece));
+  el.appendChild(art);
 
   return el;
 }
