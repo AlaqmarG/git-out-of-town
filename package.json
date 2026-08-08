@@ -11,7 +11,9 @@
     "build": "npm run build -w @got/web",
     "start": "npm run start -w @got/web",
     "lint": "npm run lint --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:smoke": "node scripts/smoke.mjs"
   },
   "engines": {
     "node": ">=22"

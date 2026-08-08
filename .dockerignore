@@ -11,3 +11,5 @@ docs
 apps/ios
 **/*.tsbuildinfo
 .uploads
+._*
+.AppleDouble

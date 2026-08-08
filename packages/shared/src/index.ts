@@ -110,7 +110,18 @@ export function uploadUrl(path: string): string {
 }
 
 export function parseBBox(raw: string): BBox | null {
-  const p = raw.split(",").map(Number);
-  if (p.length !== 4 || p.some(Number.isNaN)) return null;
-  return { west: p[0], south: p[1], east: p[2], north: p[3] };
+  const parts = raw.split(",");
+  if (parts.length !== 4) return null;
+
+  // Number("") is 0, not NaN — so blank parts must be rejected explicitly or
+  // "1,2,3," would parse as a valid box with north = 0.
+  const p = parts.map((s) => (s.trim() === "" ? Number.NaN : Number(s)));
+  if (p.some((n) => !Number.isFinite(n))) return null;
+
+  const [west, south, east, north] = p as [number, number, number, number];
+  if (west < -180 || west > 180 || east < -180 || east > 180) return null;
+  if (south < -90 || south > 90 || north < -90 || north > 90) return null;
+  if (south > north) return null;
+
+  return { west, south, east, north };
 }
