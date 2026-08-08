@@ -53,11 +53,13 @@ npm workspaces. Run `npm install` and all scripts from the **repo root** — nev
 
 | | |
 |---|---|
-| [`docs/01-rubric-and-deadlines.md`](docs/01-rubric-and-deadlines.md) | Judging rubric, tracks, what scores points |
-| [`docs/02-build-plan.md`](docs/02-build-plan.md) | Architecture, scope, risks, pitch |
-| [`docs/03-reve-reference.md`](docs/03-reve-reference.md) | Reve API reference (only if we get a key) |
-| [`docs/04-deploy.md`](docs/04-deploy.md) | Komodo deployment, Traefik, ARM64 notes |
-| [`docs/05-access.md`](docs/05-access.md) | **Onboarding: URLs, VPS access, credentials** |
+| [`CLAUDE.md`](CLAUDE.md) | **Start here** — architecture, conventions, current state |
+| [`docs/PLAN.md`](docs/PLAN.md) | Deadlines, rubric, product, scope, risks, pitch |
+| [`docs/OPS.md`](docs/OPS.md) | Onboarding, VPS access, deployment, troubleshooting |
+| [`docs/reve-api.md`](docs/reve-api.md) | Reve API reference (only if we get a key) |
+
+Each directory also carries its own `CLAUDE.md` with local detail — `apps/web`, `apps/ios`,
+`packages/shared`, `db`.
 
 ## Ground rules
 

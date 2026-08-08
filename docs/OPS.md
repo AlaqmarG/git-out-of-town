@@ -1,47 +1,60 @@
-# Deploy — Komodo on the OCI VPS
+# Ops
 
-Deployed onto the existing `wayfare-vps-runner` box. **We do not run our own reverse proxy** — the
-shared Traefik already owns :80/:443. We attach to it with labels.
-
-```
-Traefik (shared, wayfarer-net, letsencrypt)
- ├── Host(SITE_HOST) && PathPrefix(/uploads) → got-uploads (nginx, :80)  ← user art
- └── Host(SITE_HOST)                        → got-app (Next.js, :3000)
-                                                  └── got-db (Postgres 17, internal only)
-```
-
-## The host
-
-| | |
-|---|---|
-| SSH | `ssh wayfare-vps-runner` (`opc@129.153.49.190`, key `~/.ssh/wayfare-ampere.pem`) |
-| OS / arch | Oracle Linux 9.8, **aarch64 (Ampere)** |
-| Disk | 183G total, ~164G free |
-| Komodo | https://manage.wayfarerbx.com |
-| Proxy | Traefik v3.6, network `wayfarer-net`, certresolver `letsencrypt`, entrypoint `websecure` |
-
-### Why there is no Caddy and no multi-arch build
-- Traefik already binds :80/:443. A second proxy would fail to start with a port conflict.
-- The host is **ARM64**. Because Komodo builds the image *on the server*, this is a non-issue. If we
-  ever push from CI to a registry instead, the build must be multi-arch or the container dies with
-  `exec format error`.
+Infrastructure, deployment, and onboarding.
 
 ---
 
-## Hostname — no DNS purchase needed
+## URLs
 
-The box already uses **sslip.io** wildcard DNS (see `brockcsc.129-153-49-190.sslip.io`). Any
-`*.129-153-49-190.sslip.io` name resolves to the host automatically, and Let's Encrypt will issue for
-it. So we can go live immediately:
+| What | Where |
+|---|---|
+| Live site | https://gitoutoftown.129-153-49-190.sslip.io |
+| Health | https://gitoutoftown.129-153-49-190.sslip.io/api/health |
+| Repo | https://github.com/AlaqmarG/git-out-of-town (private) |
+| Komodo | https://manage.wayfarerbx.com |
+
+## The VPS
+
+| | |
+|---|---|
+| Host | `129.153.49.190` |
+| User | `opc` |
+| OS / arch | Oracle Linux 9.8, **aarch64 (Ampere)** |
+| Disk | 183G total, ~164G free |
+| Proxy | shared Traefik v3.6 on `wayfarer-net`, certresolver `letsencrypt` |
+| Our stack | compose project `gitoutoftown`, in `~/gitoutoftown` |
+| Containers | `gitoutoftown-got-app-1`, `-got-db-1`, `-got-uploads-1` |
+
+⚠️ **This box also runs production workloads** (`brockcsc-prod-app`, `keycloak`, `komodo-core`,
+plus the shared Traefik and Postgres). Don't restart anything outside the `got-` prefix, and never
+`docker compose down` from a directory you didn't check first.
+
+### SSH setup
+
+Add to `~/.ssh/config`:
 
 ```
-SITE_HOST=gitoutoftown.129-153-49-190.sslip.io
+Host wayfare-vps-runner
+	HostName 129.153.49.190
+	User opc
+	IdentityFile ~/.ssh/wayfare-ampere.pem
 ```
 
-Swap in the real domain later by changing `SITE_HOST` and pointing an A record at `129.153.49.190`.
-Nothing else changes. **Buy the real domain anyway** — "permanent" is in the judging brief and an
-sslip.io URL undercuts it.
+```bash
+chmod 600 ~/.ssh/wayfare-ampere.pem
+ssh wayfare-vps-runner
+```
 
+### Useful commands
+
+```bash
+ssh wayfare-vps-runner 'docker ps --filter name=got-'
+ssh wayfare-vps-runner 'docker logs -f --tail 50 gitoutoftown-got-app-1'
+ssh wayfare-vps-runner 'docker exec -it gitoutoftown-got-db-1 psql -U graffiti -d graffiti'
+ssh wayfare-vps-runner 'cd ~/gitoutoftown && docker compose -p gitoutoftown -f docker-compose.yaml up -d --build'
+```
+
+---
 ---
 
 ## Komodo stack setup (one time)
@@ -99,25 +112,6 @@ change.
 deploys on *every* push including broken ones — which is why CI-gated deploy is preferred.
 
 ---
-
-## Local development
-
-```bash
-cp .env.example .env
-docker compose up -d got-db     # override file publishes 5432 for local dev
-npm install
-npm run dev
-```
-
-`db/init.sql` runs on **first** container start only. To re-apply after editing:
-
-```bash
-docker compose down -v got-db && docker compose up -d got-db   # ⚠️ destroys local data
-```
-
-> 📱 Camera, geolocation, and device orientation require **HTTPS** — they will not work on
-> `localhost` from a phone. Test against the deployed URL.
-
 ---
 
 ## Storage
@@ -128,15 +122,6 @@ Uploads live on the `uploads` volume at `/data/uploads`, written by the app and 
 Write `<uuid>.png`; store the relative path in `pieces.raw_image_path` / `final_image_path`.
 
 ---
-
-## Live updates
-
-`db/init.sql` installs a trigger firing `pg_notify('new_piece', …)` on insert. Consume it in an SSE
-route with a **dedicated `pg.Client`** — never the shared `Pool`, since a pooled connection gets
-recycled and silently stops listening.
-
-Fallback: poll `/api/pieces?since=` every 3s. Fine at this scale; not worth losing an hour.
-
 ---
 
 ## Troubleshooting
