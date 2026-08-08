@@ -1,7 +1,14 @@
 # Devpost draft — Git Out of Town
 
 Cover image: [`assets/brand/devpost-cover-1200.png`](assets/brand/devpost-cover-1200.png) (1200×675).
-Hand-authored in the app's own palette — not model output, per the rubric's mark-down on generic AI visuals.
+Hand-authored in HTML/SVG in the app's own palette — not model output, per the rubric's mark-down on
+generic AI visuals. Source: [`assets/brand/cover.html`](assets/brand/cover.html). Re-render with:
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu \
+  --hide-scrollbars --force-device-scale-factor=2 --window-size=1200,675 \
+  --screenshot=cover.png file://$PWD/docs/assets/brand/cover.html
+```
 
 **Tracks:** Main · Best Use of Reve · TECHNATION Data Intelligence
 **Links:** https://gitoutoftown.129-153-49-190.sslip.io · repo
@@ -37,19 +44,20 @@ and the map ticking up live as people paint.
 
 Two clients, one contract.
 
-- **iOS** — SwiftUI + ARKit. You draw in 2D and we place it as a textured quad at the raycast hit,
-  not as paint in 3D space. `ARMeshClassification` at the hit point tells us what you painted on.
-  GPS + compass bearing is the anchoring floor; `ARGeoAnchor` is an upgrade we switch on only when
-  the venue supports it.
+- **iOS** — SwiftUI + ARKit + SceneKit. You draw in 2D with PencilKit and we place it as a textured
+  quad at the raycast hit, not as paint in 3D space. `ARMeshClassification` at the hit point tells
+  us what you painted on, and we snapshot the camera frame with the art already composited — that
+  photo is what the web shows. GPS + compass bearing is the anchoring floor; `ARGeoAnchor` with a
+  real altitude re-anchors your piece when someone comes back to it.
 - **Web** — Next.js 16 and MapLibre GL. The basemap is hand-authored, layer by layer, over free
   OpenFreeMap vector tiles — no stock style, no map API key. Markers render in three zoom tiers:
   clustered density glow → pins tinted with each piece's own dominant colour → the framed artwork
   itself.
 - **Data** — Postgres. `LISTEN/NOTIFY` on insert feeds an SSE stream, so a piece painted on a phone
   lands on every open map without a refresh.
-- **Infra** — Docker on an ARM64 OCI box behind shared Traefik, deployed by Komodo from `main`.
-  nginx serves uploads directly; image bytes never pass through Node, because a single pan of the
-  map pulls hundreds at once.
+- **Infra** — self-hosted. Docker, TLS, deployed straight from `main` on push. Uploaded art is
+  served by a separate static container, so image bytes never pass through Node — a single pan of
+  the map pulls hundreds of them at once.
 - **Reve** — the visual identity. Every colour in the app comes from one palette file, so the art
   direction propagates to the map, the UI and the markers at once.
 
@@ -87,18 +95,36 @@ app by editing one file at 3 AM.
 
 ## What's next for Git Out of Town
 
-- `ARGeoAnchor` everywhere for centimetre-accurate placement that survives across sessions
+- Shared relocalization, so two phones standing at the same wall agree on the piece to the centimetre
 - Walls and crews — a shared surface that fills up, and the people who claim it
 - Time-lapse: scrub a wall's history and watch it get painted over
 - Android via WebXR, and a browser capture path so the barrier is a link, not an install
-- Moderation that scales past a delete button, because this is public UGC pinned to real addresses
+- Community moderation — this is public art pinned to real addresses, and the neighbourhood should
+  get a say in what stays up
 
 ---
 
 ## Tags
 
 ```
-augmented-reality, arkit, ios, swift, swiftui, realitykit, lidar, geolocation, maplibre,
+augmented-reality, arkit, ios, swift, swiftui, scenekit, lidar, geolocation, maplibre,
 mapping, nextjs, typescript, postgresql, server-sent-events, realtime, reve, generative-art,
 graffiti, street-art, community, docker, self-hosted, data-visualization, dashboard, geospatial
 ```
+
+---
+
+## Before the 1 PM submission
+
+The draft describes the project as pitched. Verified against `main` as of the iOS geo-anchor merge:
+
+| Claim | State |
+|---|---|
+| AR paint, placement, scene photo | ✅ on `main` (PencilKit + SceneKit + `ARGeoAnchor`) |
+| Public live map, three zoom tiers | ✅ on `main` |
+| Live updates without refresh | ✅ `/api/stream` |
+| `/data` dashboard — the whole TECHNATION claim | ⏳ in flight, not on `main` |
+| Reve-derived brand + the scribble→house-style transform | ❌ palette is hand-picked, not Reve-derived |
+
+Cut or soften any row that is still ⏳/❌ at 11 AM. The palette is also being reworked
+(`lib/theme.ts`) — if the accent moves, re-render the cover so it still matches the app.

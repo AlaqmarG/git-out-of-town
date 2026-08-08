@@ -1,0 +1,217 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #0b0b0d; }
+  body { width: 1200px; height: 675px; overflow: hidden; }
+  .frame { position: relative; width: 1200px; height: 675px; overflow: hidden;
+           font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  svg.map { position: absolute; inset: 0; }
+
+  .glow { position: absolute; border-radius: 999px; filter: blur(60px); background: #ff4d2e; }
+  .g1 { width: 420px; height: 420px; left: 120px;  top: 200px; opacity: .13; }
+  .g2 { width: 260px; height: 260px; left: 820px;  top: 80px;  opacity: .10; }
+  .g3 { width: 180px; height: 180px; left: 700px;  top: 430px; opacity: .09; }
+
+  .vig { position: absolute; inset: 0;
+         background: radial-gradient(120% 90% at 42% 55%, rgba(11,11,13,0) 32%, rgba(11,11,13,.82) 100%); }
+
+  /* framed markers — same language as .got-marker in globals.css */
+  .marker { position: absolute; padding: 6px; border: 1px solid rgba(255,255,255,.10);
+            border-radius: 11px; background: linear-gradient(160deg,#1b1b21,#121216);
+            box-shadow: 0 6px 18px rgba(0,0,0,.6); line-height: 0; }
+  .marker svg { display: block; border-radius: 7px; background: rgba(255,255,255,.02); }
+  .marker.scene::after { content:""; position:absolute; right:-3px; bottom:-3px; width:9px; height:9px;
+            border:2px solid #121216; border-radius:999px; background:#ff4d2e; }
+
+  .pin { position: absolute; width: 13px; height: 13px; border-radius: 999px;
+         border: 1.5px solid rgba(11,11,13,.85);
+         box-shadow: 0 0 0 1px rgba(255,255,255,.14), 0 2px 6px rgba(0,0,0,.6); }
+
+  .lockup { position: absolute; left: 76px; top: 236px; }
+  .word { font-size: 96px; line-height: .88; font-weight: 800; letter-spacing: -.045em;
+          color: #e8e8ec; transform: scaleX(.93); transform-origin: left; }
+  .word .out { color: #ff4d2e; }
+  .tag { margin-top: 26px; font-size: 21px; line-height: 1.42; color: #b4b4c2;
+         letter-spacing: -.008em; max-width: 470px; }
+  .tag b { color: #e8e8ec; font-weight: 600; }
+
+  .chip { position: absolute; left: 78px; top: 176px; display: flex; align-items: center; gap: 9px;
+          padding: 7px 14px 7px 11px; border: 1px solid rgba(255,77,46,.34); border-radius: 999px;
+          background: rgba(255,77,46,.09); color: #ffb3a4;
+          font-size: 12.5px; letter-spacing: .13em; text-transform: uppercase; font-weight: 600; }
+  .dot { width: 7px; height: 7px; border-radius: 999px; background: #ff4d2e;
+         box-shadow: 0 0 9px 2px rgba(255,77,46,.6); }
+
+  .foot { position: absolute; left: 78px; bottom: 46px; display: flex; align-items: center; gap: 14px;
+          font-size: 13px; color: #6f6f7c; letter-spacing: .04em; }
+  .foot .sep { width: 4px; height: 4px; border-radius: 999px; background: #3a3a48; }
+
+  .grain { position: absolute; inset: 0; opacity: .16; mix-blend-mode: overlay; }
+</style>
+
+<div class="frame">
+  <!-- basemap: hand-drawn street grid on the Toronto angle -->
+  <svg class="map" width="1200" height="675" viewBox="0 0 1200 675">
+    <rect width="1200" height="675" fill="#0b0b0d"/>
+    <g transform="rotate(-16.5 600 337)">
+      <rect x="-260" y="-260" width="1720" height="1200" fill="#131317"/>
+      <!-- water -->
+      <path d="M-260 700 L1460 560 L1460 940 L-260 940 Z" fill="#05060e"/>
+      <path d="M-260 700 L1460 560" stroke="#1a1a2c" stroke-width="1.5" fill="none"/>
+      <!-- parks -->
+      <rect x="120" y="120" width="150" height="104" fill="#131c15"/>
+      <rect x="880" y="330" width="126" height="96" fill="#131c15"/>
+      <!-- blocks -->
+      <g fill="#17171c">
+        <rect x="-200" y="-40" width="1620" height="120"/>
+        <rect x="-200" y="130" width="1620" height="112"/>
+        <rect x="-200" y="292" width="1620" height="128"/>
+        <rect x="-200" y="470" width="1620" height="116"/>
+      </g>
+      <!-- buildings -->
+      <g fill="#22222a" opacity=".85">
+        <rect x="30" y="-10" width="58" height="44"/><rect x="120" y="10" width="34" height="52"/>
+        <rect x="230" y="-20" width="72" height="60"/><rect x="360" y="4" width="46" height="46"/>
+        <rect x="470" y="-14" width="60" height="66"/><rect x="600" y="16" width="38" height="42"/>
+        <rect x="700" y="-8" width="66" height="50"/><rect x="840" y="8" width="42" height="54"/>
+        <rect x="960" y="-16" width="70" height="58"/><rect x="1090" y="6" width="44" height="46"/>
+        <rect x="60" y="150" width="50" height="60"/><rect x="330" y="164" width="66" height="44"/>
+        <rect x="520" y="146" width="40" height="66"/><rect x="760" y="160" width="72" height="48"/>
+        <rect x="1010" y="150" width="52" height="60"/>
+        <rect x="90" y="316" width="64" height="70"/><rect x="300" y="330" width="44" height="56"/>
+        <rect x="620" y="310" width="76" height="64"/><rect x="1080" y="322" width="56" height="62"/>
+        <rect x="180" y="492" width="60" height="52"/><rect x="450" y="486" width="72" height="60"/>
+      </g>
+      <!-- minor streets -->
+      <g stroke="#30303a" stroke-width="2.4" opacity=".9">
+        <line x1="-260" y1="96"  x2="1460" y2="96"/>
+        <line x1="-260" y1="256" x2="1460" y2="256"/>
+        <line x1="-260" y1="438" x2="1460" y2="438"/>
+        <line x1="-260" y1="600" x2="1460" y2="600"/>
+        <line x1="60"   y1="-260" x2="60"   y2="940"/>
+        <line x1="285"  y1="-260" x2="285"  y2="940"/>
+        <line x1="430"  y1="-260" x2="430"  y2="940"/>
+        <line x1="655"  y1="-260" x2="655"  y2="940"/>
+        <line x1="800"  y1="-260" x2="800"  y2="940"/>
+        <line x1="1025" y1="-260" x2="1025" y2="940"/>
+        <line x1="1170" y1="-260" x2="1170" y2="940"/>
+      </g>
+      <!-- arterials -->
+      <g stroke="#4d4d5c" stroke-width="6" stroke-linecap="round">
+        <line x1="-260" y1="180" x2="1460" y2="180"/>
+        <line x1="-260" y1="520" x2="1460" y2="520"/>
+        <line x1="180"  y1="-260" x2="180"  y2="940"/>
+        <line x1="930"  y1="-260" x2="930"  y2="940"/>
+      </g>
+      <!-- rail -->
+      <g stroke="#3a3a48" stroke-width="2" stroke-dasharray="9 7" opacity=".8">
+        <line x1="-260" y1="352" x2="1460" y2="352"/>
+      </g>
+    </g>
+
+    <!-- grain: hand-mixed noise so the frame doesn't read as flat vector -->
+    <filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3"/></filter>
+  </svg>
+
+  <div class="glow g1"></div><div class="glow g2"></div><div class="glow g3"></div>
+  <div class="vig"></div>
+
+  <!-- scattered pins -->
+  <div class="pin" style="left:640px; top:120px;  background:#ff4d2e;"></div>
+  <div class="pin" style="left:566px; top:520px;  background:#4ad6c0;"></div>
+  <div class="pin" style="left:1046px;top:212px;  background:#ffd23f;"></div>
+  <div class="pin" style="left:742px; top:596px;  background:#ff4d2e;"></div>
+  <div class="pin" style="left:496px; top:96px;   background:#8b7bff;"></div>
+  <div class="pin" style="left:1128px;top:474px;  background:#ff4d2e;"></div>
+
+  <!-- framed pieces -->
+  <div class="marker scene" style="left:706px; top:186px; transform:rotate(-6deg);">
+    <svg width="112" height="112" viewBox="0 0 112 112">
+      <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 78 C30 26, 52 22, 58 54 C63 82, 84 76, 94 40"
+              stroke="#ff4d2e" stroke-width="11" opacity=".28" filter="blur(3px)"/>
+        <path d="M18 78 C30 26, 52 22, 58 54 C63 82, 84 76, 94 40"
+              stroke="#ff4d2e" stroke-width="7"/>
+        <path d="M34 92 C48 70, 66 88, 82 66" stroke="#ffd23f" stroke-width="5"/>
+        <path d="M58 54 l0 22" stroke="#ff4d2e" stroke-width="3" opacity=".7"/>
+      </g>
+    </svg>
+  </div>
+
+  <div class="marker" style="left:860px; top:352px; transform:rotate(7deg);">
+    <svg width="88" height="88" viewBox="0 0 88 88">
+      <g fill="none" stroke-linecap="round">
+        <circle cx="44" cy="42" r="22" stroke="#4ad6c0" stroke-width="12" opacity=".26" filter="blur(3px)"/>
+        <circle cx="44" cy="42" r="22" stroke="#4ad6c0" stroke-width="7"/>
+        <path d="M28 60 L60 24" stroke="#e8e8ec" stroke-width="5"/>
+        <path d="M44 64 l0 14" stroke="#4ad6c0" stroke-width="3" opacity=".65"/>
+      </g>
+    </svg>
+  </div>
+
+  <div class="marker scene" style="left:566px; top:378px; transform:rotate(4deg);">
+    <svg width="76" height="76" viewBox="0 0 76 76">
+      <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 50 L30 20 L44 50 L58 20" stroke="#8b7bff" stroke-width="10" opacity=".26" filter="blur(3px)"/>
+        <path d="M14 50 L30 20 L44 50 L58 20" stroke="#8b7bff" stroke-width="6"/>
+        <path d="M18 62 L60 58" stroke="#ff4d2e" stroke-width="4"/>
+      </g>
+    </svg>
+  </div>
+
+  <div class="marker" style="left:1006px; top:96px; transform:rotate(-9deg);">
+    <svg width="72" height="72" viewBox="0 0 72 72">
+      <g fill="none" stroke-linecap="round">
+        <path d="M16 44 C26 12, 46 12, 56 44" stroke="#ffd23f" stroke-width="9" opacity=".26" filter="blur(3px)"/>
+        <path d="M16 44 C26 12, 46 12, 56 44" stroke="#ffd23f" stroke-width="6"/>
+        <path d="M22 56 L50 56" stroke="#e8e8ec" stroke-width="5"/>
+      </g>
+    </svg>
+  </div>
+
+  <div class="marker" style="left:672px; top:470px; transform:rotate(-4deg);">
+    <svg width="64" height="64" viewBox="0 0 64 64">
+      <g fill="none" stroke-linecap="round">
+        <path d="M14 40 C24 14, 40 50, 50 20" stroke="#ff4d2e" stroke-width="8" opacity=".26" filter="blur(3px)"/>
+        <path d="M14 40 C24 14, 40 50, 50 20" stroke="#ff4d2e" stroke-width="5.5"/>
+      </g>
+    </svg>
+  </div>
+
+  <div class="marker" style="left:960px; top:520px; transform:rotate(6deg);">
+    <svg width="58" height="58" viewBox="0 0 58 58">
+      <g fill="none" stroke-linecap="round">
+        <path d="M12 36 L28 14 L46 38" stroke="#4ad6c0" stroke-width="7" opacity=".26" filter="blur(3px)"/>
+        <path d="M12 36 L28 14 L46 38" stroke="#4ad6c0" stroke-width="5"/>
+      </g>
+    </svg>
+  </div>
+
+  <div class="chip"><span class="dot"></span>Live · painted by strangers</div>
+
+  <div class="lockup">
+    <div class="word">GIT OUT<br><span class="out">OF TOWN</span></div>
+    <!-- hand-drawn tag stroke under the wordmark -->
+    <svg width="430" height="26" viewBox="0 0 430 26" style="margin-top:12px; display:block;">
+      <path d="M4 17 C70 6, 150 22, 232 11 C300 2, 360 16, 418 8"
+            fill="none" stroke="#ff4d2e" stroke-width="9" stroke-linecap="round" opacity=".3" filter="blur(3px)"/>
+      <path d="M4 17 C70 6, 150 22, 232 11 C300 2, 360 16, 418 8"
+            fill="none" stroke="#ff4d2e" stroke-width="5" stroke-linecap="round"/>
+      <path d="M96 19 l0 6 M268 15 l0 8" stroke="#ff4d2e" stroke-width="3" stroke-linecap="round" opacity=".75"/>
+    </svg>
+    <div class="tag">Spray-paint the real world in AR. It pins to that spot
+      <b>forever</b> — on a living world map anyone can walk into.</div>
+  </div>
+
+  <div class="foot">
+    <span>gitoutoftown.129-153-49-190.sslip.io</span>
+    <span class="sep"></span>
+    <span>SummerHacks 2026 · Stackt Market, Toronto</span>
+  </div>
+
+  <svg class="grain" width="1200" height="675">
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3"/></filter>
+    <rect width="1200" height="675" filter="url(#grain)"/>
+  </svg>
+</div>
