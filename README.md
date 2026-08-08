@@ -34,6 +34,19 @@ npm run dev
 > ⚠️ Camera, geolocation, and device orientation **require HTTPS** — they will not work on
 > `localhost` from a phone. Test against the Vercel preview URL.
 
+## Repo layout
+
+One repository, two clients. **Not** an npm monorepo — no workspaces, no shared packages.
+
+```
+/            Next.js web app (frontend + API + /data dashboard)
+/ios         Native SwiftUI + ARKit client
+/db          Postgres schema
+/docs        Plan, rubric, deployment
+```
+
+Both clients hit the same API and the same Postgres. The only thing they share is the API contract.
+
 ## Docs
 
 | | |

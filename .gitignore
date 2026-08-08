@@ -12,3 +12,10 @@ npm-debug.log*
 coverage/
 .uploads/
 *.tsbuildinfo
+
+# iOS
+ios/**/xcuserdata/
+ios/**/*.xcworkspace/xcuserdata/
+ios/**/DerivedData/
+ios/**/build/
+*.xcuserstate
