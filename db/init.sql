@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS pieces (
   device_pitch     DOUBLE PRECISION,  -- degrees; negative = aimed down
   used_geo_anchor  BOOLEAN NOT NULL DEFAULT false,
   has_lidar        BOOLEAN,
+  altitude_m       DOUBLE PRECISION,  -- metres above mean sea level (ARGeoAnchor altitude)
+  placement_transform JSONB,          -- 4x4 (16 floats) relative to a north-up frame at lat/lng; exact AR reconstruction
   deleted_at       TIMESTAMPTZ,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );

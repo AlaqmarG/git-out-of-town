@@ -1,13 +1,44 @@
 import ARKit
+import CoreLocation
 import SceneKit
 import SwiftUI
+
+/// Everything needed to persist a placement: geo position + the exact
+/// orientation (relative to a north-up frame at the piece) for reconstruction.
+struct PlacementSnapshot {
+    let lat: Double
+    let lng: Double
+    let altitudeM: Double?
+    let heading: Double?
+    let accuracyM: Double?
+    let distanceM: Double
+    let devicePitch: Double
+    let surfaceType: String?
+    let usedGeoAnchor: Bool
+    let hasLidar: Bool
+    let placementTransform: [Double]
+    /// JPEG of the camera frame at placement (with the piece composited). Shown on the web.
+    let sceneData: Data?
+}
+
+/// A piece placed by someone else, to be rendered from its stored transform.
+struct RemotePiece: Identifiable {
+    let id: Int
+    let imagePath: String
+    let lat: Double
+    let lng: Double
+    let altitudeM: Double?
+    let placementTransform: [Double]?
+}
 
 struct ARPaintView: UIViewRepresentable {
     var color: UIColor
     var clearToken: Int
     var showDebug: Bool
     var drawingImage: UIImage?
+    var remotePieces: [RemotePiece]
     var onPlace: (String) -> Void
+    var onPiecePlaced: (PlacementSnapshot) -> Void
     var onStatus: (String) -> Void
     var onHint: (String) -> Void
 
@@ -16,6 +47,7 @@ struct ARPaintView: UIViewRepresentable {
             color: color,
             drawingImage: drawingImage,
             onPlace: onPlace,
+            onPiecePlaced: onPiecePlaced,
             onStatus: onStatus,
             onHint: onHint
         )
@@ -26,6 +58,9 @@ struct ARPaintView: UIViewRepresentable {
 
         let configuration = ARWorldTrackingConfiguration()
         configuration.planeDetection = [.horizontal, .vertical]
+        // North-up world frame: x = east, y = up, z = south. Both placer and
+        // viewer use this, so a stored transform reconstructs identically.
+        configuration.worldAlignment = .gravityAndHeading
         scnView.session.run(configuration)
 
         scnView.delegate = context.coordinator
@@ -35,6 +70,7 @@ struct ARPaintView: UIViewRepresentable {
         scnView.addGestureRecognizer(tap)
 
         context.coordinator.scnView = scnView
+        context.coordinator.setupSession(in: scnView)
         return scnView
     }
 
@@ -42,6 +78,7 @@ struct ARPaintView: UIViewRepresentable {
         context.coordinator.color = color
         context.coordinator.drawingImage = drawingImage
         context.coordinator.clear(clearToken)
+        context.coordinator.renderRemotePieces(remotePieces)
         scnView.debugOptions = context.coordinator.debugOptions(showDebug)
     }
 }
@@ -52,21 +89,34 @@ extension ARPaintView {
         var color: UIColor
         var drawingImage: UIImage?
         var onPlace: (String) -> Void
+        var onPiecePlaced: (PlacementSnapshot) -> Void
         var onStatus: (String) -> Void
         var onHint: (String) -> Void
         private var lastClearToken = 0
         private var lastStatus = ""
+        private var renderedRemoteIDs: Set<Int> = []
+        private var remoteNodes: [Int: SCNNode] = [:]
+        private var usingGeoAnchor = false
+        private var checkedGeoTracking = false
+        private struct PendingGeoPiece {
+            let image: UIImage
+            let transform: simd_float4x4
+            let id: Int
+        }
+        private var pendingGeoPieces: [String: PendingGeoPiece] = [:]
 
         init(
             color: UIColor,
             drawingImage: UIImage?,
             onPlace: @escaping (String) -> Void,
+            onPiecePlaced: @escaping (PlacementSnapshot) -> Void,
             onStatus: @escaping (String) -> Void,
             onHint: @escaping (String) -> Void
         ) {
             self.color = color
             self.drawingImage = drawingImage
             self.onPlace = onPlace
+            self.onPiecePlaced = onPiecePlaced
             self.onStatus = onStatus
             self.onHint = onHint
         }
@@ -75,9 +125,47 @@ extension ARPaintView {
             show ? [.showFeaturePoints] : []
         }
 
+        /// Starts on the GPS-bearing fallback, then upgrades to geo tracking when
+        /// ARKit reports coverage at the current spot. Both clients running geo
+        /// tracking reconstruct pieces at the exact same real-world spot.
+        func setupSession(in scnView: ARSCNView) {
+            let world = ARWorldTrackingConfiguration()
+            world.planeDetection = [.horizontal, .vertical]
+            world.worldAlignment = .gravityAndHeading
+            scnView.session.run(world)
+        }
+
+        private func maybeEnableGeoTracking() {
+            guard !checkedGeoTracking, !usingGeoAnchor, let scnView else { return }
+            guard ARGeoTrackingConfiguration.isSupported,
+                  let loc = LocationService.shared.location,
+                  loc.horizontalAccuracy >= 0, loc.horizontalAccuracy < 30 else {
+                checkedGeoTracking = true
+                return
+            }
+            checkedGeoTracking = true
+            ARGeoTrackingConfiguration.checkAvailability(at: loc.coordinate) { [weak self] available, _ in
+                Task { @MainActor in
+                    guard let self, let scnView = self.scnView, available else { return }
+                    let geo = ARGeoTrackingConfiguration()
+                    geo.planeDetection = [.horizontal, .vertical]
+                    scnView.session.run(geo, options: [.resetTracking, .removeExistingAnchors])
+                    self.usingGeoAnchor = true
+                    self.onStatus("geo-tracking active — pieces pin to exact spots")
+                }
+            }
+        }
+
         nonisolated func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
             Task { @MainActor [weak self] in
                 self?.publishStatus()
+                self?.maybeEnableGeoTracking()
+            }
+        }
+
+        nonisolated func renderer(_ renderer: SCNSceneRenderer, didAdd node: SCNNode, for anchor: ARAnchor) {
+            Task { @MainActor [weak self] in
+                self?.attachPendingPiece(node: node, anchor: anchor)
             }
         }
 
@@ -104,7 +192,7 @@ extension ARPaintView {
                 if planeCount == 0 {
                     return "tracking ✓ · scanning — slowly pan the camera around"
                 }
-                return "tracking ✓ · \(planeCount) surface\(planeCount == 1 ? "" : "s") detected — tap a green area"
+                return "tracking ✓ · \(planeCount) surface\(planeCount == 1 ? "" : "s") detected — tap a surface"
             case .limited(let reason):
                 return "tracking limited: \(limitedReason(reason))"
             }
@@ -127,7 +215,12 @@ extension ARPaintView {
             for node in scnView.scene.rootNode.childNodes {
                 node.removeFromParentNode()
             }
+            remoteNodes.removeAll()
+            renderedRemoteIDs.removeAll()
+            pendingGeoPieces.removeAll()
         }
+
+        // MARK: - Placing a piece
 
         @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
             guard let scnView else { return }
@@ -205,8 +298,156 @@ extension ARPaintView {
             node.simdTransform = placement
             scnView.scene.rootNode.addChildNode(node)
 
+            let sceneData = scnView.snapshot().jpegData(compressionQuality: 0.8)
+
             let classification = (result.anchor as? ARPlaneAnchor)?.classification.label ?? "unknown"
             onPlace(classification)
+
+            emitPlacementSnapshot(
+                placement: placement,
+                position: position,
+                surfaceType: classification,
+                camera: camera,
+                sceneData: sceneData
+            )
+        }
+
+        private func emitPlacementSnapshot(
+            placement: simd_float4x4,
+            position: SIMD3<Float>,
+            surfaceType: String,
+            camera: ARCamera?,
+            sceneData: Data?
+        ) {
+            guard let location = LocationService.shared.location else {
+                onHint("No GPS fix — piece stays local (not saved)")
+                return
+            }
+            let cameraPos = camera.map {
+                simd_float3($0.transform.columns.3.x, $0.transform.columns.3.y, $0.transform.columns.3.z)
+            } ?? position
+
+            // Session frame is ENU (x=east, y=up, z=south) via gravityAndHeading.
+            let enu = position - cameraPos
+            let pieceLat = location.coordinate.latitude + Double(-enu.z) / 111320
+            let pieceLng = location.coordinate.longitude + Double(enu.x) / (111320 * cos(location.coordinate.latitude * .pi / 180))
+            let pieceAlt = location.altitude + Double(enu.y)
+
+            let rotationOnly = simd_float4x4(columns: (
+                placement.columns.0,
+                placement.columns.1,
+                placement.columns.2,
+                simd_float4(0, 0, 0, 1)
+            ))
+
+            let pitch = camera.map { Double($0.eulerAngles.x) * 180 / .pi } ?? 0
+            let distance = simd_length(position - cameraPos)
+            let hasLidar = ARWorldTrackingConfiguration.supportsSceneReconstruction(.meshWithClassification)
+
+            onPiecePlaced(PlacementSnapshot(
+                lat: pieceLat,
+                lng: pieceLng,
+                altitudeM: pieceAlt,
+                heading: LocationService.shared.heading,
+                accuracyM: location.horizontalAccuracy,
+                distanceM: Double(distance),
+                devicePitch: pitch,
+                surfaceType: surfaceType == "unknown" ? nil : surfaceType,
+                usedGeoAnchor: usingGeoAnchor,
+                hasLidar: hasLidar,
+                placementTransform: flatten(rotationOnly),
+                sceneData: sceneData
+            ))
+        }
+
+        // MARK: - Rendering other people's pieces
+
+        func renderRemotePieces(_ pieces: [RemotePiece]) {
+            guard let scnView else { return }
+            let wanted = Set(pieces.map(\.id))
+            for (id, node) in remoteNodes where !wanted.contains(id) {
+                node.removeFromParentNode()
+                remoteNodes.removeValue(forKey: id)
+            }
+            renderedRemoteIDs.formIntersection(wanted)
+            for piece in pieces where !renderedRemoteIDs.contains(piece.id) {
+                renderedRemoteIDs.insert(piece.id)
+                addRemoteNode(for: piece, scnView: scnView)
+            }
+        }
+
+        private func addRemoteNode(for piece: RemotePiece, scnView: ARSCNView) {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let image: UIImage
+                do {
+                    image = try await APIClient.loadImage(path: piece.imagePath)
+                } catch {
+                    self.renderedRemoteIDs.remove(piece.id)
+                    return
+                }
+
+                if self.usingGeoAnchor {
+                    let coordinate = CLLocationCoordinate2D(latitude: piece.lat, longitude: piece.lng)
+                    let anchor: ARGeoAnchor
+                    if let altitude = piece.altitudeM {
+                        anchor = ARGeoAnchor(coordinate: coordinate, altitude: altitude)
+                    } else {
+                        anchor = ARGeoAnchor(coordinate: coordinate)
+                    }
+                    self.pendingGeoPieces[anchor.identifier.uuidString] = PendingGeoPiece(
+                        image: image,
+                        transform: piece.placementTransform.flatMap(unflatten) ?? matrix_identity_float4x4,
+                        id: piece.id
+                    )
+                    scnView.session.add(anchor: anchor)
+                    return
+                }
+
+                guard let frame = scnView.session.currentFrame,
+                      let loc = LocationService.shared.location else { return }
+
+                let camPos = simd_float3(frame.camera.transform.columns.3.x, frame.camera.transform.columns.3.y, frame.camera.transform.columns.3.z)
+                let eastDelta = (piece.lng - loc.coordinate.longitude) * 111320 * cos(loc.coordinate.latitude * .pi / 180)
+                let northDelta = (piece.lat - loc.coordinate.latitude) * 111320
+                let upDelta = (piece.altitudeM ?? loc.altitude) - loc.altitude
+                let position = camPos + simd_float3(Float(eastDelta), Float(upDelta), Float(-northDelta))
+
+                let rotation = piece.placementTransform.flatMap(unflatten) ?? matrix_identity_float4x4
+                let node = SCNNode()
+                node.geometry = SCNPlane(width: 0.3, height: 0.3)
+                let material = SCNMaterial()
+                material.isDoubleSided = true
+                material.lightingModel = .constant
+                material.diffuse.contents = image
+                node.geometry?.materials = [material]
+
+                let world = simd_float4x4(columns: (
+                    rotation.columns.0,
+                    rotation.columns.1,
+                    rotation.columns.2,
+                    simd_float4(position.x, position.y, position.z, 1)
+                ))
+                node.simdTransform = world
+                scnView.scene.rootNode.addChildNode(node)
+                self.remoteNodes[piece.id] = node
+            }
+        }
+
+        /// Attaches the piece quad to a resolved `ARGeoAnchor` node, relative to the
+        /// anchor. ARKit keeps refining the anchor transform; the child follows it.
+        private func attachPendingPiece(node: SCNNode, anchor: ARAnchor) {
+            guard let pending = pendingGeoPieces.removeValue(forKey: anchor.identifier.uuidString) else { return }
+            let plane = SCNPlane(width: 0.3, height: 0.3)
+            let material = SCNMaterial()
+            material.isDoubleSided = true
+            material.lightingModel = .constant
+            material.diffuse.contents = pending.image
+            plane.materials = [material]
+            let child = SCNNode(geometry: plane)
+            child.simdTransform = pending.transform
+            node.addChildNode(child)
+            remoteNodes[pending.id] = node
         }
 
         private func raycast(in scnView: ARSCNView, at location: CGPoint, target: ARRaycastQuery.Target) -> [ARRaycastResult] {
@@ -228,7 +469,29 @@ extension ARPlaneAnchor.Classification {
         case .seat: return "seat"
         case .door: return "door"
         case .window: return "window"
-        default: return "other"
+        default: return "unknown"
         }
     }
+}
+
+// MARK: - Transform helpers (column-major 4x4 <-> 16 floats)
+
+func flatten(_ m: simd_float4x4) -> [Double] {
+    var out: [Double] = []
+    out.reserveCapacity(16)
+    for c in 0..<4 {
+        for r in 0..<4 {
+            out.append(Double(m[c][r]))
+        }
+    }
+    return out
+}
+
+func unflatten(_ a: [Double]) -> simd_float4x4 {
+    simd_float4x4(columns: (
+        simd_float4(Float(a[0]), Float(a[1]), Float(a[2]), Float(a[3])),
+        simd_float4(Float(a[4]), Float(a[5]), Float(a[6]), Float(a[7])),
+        simd_float4(Float(a[8]), Float(a[9]), Float(a[10]), Float(a[11])),
+        simd_float4(Float(a[12]), Float(a[13]), Float(a[14]), Float(a[15]))
+    ))
 }

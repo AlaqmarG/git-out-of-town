@@ -64,6 +64,14 @@ export interface Piece {
   /** True when placed with ARGeoAnchor rather than the GPS-bearing fallback. */
   usedGeoAnchor: boolean;
   hasLidar: boolean | null;
+  /** Metres above mean sea level — the ARGeoAnchor altitude. Null when unknown. */
+  altitudeM: number | null;
+  /**
+   * The piece's placement, as a 4x4 transform (row-major, 16 floats) expressed in
+   * a north-up (ENU) frame with its origin at the piece's lat/lng/altitude. Lets a
+   * viewer reconstruct the exact orientation/surface-relative placement.
+   */
+  placementTransform: number[] | null;
 }
 
 /** POST /api/pieces — multipart; `image` is the PNG, this is the JSON `meta` part. */
@@ -86,6 +94,8 @@ export interface CreatePieceRequest {
   devicePitch?: number;
   usedGeoAnchor?: boolean;
   hasLidar?: boolean;
+  altitudeM?: number;
+  placementTransform?: number[];
 }
 
 /** GET /api/pieces?bbox=west,south,east,north */
