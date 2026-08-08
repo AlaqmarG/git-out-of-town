@@ -103,6 +103,59 @@ await check("GET /api/pieces accepts a bbox", async () => {
   }
 });
 
+console.log("\ndashboard");
+await check("GET /data renders our page, not a framework default", async () => {
+  const res = await expectStatus("/data", 200);
+  const html = await res.text();
+  // A stale image once served the Next.js starter page while every API check
+  // passed — assert on our own content, not just a 200.
+  assert(html.includes("What the wall knows"), "/data did not contain our heading");
+  assert(!html.includes("Create Next App"), "/data is serving the Next.js starter page");
+});
+
+await check("GET / renders the map page", async () => {
+  const res = await expectStatus("/", 200);
+  const html = await res.text();
+  assert(html.includes("Git Out of Town"), "homepage title missing");
+  assert(!html.includes("Create Next App"), "homepage is serving the Next.js starter page");
+});
+
+await check("GET /api/stats returns a well-formed payload", async () => {
+  const res = await expectStatus("/api/stats", 200);
+  const s = await res.json();
+  for (const key of ["totals", "perHour", "surfaces", "cities", "colours", "clients", "generatedAt"]) {
+    assert(key in s, `stats missing '${key}'`);
+  }
+  for (const key of ["pieces", "contributors", "cities", "paintSeconds", "lastHour"]) {
+    assert(typeof s.totals[key] === "number", `totals.${key} is not a number`);
+  }
+  // 24 hourly buckets, gaps filled — a missing hour must read as zero, not absent.
+  assert(s.perHour.length === 24, `expected 24 hourly buckets, got ${s.perHour.length}`);
+  assert(s.perHour.every((p) => typeof p.pieces === "number"), "a bucket has no count");
+});
+
+await check("stats are computed fresh, not cached", async () => {
+  const a = await fetch(`${BASE}/api/stats`).then((r) => r.json());
+  await new Promise((r) => setTimeout(r, 1100));
+  const b = await fetch(`${BASE}/api/stats`).then((r) => r.json());
+  assert(a.generatedAt !== b.generatedAt, "generatedAt did not change — response is cached");
+});
+
+console.log("\nview tracking");
+await check("rejects a view with a non-integer piece id", () =>
+  expectStatus("/api/views", 400, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ pieceId: "nope" }),
+  }));
+
+await check("rejects a malformed view body", () =>
+  expectStatus("/api/views", 400, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{not json",
+  }));
+
 console.log("\nquery validation");
 await check("rejects a malformed bbox", () => expectStatus("/api/pieces?bbox=1,2,3", 400));
 await check("rejects a bbox with a blank part", () => expectStatus("/api/pieces?bbox=1,,3,4", 400));
