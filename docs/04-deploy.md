@@ -47,7 +47,7 @@ sslip.io URL undercuts it.
 ## Komodo stack setup (one time)
 
 1. https://manage.wayfarerbx.com → **Stacks** → New → `gitoutoftown`
-2. **Source:** this Git repo, branch `main`, file `docker-compose.yaml`
+2. **Source:** this Git repo, branch `main`, file `docker-compose.yaml` (build context is the repo root — the monorepo Dockerfile needs it)
    - The repo is private, so Komodo needs a GitHub account/token configured with read access.
 3. **Environment:**
    ```env

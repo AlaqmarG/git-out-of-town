@@ -1,10 +1,13 @@
-node_modules
-.next
+**/node_modules
+**/.next
 .git
 .github
 docs
 *.md
+**/*.md
 .env
 .env*.local
 .DS_Store
-ios
+apps/ios
+**/*.tsbuildinfo
+.uploads

@@ -20,8 +20,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # `next typegen` must run before tsc — Next 16 generates global types
-      # (LayoutProps, PageProps) into .next/types that the app code depends on.
+      # `next typegen` runs inside the web workspace's typecheck script — Next 16
+      # generates global types (LayoutProps, PageProps) that app code depends on.
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build
@@ -57,7 +57,7 @@ jobs:
           KOMODO_API_SECRET: ${{ secrets.KOMODO_API_SECRET }}
           KOMODO_STACK: ${{ secrets.KOMODO_STACK }}
         run: |
-          if [ -z "$KOMODO_URL" ]; then
+          if [ -z "$KOMODO_URL" ] || [ -z "$KOMODO_API_KEY" ]; then
             echo "::notice::Komodo secrets not configured — skipping deploy. See docs/04-deploy.md"
             exit 0
           fi
@@ -69,12 +69,9 @@ jobs:
             -H "X-Api-Key: $KOMODO_API_KEY" \
             -H "X-Api-Secret: $KOMODO_API_SECRET" \
             -d "{\"type\":\"DeployStack\",\"params\":{\"stack\":\"$KOMODO_STACK\"}}")
-          echo "HTTP $code"
-          cat /tmp/komodo.json || true
-          echo
+          echo "HTTP $code"; cat /tmp/komodo.json || true; echo
           if [ "$code" -ge 300 ]; then
-            echo "::error::Komodo deploy failed with HTTP $code"
-            exit 1
+            echo "::error::Komodo deploy failed with HTTP $code"; exit 1
           fi
 
   smoke:
@@ -87,16 +84,13 @@ jobs:
           SITE_URL: ${{ secrets.SITE_URL }}
         run: |
           if [ -z "$SITE_URL" ]; then
-            echo "::notice::SITE_URL not set — skipping smoke test."
-            exit 0
+            echo "::notice::SITE_URL not set — skipping smoke test."; exit 0
           fi
           for i in $(seq 1 30); do
             code=$(curl -sS -o /tmp/health.json -w '%{http_code}' "${SITE_URL%/}/api/health" || echo 000)
             if [ "$code" = "200" ]; then
               echo "healthy after ${i} attempt(s)"; cat /tmp/health.json; exit 0
             fi
-            echo "attempt $i: HTTP $code — retrying in 10s"
-            sleep 10
+            echo "attempt $i: HTTP $code — retrying in 10s"; sleep 10
           done
-          echo "::error::Site did not become healthy within 5 minutes"
-          exit 1
+          echo "::error::Site did not become healthy within 5 minutes"; exit 1

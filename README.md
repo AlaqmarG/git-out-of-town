@@ -27,7 +27,7 @@ Next.js (App Router) · Postgres · MapLibre GL JS · Replicate (Reve) · Docker
 ```bash
 cp .env.example .env
 docker compose up -d got-db  # Postgres only
-npm install
+npm install                  # installs every workspace
 npm run dev
 ```
 
@@ -39,13 +39,15 @@ npm run dev
 One repository, two clients. **Not** an npm monorepo — no workspaces, no shared packages.
 
 ```
-/            Next.js web app (frontend + API + /data dashboard)
-/ios         Native SwiftUI + ARKit client
-/db          Postgres schema
-/docs        Plan, rubric, deployment
+apps/web         Next.js — frontend + API + /data dashboard
+apps/ios         Native SwiftUI + ARKit client
+packages/shared  API contract types, shared by every client
+db/              Postgres schema
+docs/            Plan, rubric, deployment, access
 ```
 
-Both clients hit the same API and the same Postgres. The only thing they share is the API contract.
+npm workspaces. Run `npm install` and all scripts from the **repo root** — never inside `apps/web`.
+`apps/ios` is a plain folder, not a workspace; Swift shares the repo and the API contract, nothing else.
 
 ## Docs
 
@@ -54,7 +56,8 @@ Both clients hit the same API and the same Postgres. The only thing they share i
 | [`docs/01-rubric-and-deadlines.md`](docs/01-rubric-and-deadlines.md) | Judging rubric, tracks, what scores points |
 | [`docs/02-build-plan.md`](docs/02-build-plan.md) | Architecture, scope, risks, pitch |
 | [`docs/03-reve-reference.md`](docs/03-reve-reference.md) | Reve API reference (only if we get a key) |
-| [`docs/04-deploy.md`](docs/04-deploy.md) | Komodo + OCI deployment, and the two OCI gotchas |
+| [`docs/04-deploy.md`](docs/04-deploy.md) | Komodo deployment, Traefik, ARM64 notes |
+| [`docs/05-access.md`](docs/05-access.md) | **Onboarding: URLs, VPS access, credentials** |
 
 ## Ground rules
 
