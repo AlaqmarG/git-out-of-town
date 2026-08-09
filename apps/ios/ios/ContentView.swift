@@ -3,12 +3,15 @@ import PencilKit
 import SwiftUI
 
 struct ContentView: View {
+    var isActive: Bool = true
+
     @State private var selectedColor: UIColor = UIColor(red: 1.00, green: 0.84, blue: 0.00, alpha: 1)
     @State private var piecesPlaced = 0
     @State private var lastSurface = "none yet"
     @State private var clearToken = 0
     @State private var status = "starting camera…"
     @State private var hint: String?
+    @State private var successToast: String?
     @State private var showDebug = false
 
     @State private var showDrawer = false
@@ -28,6 +31,17 @@ struct ContentView: View {
     @State private var previewSize: Float = 0.3
     @State private var placeToken = 0
     @State private var cancelToken = 0
+    @State private var discardToken = 0
+
+    @State private var awaitingSnapshot = false
+    @State private var pendingPost: PendingPost?
+    @State private var posting = false
+
+    struct PendingPost {
+        let snapshot: PlacementSnapshot
+        let imagePNG: Data
+        let sceneImage: UIImage?
+    }
 
     private let palette: [UIColor] = [
         UIColor(red: 1.00, green: 0.84, blue: 0.00, alpha: 1), // yellow
@@ -37,7 +51,8 @@ struct ContentView: View {
         UIColor(red: 1.00, green: 1.00, blue: 1.00, alpha: 1), // white
     ]
 
-    init() {
+    init(isActive: Bool = true) {
+        self.isActive = isActive
         let key = "got.sessionId"
         if let existing = UserDefaults.standard.string(forKey: key), existing.count >= 8 {
             _sessionId = State(initialValue: existing)
@@ -54,18 +69,32 @@ struct ContentView: View {
                 color: selectedColor,
                 clearToken: clearToken,
                 showDebug: showDebug,
+                isActive: isActive,
+                locked: pendingPost != nil || awaitingSnapshot,
                 drawingImage: drawingImage,
                 remotePieces: remotePieces,
                 previewSize: previewSize,
                 placeToken: placeToken,
                 cancelToken: cancelToken,
+                discardToken: discardToken,
                 onPlace: { classification in
                     Task { @MainActor in
-                        piecesPlaced += 1
                         lastSurface = classification
                     }
                 },
-                onPiecePlaced: upload,
+                onPiecePlaced: { snapshot in
+                    Task { @MainActor in
+                        let png = drawingPNG ?? coloredSquarePNG(color: selectedColor)
+                        withAnimation(.snappy) {
+                            awaitingSnapshot = false
+                            pendingPost = PendingPost(
+                                snapshot: snapshot,
+                                imagePNG: png,
+                                sceneImage: snapshot.sceneData.flatMap(UIImage.init(data:))
+                            )
+                        }
+                    }
+                },
                 onStatus: { status = $0 },
                 onHint: { newHint in
                     Task { @MainActor in
@@ -84,7 +113,7 @@ struct ContentView: View {
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
 
-            if !isPreviewing {
+            if !isPreviewing && pendingPost == nil {
                 TargetReticle()
                     .transition(.scale(scale: 0.8).combined(with: .opacity))
                     .allowsHitTesting(false)
@@ -95,11 +124,21 @@ struct ContentView: View {
                 Spacer(minLength: 80)
 
                 if let hint {
-                    HintToast(message: hint)
+                    Toast(message: hint, symbol: "exclamationmark.triangle.fill", tint: .red)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                if let successToast {
+                    Toast(message: successToast, symbol: "checkmark.seal.fill", tint: .green)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
-                if isPreviewing {
+                if let pendingPost {
+                    postCard(pendingPost)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else if awaitingSnapshot {
+                    capturingCard
+                        .transition(.opacity)
+                } else if isPreviewing {
                     previewControls
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 } else {
@@ -112,6 +151,7 @@ struct ContentView: View {
             .safeAreaPadding(.bottom, 12)
         }
         .animation(.snappy, value: isPreviewing)
+        .animation(.snappy, value: pendingPost == nil)
         .sheet(isPresented: $showDrawer) {
             drawingSheet
         }
@@ -126,6 +166,15 @@ struct ContentView: View {
                 try? await Task.sleep(for: .seconds(2.5))
                 if hint == newValue {
                     withAnimation(.easeOut) { hint = nil }
+                }
+            }
+        }
+        .onChange(of: successToast) { _, newValue in
+            guard newValue != nil else { return }
+            Task {
+                try? await Task.sleep(for: .seconds(2.5))
+                if successToast == newValue {
+                    withAnimation(.easeOut) { successToast = nil }
                 }
             }
         }
@@ -178,7 +227,7 @@ struct ContentView: View {
                     .frame(height: 44)
                     .glassEffect(.regular, in: Capsule())
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(piecesPlaced) piece\(piecesPlaced == 1 ? "" : "s") placed. Last surface: \(lastSurface)")
+                    .accessibilityLabel("\(piecesPlaced) piece\(piecesPlaced == 1 ? "" : "s") posted. Last surface: \(lastSurface)")
 
                     Button {
                         haptic()
@@ -204,13 +253,25 @@ struct ContentView: View {
         }
     }
 
+    private var guide: (symbol: String, text: String) {
+        if status.contains("scanning") || status.contains("initializing") {
+            return ("camera.metering.center.weighted", "Slowly pan to find surfaces")
+        }
+        if drawingImage == nil && piecesPlaced == 0 {
+            return ("scribble.variable", "Pick a color, or draw your own piece")
+        }
+        return ("hand.tap.fill", "Tap a wall to place it")
+    }
+
     private var creationControls: some View {
         VStack(spacing: 10) {
-            Label("Tap a surface to preview", systemImage: "hand.tap.fill")
+            Label(guide.text, systemImage: guide.symbol)
                 .font(.subheadline.weight(.medium))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
                 .glassEffect(.regular, in: Capsule())
+                .contentTransition(.opacity)
+                .animation(.easeInOut, value: guide.text)
 
             HStack(spacing: 6) {
                 if let customImage = drawingImage {
@@ -360,6 +421,7 @@ struct ContentView: View {
                 Button {
                     haptic(.medium)
                     placeToken += 1
+                    awaitSnapshot()
                 } label: {
                     Label("Place", systemImage: "mappin")
                         .fontWeight(.bold)
@@ -373,6 +435,82 @@ struct ContentView: View {
         }
         .padding(18)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+    }
+
+    private var capturingCard: some View {
+        HStack(spacing: 12) {
+            ProgressView()
+            Text("Capturing the moment…")
+                .font(.subheadline.weight(.medium))
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .glassEffect(.regular, in: Capsule())
+    }
+
+    private func postCard(_ pending: PendingPost) -> some View {
+        VStack(spacing: 14) {
+            HStack(spacing: 14) {
+                if let scene = pending.sceneImage {
+                    Image(uiImage: scene)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 88, height: 88)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Add it to the collage?")
+                        .font(.headline)
+                    Text(postSubtitle(pending))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 10) {
+                Button(role: .destructive) {
+                    haptic(.rigid)
+                    discardToken += 1
+                    withAnimation(.snappy) { pendingPost = nil }
+                } label: {
+                    Label("Discard", systemImage: "trash")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                }
+                .buttonStyle(.glass)
+                .disabled(posting)
+
+                Button {
+                    haptic(.medium)
+                    post(pending)
+                } label: {
+                    Group {
+                        if posting {
+                            ProgressView().tint(.black)
+                        } else {
+                            Label("Post it", systemImage: "paperplane.fill")
+                                .fontWeight(.bold)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                }
+                .buttonStyle(.glassProminent)
+                .tint(Color(selectedColor))
+                .foregroundStyle(.black)
+                .disabled(posting)
+            }
+        }
+        .padding(18)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+    }
+
+    private func postSubtitle(_ pending: PendingPost) -> String {
+        let place = pending.snapshot.surfaceType.map { "Painted on a \($0)" } ?? "Painted right here"
+        return "\(place) — posting pins it to this spot for everyone, forever."
     }
 
     private var drawingSheet: some View {
@@ -417,6 +555,7 @@ struct ContentView: View {
     }
 
     private var statusSymbol: String {
+        if status.contains("LiDAR") { return "sensor.fill" }
         if status.contains("tracking ✓") { return "checkmark.circle.fill" }
         if status.contains("limited") { return "exclamationmark.triangle.fill" }
         if status.contains("not available") { return "xmark.circle.fill" }
@@ -435,6 +574,8 @@ struct ContentView: View {
         piecesPlaced = 0
         lastSurface = "none yet"
         remotePieces = []
+        pendingPost = nil
+        awaitingSnapshot = false
     }
 
     private func selectSticker(_ sticker: Sticker) {
@@ -459,10 +600,23 @@ struct ContentView: View {
         UIImpactFeedbackGenerator(style: style).impactOccurred()
     }
 
-    // MARK: - Save
+    /// The snapshot arrives ~300 ms after Place (the stamp-in animation runs
+    /// first). If it never comes — e.g. no GPS fix — fall back to creating.
+    private func awaitSnapshot() {
+        withAnimation(.snappy) { awaitingSnapshot = true }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            if pendingPost == nil {
+                withAnimation(.snappy) { awaitingSnapshot = false }
+            }
+        }
+    }
 
-    private func upload(_ snapshot: PlacementSnapshot) {
-        let imageData = drawingPNG ?? coloredSquarePNG(color: selectedColor)
+    // MARK: - Post
+
+    private func post(_ pending: PendingPost) {
+        posting = true
+        let snapshot = pending.snapshot
         let meta = MetaDTO(
             lat: snapshot.lat,
             lng: snapshot.lng,
@@ -483,13 +637,26 @@ struct ContentView: View {
         Task {
             do {
                 let piece = try await APIClient.uploadPiece(
-                    imagePNG: imageData,
+                    imagePNG: pending.imagePNG,
                     sceneData: snapshot.sceneData,
                     meta: meta
                 )
-                await MainActor.run { _ = ownPieceIDs.insert(piece.id) }
+                await MainActor.run {
+                    _ = ownPieceIDs.insert(piece.id)
+                    posting = false
+                    withAnimation(.snappy) {
+                        pendingPost = nil
+                        piecesPlaced += 1
+                        successToast = "On the map — the world can see it"
+                    }
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                }
             } catch {
-                await MainActor.run { hint = "Couldn't save — check connection" }
+                await MainActor.run {
+                    posting = false
+                    withAnimation(.snappy) { hint = "Couldn't post — check connection" }
+                    UINotificationFeedbackGenerator().notificationOccurred(.error)
+                }
             }
         }
     }
@@ -607,35 +774,13 @@ private struct ColorSwatch: View {
     }
 }
 
-private struct StickerThumb: View {
-    let image: UIImage
-    let isSelected: Bool
-
-    var body: some View {
-        ZStack {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFit()
-                .padding(2)
-                .frame(width: 44, height: 44)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(isSelected ? Color.white : Color.white.opacity(0.4), lineWidth: isSelected ? 2.5 : 1)
-                .frame(width: 48, height: 48)
-        }
-        .frame(width: 50, height: 50)
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .scaleEffect(isSelected ? 1.08 : 1)
-        .animation(.snappy(duration: 0.2), value: isSelected)
-    }
-}
-
-private struct HintToast: View {
+private struct Toast: View {
     let message: String
+    let symbol: String
+    let tint: Color
 
     var body: some View {
-        Label(message, systemImage: "exclamationmark.triangle.fill")
+        Label(message, systemImage: symbol)
             .font(.subheadline.weight(.medium))
             .multilineTextAlignment(.leading)
             .foregroundStyle(.white)
@@ -643,7 +788,7 @@ private struct HintToast: View {
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .glassEffect(
-                .regular.tint(.red.opacity(0.7)),
+                .regular.tint(tint.opacity(0.7)),
                 in: RoundedRectangle(cornerRadius: 22, style: .continuous)
             )
     }

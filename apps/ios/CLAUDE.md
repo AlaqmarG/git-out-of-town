@@ -18,6 +18,16 @@ Field names and shapes: `../../packages/shared/src/index.ts` (mirror them exactl
 Always send `client: "ios"` plus the native fields: `surfaceType`, `distanceM`, `devicePitch`,
 `usedGeoAnchor`, `hasLidar`.
 
+## Shape
+
+Three tabs (`iosApp.swift`): **Paint** (AR, `ContentView` + `ARPaintView`), **Map** and **Stats**
+(`WebView.swift` — the live site's `/` and `/data` rendered in-app; the web pages are canonical,
+don't rebuild them natively). Flow: tap → semi-transparent preview + size slider → Place (stamps
+the quad, blends in the surface texture via `SurfaceTexture.swift`) → Post/Discard card — nothing
+uploads without the explicit Post. LiDAR devices get scene reconstruction: mesh occlusion +
+per-face `surface_type` (`MeshOcclusion.swift`); non-LiDAR devices fall back to plane
+classification, and everything still works.
+
 ## Decisions already made — don't relitigate
 
 - **Draw in 2D with PencilKit, place as a textured quad** at a raycast hit. `ModelEntity` plane mesh
