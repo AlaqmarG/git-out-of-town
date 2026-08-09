@@ -20,9 +20,9 @@ Always send `client: "ios"` plus the native fields: `surfaceType`, `distanceM`, 
 
 ## Shape
 
-Three tabs (`iosApp.swift`): **Paint** (AR, `ContentView` + `ARPaintView`), **Map** and **Stats**
-(`WebView.swift` — the live site's `/` and `/data` rendered in-app; the web pages are canonical,
-don't rebuild them natively). Flow: tap → semi-transparent preview + size slider → Place (stamps
+Three tabs (`iosApp.swift`): **Paint** (AR, `ContentView` + `ARPaintView`), **Around You**
+(native MapKit, `MapTabView.swift`) and **Stats** (`WebView.swift` — the live site's `/data`
+rendered in-app; that page is canonical, don't rebuild it natively). Flow: tap → semi-transparent preview + size slider → Place (stamps
 the quad, blends in the surface texture via `SurfaceTexture.swift`) → Post/Discard card — nothing
 uploads without the explicit Post. LiDAR devices get scene reconstruction: mesh occlusion +
 per-face `surface_type` (`MeshOcclusion.swift`); non-LiDAR devices fall back to plane
@@ -38,7 +38,10 @@ classification, and everything still works.
   after launch with `.removeExistingAnchors` and quietly disabled every depth feature. Geo precision
   is worth less than depth, and indoors it never localises anyway. `GeoCheck.swift` is a harness
   only; do not wire it into the session.
-- **Do not relocalize with `ARWorldMap`.** Large, device-specific, unreliable across sessions.
+- **`ARWorldMap` relocalization is scoped tightly** (`WorldMapStore.swift`): save only after a
+  post, once the session has reached `.mapped`; match only in the first seconds of a fresh
+  session, before any mesh exists — a late `.resetTracking` deletes the depth mesh. Do not widen
+  either window.
 - **Get a signed build on a real device before writing features.** Provisioning is what kills iOS
   hackathon projects.
 

@@ -617,6 +617,18 @@ extension ARPaintView {
                     if path != nil { break }
                     try? await Task.sleep(for: .seconds(1))
                 }
+                // Relocalization runs on fixes up to ±80 m but the poll loop
+                // gates at ±50 m, so in that band the anchor resolves and the
+                // path never arrives. Fetch it directly rather than render nothing.
+                if path == nil, let loc = LocationService.shared.location,
+                   let pieces = try? await APIClient.listPieces(
+                       lat: loc.coordinate.latitude,
+                       lng: loc.coordinate.longitude,
+                       radiusMeters: 300
+                   ) {
+                    for piece in pieces { self?.knownImagePaths[piece.id] = piece.finalImagePath ?? piece.rawImagePath }
+                    path = self?.knownImagePaths[id]
+                }
                 guard let self, let path, let image = try? await APIClient.loadImage(path: path) else { return }
                 // Claim the piece only now that it can actually be drawn.
                 // Claiming earlier suppressed the GPS copy too, so a piece whose
@@ -838,6 +850,11 @@ extension ARPaintView {
                     self.renderedRemoteIDs.remove(piece.id)
                     return
                 }
+
+                // attachAnchoredPiece may have claimed this piece while the
+                // image downloaded; a second GPS copy would overwrite its
+                // remoteNodes entry and never be removed.
+                guard !self.anchoredPieceIDs.contains(piece.id) else { return }
 
                 guard let frame = scnView.session.currentFrame,
                       let loc = LocationService.shared.location, self.isUsableFix(loc) else {
