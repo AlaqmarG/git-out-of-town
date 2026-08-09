@@ -4,6 +4,7 @@ import SwiftUI
 
 struct ContentView: View {
     var isActive: Bool = true
+    var onHelp: () -> Void = {}
 
     @State private var selectedColor: UIColor = UIColor(red: 1.00, green: 0.84, blue: 0.00, alpha: 1)
     @State private var piecesPlaced = 0
@@ -36,6 +37,7 @@ struct ContentView: View {
     @State private var awaitingSnapshot = false
     @State private var pendingPost: PendingPost?
     @State private var posting = false
+    @State private var showClearConfirm = false
 
     struct PendingPost {
         let snapshot: PlacementSnapshot
@@ -51,8 +53,9 @@ struct ContentView: View {
         UIColor(red: 1.00, green: 1.00, blue: 1.00, alpha: 1), // white
     ]
 
-    init(isActive: Bool = true) {
+    init(isActive: Bool = true, onHelp: @escaping () -> Void = {}) {
         self.isActive = isActive
+        self.onHelp = onHelp
         let key = "got.sessionId"
         if let existing = UserDefaults.standard.string(forKey: key), existing.count >= 8 {
             _sessionId = State(initialValue: existing)
@@ -202,32 +205,33 @@ struct ContentView: View {
         VStack(spacing: 10) {
             GlassEffectContainer(spacing: 10) {
                 HStack(spacing: 10) {
-                    Label {
-                        Text("Out of Town")
-                            .font(.headline.weight(.semibold))
-                    } icon: {
-                        Image(systemName: "paintbrush.pointed.fill")
-                            .foregroundStyle(Color(selectedColor))
+                    Button {
+                        haptic()
+                        onHelp()
+                    } label: {
+                        Image(systemName: "questionmark.circle")
+                            .frame(width: 44, height: 44)
                     }
-                    .padding(.horizontal, 14)
-                    .frame(height: 44)
-                    .glassEffect(.regular, in: Capsule())
+                    .buttonStyle(.glass)
+                    .accessibilityLabel("How this works")
 
                     Spacer(minLength: 0)
 
-                    HStack(spacing: 6) {
-                        Image(systemName: "mappin.and.ellipse")
-                        Text(lastSurface == "none yet" ? "\(piecesPlaced)" : "\(piecesPlaced) · \(lastSurface)")
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                            .contentTransition(.numericText())
+                    if piecesPlaced > 0 {
+                        HStack(spacing: 6) {
+                            Image(systemName: "mappin.and.ellipse")
+                            Text(lastSurface == "none yet" ? "\(piecesPlaced)" : "\(piecesPlaced) · \(lastSurface)")
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                                .contentTransition(.numericText())
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 13)
+                        .frame(height: 44)
+                        .glassEffect(.regular, in: Capsule())
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(piecesPlaced) piece\(piecesPlaced == 1 ? "" : "s") posted. Last surface: \(lastSurface)")
                     }
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 13)
-                    .frame(height: 44)
-                    .glassEffect(.regular, in: Capsule())
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(piecesPlaced) piece\(piecesPlaced == 1 ? "" : "s") posted. Last surface: \(lastSurface)")
 
                     Button {
                         haptic()
@@ -254,13 +258,13 @@ struct ContentView: View {
     }
 
     private var guide: (symbol: String, text: String) {
-        if status.contains("scanning") || status.contains("initializing") {
-            return ("camera.metering.center.weighted", "Slowly pan to find surfaces")
+        if status.contains("scanning") || status.contains("initializing") || status.contains("starting") {
+            return ("camera.metering.center.weighted", "Step 1 · Pan slowly so it learns the walls")
         }
         if drawingImage == nil && piecesPlaced == 0 {
-            return ("scribble.variable", "Pick a color, or draw your own piece")
+            return ("scribble.variable", "Step 2 · Pick a color or draw your piece")
         }
-        return ("hand.tap.fill", "Tap a wall to place it")
+        return ("hand.tap.fill", "Step 3 · Tap a wall to spray it there")
     }
 
     private var creationControls: some View {
@@ -338,13 +342,20 @@ struct ContentView: View {
 
                 Button(role: .destructive) {
                     haptic()
-                    clearScene()
+                    showClearConfirm = true
                 } label: {
                     Image(systemName: "trash")
                         .frame(width: 40, height: 40)
                 }
                 .buttonStyle(.glass)
-                .accessibilityLabel("Clear all pieces from this scene")
+                .accessibilityLabel("Clear the view")
+                .confirmationDialog(
+                    "Clear the view? Pieces already posted stay on the map and reload as you move around.",
+                    isPresented: $showClearConfirm,
+                    titleVisibility: .visible
+                ) {
+                    Button("Clear the view", role: .destructive) { clearScene() }
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 10)
@@ -661,13 +672,18 @@ struct ContentView: View {
         }
     }
 
+    /// A rounded spray patch with a transparent border — the border is what
+    /// the decal's clamped UV overshoot extends, so it must be clear.
     private func coloredSquarePNG(color: UIColor) -> Data {
         let format = UIGraphicsImageRendererFormat.default()
         format.preferredRange = .standard
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 512, height: 512), format: format)
         let image = renderer.image { _ in
             color.setFill()
-            UIRectFill(CGRect(x: 0, y: 0, width: 512, height: 512))
+            UIBezierPath(
+                roundedRect: CGRect(x: 40, y: 40, width: 432, height: 432),
+                cornerRadius: 80
+            ).fill()
         }
         return image.pngData() ?? Data()
     }
@@ -736,8 +752,9 @@ struct ContentView: View {
         return renderer.image { _ in
             UIColor.clear.setFill()
             UIRectFill(CGRect(x: 0, y: 0, width: side, height: side))
+            // 8% transparent border so decal UV clamping extends transparency.
             let maxDim = max(image.size.width, image.size.height)
-            let scale = maxDim > 0 ? side / maxDim : 1
+            let scale = maxDim > 0 ? side * 0.92 / maxDim : 1
             let width = image.size.width * scale
             let height = image.size.height * scale
             image.draw(in: CGRect(x: (side - width) / 2, y: (side - height) / 2, width: width, height: height))

@@ -2,42 +2,46 @@ import ARKit
 import CoreImage
 import UIKit
 
-/// Crops the camera frame under a placed quad and turns it into a normalized
-/// luminance map. Multiplied into the graffiti material, the paint inherits the
-/// real surface's grain — mortar lines, wood, concrete — instead of floating flat.
+/// Rectifies the camera pixels under a placed quad into a perspective-correct,
+/// brightness-normalized luminance map. Multiplied into the graffiti material,
+/// the paint inherits the real surface's grain — mortar lines, wood, concrete —
+/// aligned exactly with where it sits on the wall.
 enum SurfaceTexture {
     private static let context = CIContext()
 
-    static func luminanceMap(frame: ARFrame, placement: simd_float4x4, size: Float) -> UIImage? {
+    /// `basis` is the pre-upright placement frame: col0 = right, col1 = up,
+    /// col2 = normal, col3 = position.
+    static func luminanceMap(frame: ARFrame, basis: simd_float4x4, size: Float) -> UIImage? {
         let buffer = frame.capturedImage
         let imageSize = CGSize(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
 
+        let right = simd_make_float3(basis.columns.0)
+        let up = simd_make_float3(basis.columns.1)
+        let pos = simd_make_float3(basis.columns.3)
         let half = size / 2
-        let corners = [
-            SIMD4<Float>(-half, -half, 0, 1), SIMD4<Float>(half, -half, 0, 1),
-            SIMD4<Float>(-half, half, 0, 1), SIMD4<Float>(half, half, 0, 1),
-        ].map { corner -> CGPoint in
-            let world = placement * corner
-            return frame.camera.projectPoint(
-                simd_make_float3(world),
-                orientation: .landscapeRight,
-                viewportSize: imageSize
-            )
+
+        // Project each corner into sensor pixels, then flip into CI's
+        // bottom-left-origin coordinates.
+        func ciPoint(_ world: SIMD3<Float>) -> CGPoint {
+            let p = frame.camera.projectPoint(world, orientation: .landscapeRight, viewportSize: imageSize)
+            return CGPoint(x: p.x, y: imageSize.height - p.y)
         }
+        let tl = ciPoint(pos - right * half + up * half)
+        let tr = ciPoint(pos + right * half + up * half)
+        let bl = ciPoint(pos - right * half - up * half)
+        let br = ciPoint(pos + right * half - up * half)
 
-        let xs = corners.map(\.x), ys = corners.map(\.y)
-        var rect = CGRect(
-            x: xs.min()!, y: ys.min()!,
-            width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!
-        ).intersection(CGRect(origin: .zero, size: imageSize))
-        guard rect.width > 16, rect.height > 16 else { return nil }
+        let source = CIImage(cvPixelBuffer: buffer)
+        var image = source.applyingFilter("CIPerspectiveCorrection", parameters: [
+            "inputTopLeft": CIVector(cgPoint: tl),
+            "inputTopRight": CIVector(cgPoint: tr),
+            "inputBottomLeft": CIVector(cgPoint: bl),
+            "inputBottomRight": CIVector(cgPoint: br),
+        ])
+        guard image.extent.width > 16, image.extent.height > 16,
+              image.extent.width < 8192, image.extent.height < 8192 else { return nil }
 
-        // projectPoint is top-left origin; CIImage is bottom-left.
-        rect.origin.y = imageSize.height - rect.maxY
-
-        var image = CIImage(cvPixelBuffer: buffer)
-            .cropped(to: rect)
-            .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0])
+        image = image.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0])
 
         // Push the average toward white so multiplying darkens only where the
         // surface itself darkens.
@@ -49,7 +53,7 @@ enum SurfaceTexture {
         ])
 
         guard let cg = context.createCGImage(image, from: image.extent) else { return nil }
-        return UIImage(cgImage: cg, scale: 1, orientation: .right)
+        return UIImage(cgImage: cg)
     }
 
     private static func averageLuminance(of image: CIImage) -> CGFloat {

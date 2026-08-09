@@ -118,6 +118,8 @@ extension ARPaintView {
         private var isPreviewing = false
         private var previewNode: SCNNode?
         private var lastPlacedNode: SCNNode?
+        private var placedNodes: [SCNNode] = []
+        private var snappedIDs: Set<Int> = []
         private var lastCancelAt = Date.distantPast
         private var previewInfo: (placement: simd_float4x4, position: SIMD3<Float>, surfaceType: String)?
         private var lastAppliedPreviewSize: Float = 0
@@ -253,9 +255,9 @@ extension ARPaintView {
 
         nonisolated func renderer(_ renderer: SCNSceneRenderer, didAdd node: SCNNode, for anchor: ARAnchor) {
             if let mesh = anchor as? ARMeshAnchor {
-                let geometry = MeshOcclusion.geometry(from: mesh.geometry)
-                node.geometry = geometry
+                node.geometry = MeshOcclusion.geometry(from: mesh.geometry)
                 node.renderingOrder = -1
+                node.name = "occlusion"
                 return
             }
             Task { @MainActor [weak self] in
@@ -310,17 +312,23 @@ extension ARPaintView {
             }
         }
 
+        /// Removes only our piece nodes. ARKit-managed nodes — the LiDAR
+        /// occlusion meshes above all — must survive, or occlusion silently
+        /// dies for the rest of the session.
         func clear(_ token: Int) {
             guard token != lastClearToken else { return }
             lastClearToken = token
-            guard let scnView else { return }
             previewNode?.removeFromParentNode()
             previewNode = nil
             previewInfo = nil
             lastPlacedNode = nil
             isPreviewing = false
             onPreviewState(false)
-            for node in scnView.scene.rootNode.childNodes {
+            for node in placedNodes {
+                node.removeFromParentNode()
+            }
+            placedNodes.removeAll()
+            for (_, node) in remoteNodes {
                 node.removeFromParentNode()
             }
             remoteNodes.removeAll()
@@ -328,6 +336,7 @@ extension ARPaintView {
             pendingGeoPieces.removeAll()
             fallbackNodes.removeAll()
             fallbackPieces.removeAll()
+            snappedIDs.removeAll()
         }
 
         // MARK: - Placing a piece
@@ -442,20 +451,28 @@ extension ARPaintView {
             isPreviewing = false
 
             let frame = scnView.session.currentFrame
+            let basis = basis(fromPlacement: preview.placement)
             let surfaceTexture = frame.flatMap {
-                SurfaceTexture.luminanceMap(frame: $0, placement: preview.placement, size: previewSize)
+                SurfaceTexture.luminanceMap(frame: $0, basis: basis, size: previewSize)
             }
 
-            let node = makePieceNode(size: previewSize, transparent: false, surfaceTexture: surfaceTexture)
-            node.simdTransform = preview.placement
+            // LiDAR: drape the art over the scanned mesh so it wraps the real
+            // geometry. Otherwise (or when the mesh is too sparse) a flat quad.
+            let node: SCNNode
+            if hasLidar, let anchors = frame?.anchors,
+               let decal = DecalMesh.geometry(basis: basis, size: previewSize, anchors: anchors) {
+                decal.materials = [makePieceMaterial(transparent: false, surfaceTexture: surfaceTexture)]
+                node = SCNNode(geometry: decal)
+                node.simdTransform = basis
+            } else {
+                node = makePieceNode(size: previewSize, transparent: false, surfaceTexture: surfaceTexture)
+                node.simdTransform = preview.placement
+            }
             node.opacity = 0
-            node.scale = SCNVector3(1.25, 1.25, 1.25)
             scnView.scene.rootNode.addChildNode(node)
-            node.runAction(.group([
-                .fadeIn(duration: 0.18),
-                .scale(to: 1, duration: 0.22),
-            ]))
+            node.runAction(.fadeIn(duration: 0.25))
             lastPlacedNode = node
+            placedNodes.append(node)
 
             let camera = frame?.camera
             onPlace(preview.surfaceType)
@@ -488,8 +505,9 @@ extension ARPaintView {
         private func discardLast() {
             guard let node = lastPlacedNode else { return }
             lastPlacedNode = nil
+            placedNodes.removeAll { $0 === node }
             node.runAction(.sequence([
-                .group([.fadeOut(duration: 0.2), .scale(to: 0.7, duration: 0.2)]),
+                .fadeOut(duration: 0.2),
                 .removeFromParentNode(),
             ]))
         }
@@ -514,8 +532,14 @@ extension ARPaintView {
             material.isDoubleSided = true
             material.lightingModel = .constant
             material.diffuse.contents = drawingImage ?? color
+            // Decal UVs can overshoot [0,1] at triangle edges; clamping extends
+            // the artwork's transparent border instead of tiling it.
+            material.diffuse.wrapS = .clamp
+            material.diffuse.wrapT = .clamp
             if let surfaceTexture {
                 material.multiply.contents = surfaceTexture
+                material.multiply.wrapS = .clamp
+                material.multiply.wrapT = .clamp
             }
             if transparent {
                 material.transparency = 0.55
@@ -551,10 +575,13 @@ extension ARPaintView {
             let pieceLng = location.coordinate.longitude + Double(enu.x) / (111320 * cos(location.coordinate.latitude * .pi / 180))
             let pieceAlt = location.altitude + Double(enu.y)
 
+            // Scale is baked into the rotation columns: viewers apply this to a
+            // 0.3 m quad, so length(col0)/0.3 reconstructs the placed size.
+            let sizeScale = previewSize / 0.3
             let rotationOnly = simd_float4x4(columns: (
-                placement.columns.0,
-                placement.columns.1,
-                placement.columns.2,
+                placement.columns.0 * sizeScale,
+                placement.columns.1 * sizeScale,
+                placement.columns.2 * sizeScale,
                 simd_float4(0, 0, 0, 1)
             ))
 
@@ -644,12 +671,16 @@ extension ARPaintView {
                 material.diffuse.contents = image
                 node.geometry?.materials = [material]
 
-                let world = simd_float4x4(columns: (
+                var world = simd_float4x4(columns: (
                     rotation.columns.0,
                     rotation.columns.1,
                     rotation.columns.2,
                     simd_float4(position.x, position.y, position.z, 1)
                 ))
+                if let snapped = self.snappedTransform(for: piece, near: position) {
+                    world = snapped
+                    self.snappedIDs.insert(piece.id)
+                }
                 node.simdTransform = world
                 scnView.scene.rootNode.addChildNode(node)
                 self.remoteNodes[piece.id] = node
@@ -684,7 +715,10 @@ extension ARPaintView {
             }
         }
 
-        /// As the GPS fix settles, slide fallback pieces to their corrected spots.
+        /// As the GPS fix settles, slide fallback pieces to their corrected
+        /// spots — and glue them to a real detected surface as soon as one
+        /// matching their stored orientation appears. A physical surface beats
+        /// GPS noise, so a snapped piece stays put.
         private func maybeReanchor() {
             guard Date().timeIntervalSince(lastReanchor) > 2 else { return }
             lastReanchor = Date()
@@ -695,12 +729,110 @@ extension ARPaintView {
             for (id, node) in fallbackNodes {
                 guard let piece = fallbackPieces[id] else { continue }
                 let desired = worldPosition(for: piece, from: loc, cameraPos: camPos)
+                if snappedIDs.contains(id) {
+                    if simd_distance(node.simdPosition, desired) > 4 {
+                        snappedIDs.remove(id)
+                    }
+                    continue
+                }
+                if let snapped = snappedTransform(for: piece, near: desired) {
+                    snappedIDs.insert(id)
+                    SCNTransaction.begin()
+                    SCNTransaction.animationDuration = 0.35
+                    node.simdTransform = snapped
+                    SCNTransaction.commit()
+                    continue
+                }
                 if simd_distance(node.simdPosition, desired) > 0.5 {
                     var t = node.simdTransform
                     t.columns.3 = simd_float4(desired.x, desired.y, desired.z, 1)
                     node.simdTransform = t
                 }
             }
+        }
+
+        // MARK: - Surface snapping
+
+        /// Casts along the piece's stored surface normal (LiDAR mesh first,
+        /// detected planes otherwise) and, when a surface of the right class is
+        /// within reach, returns the piece's transform glued onto it.
+        private func snappedTransform(for piece: RemotePiece, near desired: SIMD3<Float>) -> simd_float4x4? {
+            guard let scnView else { return nil }
+            let stored = piece.placementTransform.flatMap(unflatten)
+            let scale = stored.map { simd_length(simd_make_float3($0.columns.0)) } ?? 1
+            let normal = stored.map { simd_normalize(simd_make_float3($0.columns.2)) } ?? SIMD3<Float>(0, 0, 1)
+            let upHint = stored.map { simd_normalize(simd_make_float3($0.columns.0)) } ?? SIMD3<Float>(0, 1, 0)
+
+            var surfacePoint: SIMD3<Float>?
+            var surfaceNormal: SIMD3<Float>?
+
+            let from = desired + normal * 2
+            let hits = scnView.scene.rootNode.hitTestWithSegment(
+                from: SCNVector3(from),
+                to: SCNVector3(desired - normal * 2),
+                options: [SCNHitTestOption.backFaceCulling.rawValue: false]
+            )
+            if let hit = hits.first(where: { $0.node.name == "occlusion" }) {
+                surfacePoint = simd_float3(hit.worldCoordinates.x, hit.worldCoordinates.y, hit.worldCoordinates.z)
+                let n = hit.worldNormal
+                surfaceNormal = simd_normalize(simd_float3(n.x, n.y, n.z))
+            } else {
+                let query = ARRaycastQuery(origin: from, direction: -normal, allowing: .existingPlaneGeometry, alignment: .any)
+                if let result = scnView.session.raycast(query).first {
+                    surfacePoint = simd_make_float3(result.worldTransform.columns.3)
+                    surfaceNormal = (result.anchor as? ARPlaneAnchor).map {
+                        simd_normalize(simd_make_float3($0.transform.columns.1))
+                    } ?? normal
+                }
+            }
+
+            guard let point = surfacePoint, var n = surfaceNormal,
+                  simd_distance(point, desired) < 2.5 else { return nil }
+            if simd_dot(n, normal) < 0 { n = -n }
+            guard orientationMatches(piece.surfaceType, normal: n) else { return nil }
+
+            var t = pieceTransform(position: point + n * 0.004, normal: n, upHint: upHint)
+            t.columns.0 *= scale
+            t.columns.1 *= scale
+            t.columns.2 *= scale
+            return t
+        }
+
+        /// A wall piece must not land on a floor and vice versa.
+        private func orientationMatches(_ surfaceType: String?, normal: SIMD3<Float>) -> Bool {
+            switch surfaceType {
+            case "wall", "door", "window": return abs(normal.y) < 0.5
+            case "floor": return normal.y > 0.7
+            case "ceiling": return normal.y < -0.7
+            case "table", "seat": return normal.y > 0.5
+            default: return true
+            }
+        }
+
+        /// Surface-aligned piece transform (upright correction included).
+        private func pieceTransform(position: SIMD3<Float>, normal: SIMD3<Float>, upHint: SIMD3<Float>) -> simd_float4x4 {
+            var up = upHint - normal * simd_dot(upHint, normal)
+            if simd_length(up) < 0.01 { up = simd_cross(normal, SIMD3<Float>(1, 0, 0)) }
+            if simd_length(up) < 0.01 { up = simd_cross(normal, SIMD3<Float>(0, 0, 1)) }
+            up = simd_normalize(up)
+            let right = simd_cross(up, normal)
+            // Same upright fold as makePlacement: col0 = up, col1 = -right.
+            return simd_float4x4(columns: (
+                simd_float4(up.x, up.y, up.z, 0),
+                simd_float4(-right.x, -right.y, -right.z, 0),
+                simd_float4(normal.x, normal.y, normal.z, 0),
+                simd_float4(position.x, position.y, position.z, 1)
+            ))
+        }
+
+        /// Recovers the pre-upright frame (right/up/normal) from a placement.
+        private func basis(fromPlacement placement: simd_float4x4) -> simd_float4x4 {
+            simd_float4x4(columns: (
+                -placement.columns.1,
+                placement.columns.0,
+                placement.columns.2,
+                placement.columns.3
+            ))
         }
 
         /// Attaches the piece quad to a resolved `ARGeoAnchor` node, relative to the
@@ -716,7 +848,9 @@ extension ARPaintView {
             let child = SCNNode(geometry: plane)
             child.simdTransform = pending.transform
             node.addChildNode(child)
-            remoteNodes[pending.id] = node
+            // Track the child, not ARKit's anchor node — clear() must never
+            // remove nodes ARKit manages.
+            remoteNodes[pending.id] = child
         }
 
         private func raycast(in scnView: ARSCNView, at location: CGPoint, target: ARRaycastQuery.Target) -> [ARRaycastResult] {
