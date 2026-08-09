@@ -791,6 +791,30 @@ private struct ColorSwatch: View {
     }
 }
 
+private struct StickerThumb: View {
+    let image: UIImage
+    let isSelected: Bool
+
+    var body: some View {
+        ZStack {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .padding(2)
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(isSelected ? Color.white : Color.white.opacity(0.4), lineWidth: isSelected ? 2.5 : 1)
+                .frame(width: 48, height: 48)
+        }
+        .frame(width: 50, height: 50)
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .scaleEffect(isSelected ? 1.08 : 1)
+        .animation(.snappy(duration: 0.2), value: isSelected)
+    }
+}
+
 private struct Toast: View {
     let message: String
     let symbol: String
