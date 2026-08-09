@@ -73,6 +73,7 @@ extension ARPaintView {
         private var meshCount = 0
         private var lastPlacedNode: SCNNode?
         private var snappedIDs: Set<Int> = []
+        private var lastPlaceabilityUpdate: TimeInterval = 0
         /// The interface orientation the still was shot in. Everything that maps
         /// between the overlay and the world has to use *that* orientation, not
         /// whichever way the phone happens to be held when Place is tapped.
@@ -121,6 +122,7 @@ extension ARPaintView {
             if active {
                 scnView.session.run(makeWorldConfiguration())
             } else {
+                controller.setPlaceable(false)
                 scnView.session.pause()
             }
         }
@@ -128,6 +130,7 @@ extension ARPaintView {
         nonisolated func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
             Task { @MainActor [weak self] in
                 self?.publishStatus()
+                self?.publishPlaceability(at: time)
                 self?.maybeReanchor()
             }
         }
@@ -205,6 +208,30 @@ extension ARPaintView {
             case .relocalizing: return "Finding your spot again"
             @unknown default: return "Waiting"
             }
+        }
+
+        /// Updates the viewfinder at a modest rate: green means the exact point
+        /// under it intersects LiDAR mesh or a fully detected AR plane.
+        private func publishPlaceability(at time: TimeInterval) {
+            guard time - lastPlaceabilityUpdate >= 0.1 else { return }
+            lastPlaceabilityUpdate = time
+            guard sessionActive, let scnView, let frame = scnView.session.currentFrame else {
+                controller.setPlaceable(false)
+                return
+            }
+            guard case .normal = frame.camera.trackingState else {
+                controller.setPlaceable(false)
+                return
+            }
+
+            let center = CGPoint(x: scnView.bounds.midX, y: scnView.bounds.midY)
+            let hitsMesh = hasLidar && scnView.hitTest(center, options: [
+                .searchMode: SCNHitTestSearchMode.all.rawValue,
+                .backFaceCulling: false,
+                .ignoreHiddenNodes: false
+            ]).contains { $0.node.name == "occlusion" }
+            let hitsPlane = !raycast(in: scnView, at: center, target: .existingPlaneGeometry).isEmpty
+            controller.setPlaceable(hitsMesh || hitsPlane)
         }
 
         /// Removes only our piece nodes. ARKit-managed nodes — the LiDAR
