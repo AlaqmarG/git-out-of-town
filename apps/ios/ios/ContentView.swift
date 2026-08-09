@@ -312,6 +312,7 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    scanQualityChip
                 }
                 Spacer(minLength: 0)
             }
@@ -353,6 +354,22 @@ struct ContentView: View {
         }
         .padding(18)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+    }
+
+    /// Placement quality for whoever comes to see this later: a scanned spot
+    /// relocalizes to the exact wall; a rough one falls back to GPS. Panning
+    /// around before posting upgrades it live.
+    private var scanQualityChip: some View {
+        let (symbol, text, color): (String, String, Color) = switch ar.scanQuality {
+        case "precise": ("checkmark.seal.fill", "Spot scanned — pins exactly here", Color.green)
+        case "good": ("dot.radiowaves.left.and.right", "Good scan — keep panning to lock it in", Color.yellow)
+        default: ("location.circle", "Rough spot — pan around the piece to scan it", Color.orange)
+        }
+        return Label(text, systemImage: symbol)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(color)
+            .contentTransition(.opacity)
+            .animation(.easeInOut, value: ar.scanQuality)
     }
 
     private func subtitle(_ pending: PendingPost) -> String {
@@ -470,6 +487,9 @@ struct ContentView: View {
                     // Ours is already on the wall as a local node; re-rendering
                     // the server's copy from a GPS estimate would double it up.
                     _ = ownPieceIDs.insert(piece.id)
+                    // Ship this spot's visual scan so other devices relocalize
+                    // to the exact wall instead of trusting GPS.
+                    ar.saveScan(pieceId: piece.id)
                     remotePieces.removeAll { $0.id == piece.id }
                     posting = false
                     withAnimation(.snappy) {
