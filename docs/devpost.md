@@ -1,5 +1,7 @@
 # Devpost draft: Git Out of Town
 
+[Overview](../README.md) · [Plan](PLAN.md) · **Devpost** · [Reve playbook](reve-playbook.md) · [Reve prompts](reve-prompts-used.md) · [Third Space Trek](hunt.md)
+
 Cover image: [`assets/brand/devpost-cover-1200.png`](assets/brand/devpost-cover-1200.png) (1200x675).
 Written by hand in HTML/SVG using the colours in `lib/theme.ts`, not generated.
 Source: [`assets/brand/cover.html`](assets/brand/cover.html). Re-render with:

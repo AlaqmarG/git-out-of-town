@@ -1,20 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 842" width="880" height="842" role="img" aria-label="Photo schedule timeline for the SummerHacks scavenger hunt">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 850" width="880" height="850" role="img" aria-label="Photo schedule timeline for the SummerHacks scavenger hunt: six new spots banked in the afternoon, six off-list points in the evening, three list spots never logged">
   <style>
     .bg     { fill: #0F1117; }
     .card   { fill: #151924; stroke: #232A3A; stroke-width: 1; }
     .h1     { fill: #E6EDF3; font: 700 21px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
     .h2     { fill: #8B949E; font: 400 12.5px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
-    .time   { fill: #C9D1D9; font: 600 14px ui-monospace, SFMono-Regular, Menlo, monospace; text-anchor: end; }
     .timeq  { fill: #6E7681; font: 600 14px ui-monospace, SFMono-Regular, Menlo, monospace; text-anchor: end; }
-    .name   { fill: #E6EDF3; font: 600 15.5px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
     .named  { fill: #7D8590; font: 600 15.5px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .name   { fill: #E6EDF3; font: 600 15.5px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
     .sub    { fill: #7D8590; font: 400 12px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
-    .ride   { fill: #56606E; font: 400 10.5px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
     .pts    { font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; text-anchor: middle; }
     .tag    { font: 600 9.5px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; text-anchor: middle; }
+    .sect   { fill: #8B949E; font: 700 11px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; letter-spacing: 0.9px; }
+    .drifth { fill: #D8A657; font: 700 14px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .drifts { fill: #8B949E; font: 400 11.5px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .chip   { fill: #A9B1BB; font: 500 11px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .chipt  { fill: #6E7681; font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
     .foot   { fill: #6E7681; font: 400 11.5px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
 
-    .spine  { stroke-dasharray: 630; stroke-dashoffset: 630; animation: draw 2.6s ease-out 0.2s forwards; }
+    .spine  { stroke-dasharray: 350; stroke-dashoffset: 350; animation: draw 1.9s ease-out 0.2s forwards; }
     @keyframes draw { to { stroke-dashoffset: 0; } }
 
     .row    { opacity: 0; animation: rise 0.55s cubic-bezier(.2,.7,.3,1) forwards; }
@@ -23,136 +26,116 @@
     .dot    { opacity: 0; transform-box: fill-box; transform-origin: center; animation: pop 0.5s cubic-bezier(.2,1.5,.4,1) forwards; }
     @keyframes pop { from { opacity: 0; transform: scale(0.1); } to { opacity: 1; transform: scale(1); } }
 
-    .halo   { transform-box: fill-box; transform-origin: center; animation: ping 2s ease-out 3.2s infinite; }
-    @keyframes ping { 0% { transform: scale(0.7); opacity: 0.85; } 100% { transform: scale(2.9); opacity: 0; } }
+    .miss   { animation: glow 2.6s ease-in-out 3.6s infinite; }
+    @keyframes glow { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
 
-    .warn   { animation: glow 2.4s ease-in-out 3.4s infinite; }
-    @keyframes glow { 0%,100% { opacity: 0.35; } 50% { opacity: 0.9; } }
-
-    .r0 { animation-delay: 0.45s } .r1 { animation-delay: 0.72s } .r2 { animation-delay: 0.99s }
-    .r3 { animation-delay: 1.26s } .r4 { animation-delay: 1.53s } .r5 { animation-delay: 1.80s }
-    .r6 { animation-delay: 2.07s } .r7 { animation-delay: 2.34s } .r8 { animation-delay: 2.61s }
-    .r9 { animation-delay: 2.88s }
+    .r0 { animation-delay: .40s } .r1 { animation-delay: .55s } .r2 { animation-delay: .70s }
+    .r3 { animation-delay: .85s } .r4 { animation-delay: 1.0s } .r5 { animation-delay: 1.15s }
+    .rd { animation-delay: 1.5s } .r6 { animation-delay: 2.1s } .r7 { animation-delay: 2.25s }
+    .r8 { animation-delay: 2.4s }
   </style>
 
-  <rect class="bg" width="880" height="842" rx="14"/>
-  <rect class="card" x="16" y="16" width="848" height="810" rx="12"/>
+  <rect class="bg" width="880" height="850" rx="14"/>
+  <rect class="card" x="16" y="16" width="848" height="818" rx="12"/>
 
-  <text class="h1" x="44" y="58">Git Out of Town — photo run</text>
-  <text class="h2" x="44" y="80">Sat Aug 8 · one photo per hour, locked · 19 pts reachable · leaderboard #1</text>
+  <text class="h1" x="44" y="56">Git Out of Town — the photo run</text>
+  <text class="h2" x="44" y="78">Sat Aug 8 · 13 photos · standings locked · finished #2, one point behind strawberry soda</text>
 
-  <g transform="translate(700,44)">
-    <rect x="0" y="0" width="140" height="40" rx="8" fill="#11251A" stroke="#1F6F3D"/>
-    <text class="tag" x="70" y="16" fill="#7EE2A0">BANKED</text>
-    <text class="pts" x="70" y="32" fill="#3FB950" style="font-size:15px">13 / 19 pts</text>
+  <g transform="translate(690,38)">
+    <rect x="0" y="0" width="150" height="46" rx="8" fill="#2E1116" stroke="#8A2B36"/>
+    <text class="tag" x="75" y="17" fill="#FFA198">FINAL · LOST BY 1</text>
+    <text class="pts" x="75" y="35" fill="#FF7B72" style="font-size:15px">19 — 20</text>
   </g>
 
-  <line class="spine" x1="176" y1="128" x2="176" y2="758" stroke="#2A3446" stroke-width="2.5" stroke-linecap="round"/>
+  <text class="sect" x="44" y="104">SIX NEW SPOTS — 11:17 AM TO 4:31 PM</text>
+  <line class="spine" x1="176" y1="128" x2="176" y2="478" stroke="#1F6F3D" stroke-width="2.5" stroke-linecap="round"/>
 
-  <!-- 11:17 Milky's — done -->
   <g class="row r0">
     <text class="timeq" x="150" y="133">11:17</text>
-    <text class="named" x="206" y="127">Milky's Cloud Room</text>
-    <text class="sub" x="206" y="146">Inside Stackt · purchase · logged</text>
+    <text class="named" x="206" y="122">Milky's Cloud Room</text>
+    <text class="sub" x="206" y="141">Inside Stackt · purchase</text>
     <g transform="translate(760,116)"><rect width="60" height="22" rx="6" fill="#11251A" stroke="#1F6F3D"/><text class="pts" x="30" y="15" fill="#3FB950">+2 pts</text></g>
   </g>
   <g class="dot r0"><circle cx="176" cy="128" r="8" fill="#3FB950"/><path d="M172.3 128 l2.8 2.9 l5.0 -5.4" fill="none" stroke="#0F1117" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
-  <text class="ride" x="206" y="164">already banked</text>
 
-  <!-- 12:21 Fungo — done -->
   <g class="row r1">
     <text class="timeq" x="150" y="203">12:21</text>
-    <text class="named" x="206" y="197">Fungo Cafe</text>
-    <text class="sub" x="206" y="216">King St W · purchase · logged</text>
+    <text class="named" x="206" y="192">Fungo Cafe</text>
+    <text class="sub" x="206" y="211">King St W · purchase</text>
     <g transform="translate(760,186)"><rect width="60" height="22" rx="6" fill="#11251A" stroke="#1F6F3D"/><text class="pts" x="30" y="15" fill="#3FB950">+2 pts</text></g>
   </g>
   <g class="dot r1"><circle cx="176" cy="198" r="8" fill="#3FB950"/><path d="M172.3 198 l2.8 2.9 l5.0 -5.4" fill="none" stroke="#0F1117" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
-  <text class="ride" x="206" y="234">already banked</text>
 
-  <!-- 1:24 Waterworks — done -->
   <g class="row r2">
     <text class="timeq" x="150" y="273">1:24</text>
-    <text class="named" x="206" y="267">Waterworks Food Hall / The Well</text>
-    <text class="sub" x="206" y="286">Richmond &amp; Brant · free · logged</text>
+    <text class="named" x="206" y="262">Waterworks Food Hall / The Well</text>
+    <text class="sub" x="206" y="281">Richmond &amp; Brant · free</text>
     <g transform="translate(760,256)"><rect width="60" height="22" rx="6" fill="#11251A" stroke="#1F6F3D"/><text class="pts" x="30" y="15" fill="#3FB950">+2 pts</text></g>
   </g>
   <g class="dot r2"><circle cx="176" cy="268" r="8" fill="#3FB950"/><path d="M172.3 268 l2.8 2.9 l5.0 -5.4" fill="none" stroke="#0F1117" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
-  <text class="ride" x="206" y="304">already banked</text>
 
-  <!-- 2:25 Scadding Court — done -->
   <g class="row r3">
     <text class="timeq" x="150" y="343">2:25</text>
-    <text class="named" x="206" y="337">Scadding Court Community Ctr</text>
-    <text class="sub" x="206" y="356">Bathurst &amp; Dundas · free · logged</text>
+    <text class="named" x="206" y="332">Scadding Court Community Ctr</text>
+    <text class="sub" x="206" y="351">Bathurst &amp; Dundas · free</text>
     <g transform="translate(760,326)"><rect width="60" height="22" rx="6" fill="#11251A" stroke="#1F6F3D"/><text class="pts" x="30" y="15" fill="#3FB950">+2 pts</text></g>
   </g>
   <g class="dot r3"><circle cx="176" cy="338" r="8" fill="#3FB950"/><path d="M172.3 338 l2.8 2.9 l5.0 -5.4" fill="none" stroke="#0F1117" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
-  <text class="ride" x="206" y="374">already banked</text>
 
-  <!-- 3:26 Lillian H. Smith — done -->
   <g class="row r4">
     <text class="timeq" x="150" y="413">3:26</text>
-    <text class="named" x="206" y="407">TPL Lillian H. Smith Branch</text>
-    <text class="sub" x="206" y="426">College &amp; Spadina · free · logged</text>
+    <text class="named" x="206" y="402">TPL Lillian H. Smith Branch</text>
+    <text class="sub" x="206" y="421">College &amp; Spadina · free</text>
     <g transform="translate(760,396)"><rect width="60" height="22" rx="6" fill="#11251A" stroke="#1F6F3D"/><text class="pts" x="30" y="15" fill="#3FB950">+2 pts</text></g>
   </g>
   <g class="dot r4"><circle cx="176" cy="408" r="8" fill="#3FB950"/><path d="M172.3 408 l2.8 2.9 l5.0 -5.4" fill="none" stroke="#0F1117" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
-  <text class="ride" x="206" y="444">already banked</text>
 
-  <!-- 4:31 Fort York — done, made the 5 PM wall -->
   <g class="row r5">
     <text class="timeq" x="150" y="483">4:31</text>
-    <text class="named" x="206" y="477">TPL Fort York Branch</text>
-    <text class="sub" x="206" y="496">Fort York Blvd · free · logged · last free stop, made it</text>
+    <text class="named" x="206" y="472">TPL Fort York Branch</text>
+    <text class="sub" x="206" y="491">Fort York Blvd · free · the last new spot we logged</text>
     <g transform="translate(760,466)"><rect width="60" height="22" rx="6" fill="#11251A" stroke="#1F6F3D"/><text class="pts" x="30" y="15" fill="#3FB950">+2 pts</text></g>
   </g>
   <g class="dot r5"><circle cx="176" cy="478" r="8" fill="#3FB950"/><path d="M172.3 478 l2.8 2.9 l5.0 -5.4" fill="none" stroke="#0F1117" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
-  <text class="ride" x="206" y="514">already banked</text>
 
-  <!-- 5:39 The Studio — off-list, taken from our own room -->
+  <g class="row rd">
+    <rect x="140" y="512" width="690" height="118" rx="10" fill="#1B1710" stroke="#5C4517"/>
+    <text class="drifth" x="160" y="537">The drift — seven hours, seven photos, seven single points</text>
+    <text class="drifts" x="588" y="537">5:39 PM → 11:49 PM · +7 · no new spots</text>
+
+    <g transform="translate(160,550)"><rect width="160" height="26" rx="6" fill="#12161F" stroke="#2A3446"/><text class="chipt" x="10" y="17">5:39</text><text class="chip" x="48" y="17">The Studio</text></g>
+    <g transform="translate(328,550)"><rect width="160" height="26" rx="6" fill="#12161F" stroke="#2A3446"/><text class="chipt" x="10" y="17">6:41</text><text class="chip" x="48" y="17">Stackt Market</text></g>
+    <g transform="translate(496,550)"><rect width="160" height="26" rx="6" fill="#12161F" stroke="#2A3446"/><text class="chipt" x="10" y="17">7:41</text><text class="chip" x="48" y="17">Ice cream</text></g>
+    <g transform="translate(664,550)"><rect width="160" height="26" rx="6" fill="#12161F" stroke="#2A3446"/><text class="chipt" x="10" y="17">8:43</text><text class="chip" x="48" y="17">Front Street</text></g>
+    <g transform="translate(160,582)"><rect width="160" height="26" rx="6" fill="#12161F" stroke="#2A3446"/><text class="chipt" x="10" y="17">9:43</text><text class="chip" x="48" y="17">Kinton Ramen</text></g>
+    <g transform="translate(328,582)"><rect width="160" height="26" rx="6" fill="#12161F" stroke="#2A3446"/><text class="chipt" x="10" y="17">10:45</text><text class="chip" x="52" y="17">The apartment</text></g>
+    <g transform="translate(496,582)"><rect width="160" height="26" rx="6" fill="#12161F" stroke="#2A3446"/><text class="chipt" x="10" y="17">11:49</text><text class="chip" x="52" y="17">Apartment again</text></g>
+  </g>
+
+  <text class="sect" x="44" y="664" fill="#F85149">NEVER LOGGED — 6 PTS, AND WE LOST BY 1</text>
+  <line x1="176" y1="688" x2="176" y2="776" stroke="#5C2A2A" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="4 6"/>
+
   <g class="row r6">
-    <text class="timeq" x="150" y="553">5:39</text>
-    <text class="named" x="206" y="547">The Studio</text>
-    <text class="sub" x="206" y="566">Inside Stackt — our own room · free · off-list</text>
-    <g transform="translate(760,536)"><rect width="60" height="22" rx="6" fill="#11251A" stroke="#1F6F3D"/><text class="pts" x="30" y="15" fill="#3FB950">+1 pt</text></g>
-    <g transform="translate(688,536)"><rect width="64" height="22" rx="6" fill="#101A26" stroke="#2A4A6E"/><text class="tag" x="32" y="15" fill="#6E9BD1">BASE</text></g>
+    <text class="name" x="206" y="685">Botanic Coffee and Caphe</text>
+    <text class="sub" x="206" y="702">662 Queen St W · open until 7 PM · the 5:39 and 6:41 slots both fell inside that</text>
+    <g class="miss" transform="translate(760,677)"><rect width="60" height="22" rx="6" fill="#2E1116" stroke="#8A2B36"/><text class="pts" x="30" y="15" fill="#FF7B72">2 pts</text></g>
   </g>
-  <g class="dot r6"><circle cx="176" cy="548" r="8" fill="#3FB950"/><path d="M172.3 548 l2.8 2.9 l5.0 -5.4" fill="none" stroke="#0F1117" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
-  <text class="ride" x="206" y="584">↓ 12 min walk — Stackt east along Queen St W · go now, be seated before 6:39</text>
+  <g class="dot r6"><circle cx="176" cy="688" r="8" fill="#151924" stroke="#F85149" stroke-width="2.5"/></g>
 
-  <!-- 6:39 Botanic — next up, hard close at 7 -->
   <g class="row r7">
-    <text class="time" x="150" y="623">6:39</text>
-    <text class="name" x="206" y="617">Botanic Coffee and Caphe</text>
-    <text class="sub" x="206" y="636">662 Queen St W · purchase · only slot before it closes</text>
-    <g transform="translate(760,606)"><rect width="60" height="22" rx="6" fill="#2A1E06" stroke="#8A6212"/><text class="pts" x="30" y="15" fill="#F0A020">+2 pts</text></g>
-    <g class="warn" transform="translate(688,606)"><rect width="64" height="22" rx="6" fill="#2E1116" stroke="#8A2B36"/><text class="tag" x="32" y="15" fill="#FF7B72">CLOSES 7</text></g>
+    <text class="name" x="206" y="729">Varda</text>
+    <text class="sub" x="206" y="746">350 King St W (TIFF) · open until 10 PM · minutes from the 8:43 Front St photo</text>
+    <g class="miss" transform="translate(760,721)"><rect width="60" height="22" rx="6" fill="#2E1116" stroke="#8A2B36"/><text class="pts" x="30" y="15" fill="#FF7B72">2 pts</text></g>
   </g>
-  <g class="dot r7">
-    <circle class="halo" cx="176" cy="618" r="9" fill="none" stroke="#F0A020" stroke-width="2"/>
-    <circle cx="176" cy="618" r="9" fill="#F0A020"/>
-    <circle cx="176" cy="618" r="3.4" fill="#0F1117"/>
-  </g>
-  <text class="ride" x="206" y="654">↓ ~10 min — Queen St W east to Spadina</text>
+  <g class="dot r7"><circle cx="176" cy="732" r="8" fill="#151924" stroke="#F85149" stroke-width="2.5"/></g>
 
-  <!-- 7:39 ICHA -->
   <g class="row r8">
-    <text class="time" x="150" y="693">7:39</text>
-    <text class="name" x="206" y="687">ICHA TEA / Project Seoul / Cafe Foret</text>
-    <text class="sub" x="206" y="706">235 Spadina · purchase · open to 10 PM</text>
-    <g transform="translate(760,676)"><rect width="60" height="22" rx="6" fill="#1C1233" stroke="#5B3B9E"/><text class="pts" x="30" y="15" fill="#A371F7">+2 pts</text></g>
+    <text class="name" x="206" y="773">ICHA Tea / Project Seoul / Cafe Foret</text>
+    <text class="sub" x="206" y="790">235 Spadina · open until 10 PM · still reachable at the 9:43 slot</text>
+    <g class="miss" transform="translate(760,765)"><rect width="60" height="22" rx="6" fill="#2E1116" stroke="#8A2B36"/><text class="pts" x="30" y="15" fill="#FF7B72">2 pts</text></g>
   </g>
-  <g class="dot r8"><circle cx="176" cy="688" r="8" fill="#151924" stroke="#A371F7" stroke-width="2.5"/></g>
-  <text class="ride" x="206" y="724">↓ ~10 min — Spadina south to King St W</text>
+  <g class="dot r8"><circle cx="176" cy="776" r="8" fill="#151924" stroke="#F85149" stroke-width="2.5"/></g>
 
-  <!-- 8:39 Varda -->
-  <g class="row r9">
-    <text class="time" x="150" y="763">8:39</text>
-    <text class="name" x="206" y="757">Varda</text>
-    <text class="sub" x="206" y="776">350 King St W (TIFF) · purchase · open to 10 PM</text>
-    <g transform="translate(760,746)"><rect width="60" height="22" rx="6" fill="#1C1233" stroke="#5B3B9E"/><text class="pts" x="30" y="15" fill="#A371F7">+2 pts</text></g>
-  </g>
-  <g class="dot r9"><circle cx="176" cy="758" r="8" fill="#151924" stroke="#A371F7" stroke-width="2.5"/></g>
-
-  <text class="foot" x="44" y="810">Botanic closes at 7 PM — 6:39 is its last slot. ICHA and Varda hold until 10. The Studio is a free +1 from our own room any hour we can't get out.</text>
+  <text class="foot" x="44" y="812">The hunt closed at midnight Saturday. Standings are locked: strawberry soda 20, us 19, AEIOU 16.</text>
+  <text class="foot" x="44" y="828">Any one of these three cafés, at any hour between 5:39 and 10 PM, would have won it.</text>
 </svg>

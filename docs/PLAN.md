@@ -1,5 +1,7 @@
 # Plan
 
+[Overview](../README.md) · **Plan** · [Devpost](devpost.md) · [Reve playbook](reve-playbook.md) · [Reve prompts](reve-prompts-used.md) · [Third Space Trek](hunt.md)
+
 What we're building, what wins points, and what to cut.
 
 ---

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 620" width="880" height="620" role="img" aria-label="Animated route map of the photo run across downtown west Toronto">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 640" width="880" height="640" role="img" aria-label="Route map: a tight western loop banking six new spots, then an evening drift east away from the three list spots that were never logged">
   <style>
     .bg    { fill: #0F1117; }
     .card  { fill: #10151F; stroke: #232A3A; stroke-width: 1; }
@@ -9,14 +9,13 @@
     .lbl   { fill: #C9D1D9; font: 600 11.5px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
     .lbld  { fill: #6E7681; font: 600 11.5px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
     .tm    { font: 700 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .leg   { fill: #56606E; font: 500 9.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
     .foot  { fill: #6E7681; font: 400 11px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
 
     .grid  { opacity: 0; animation: fade 0.9s ease-out 0.15s forwards; }
     @keyframes fade { to { opacity: 1; } }
 
-    .done  { stroke-dasharray: 1000; stroke-dashoffset: 1000; animation: draw 1.6s ease-out 0.6s forwards; }
-    .todo  { stroke-dasharray: 630; stroke-dashoffset: 630; animation: draw 2.4s ease-in-out 2.2s forwards; }
+    .done  { stroke-dasharray: 1100; stroke-dashoffset: 1100; animation: draw 1.8s ease-out 0.6s forwards; }
+    .drift { stroke-dasharray: 700; stroke-dashoffset: 700; animation: draw 2.2s ease-in-out 2.4s forwards; }
     @keyframes draw { to { stroke-dashoffset: 0; } }
 
     .pin   { opacity: 0; transform-box: fill-box; transform-origin: center; animation: pop 0.5s cubic-bezier(.2,1.5,.4,1) forwards; }
@@ -24,46 +23,45 @@
 
     .tag   { opacity: 0; animation: fade 0.5s ease-out forwards; }
 
-    .halo  { transform-box: fill-box; transform-origin: center; animation: ping 2s ease-out 2s infinite; }
-    @keyframes ping { 0% { transform: scale(0.7); opacity: 0.9; } 100% { transform: scale(3.2); opacity: 0; } }
+    .miss  { transform-box: fill-box; transform-origin: center; animation: ping 2.4s ease-out 4.4s infinite; }
+    @keyframes ping { 0% { transform: scale(0.7); opacity: 0.9; } 100% { transform: scale(3.0); opacity: 0; } }
 
     .p0{animation-delay:.8s}  .p1{animation-delay:1.0s} .p2{animation-delay:1.2s}
     .p3{animation-delay:1.4s} .p4{animation-delay:1.6s} .p5{animation-delay:1.8s}
-    .p6{animation-delay:2.0s} .p7{animation-delay:2.9s} .p8{animation-delay:3.3s}
-    .p9{animation-delay:3.7s}
+    .p6{animation-delay:3.0s} .p7{animation-delay:3.3s} .p8{animation-delay:3.6s}
+    .m0{animation-delay:4.0s} .m1{animation-delay:4.2s} .m2{animation-delay:4.4s}
   </style>
 
-  <rect class="bg" width="880" height="620" rx="14"/>
-  <rect class="card" x="16" y="16" width="848" height="588" rx="12"/>
+  <rect class="bg" width="880" height="640" rx="14"/>
+  <rect class="card" x="16" y="16" width="848" height="608" rx="12"/>
 
-  <text class="h1" x="44" y="54">The evening — three cafés left, 6 points still on the table</text>
-  <text class="h2" x="44" y="75">Downtown west · 7 photos banked, 3 to go · Botanic closes at 7 PM · the rest of each hour is build time</text>
+  <text class="h1" x="44" y="54">A tight western loop — then six hours drifting east</text>
+  <text class="h2" x="44" y="75">Sat Aug 8 · 13 photos · 19 pts · every spot we never logged is back west, and all three were open all evening</text>
 
   <g class="grid">
-    <line class="st" x1="90" y1="135" x2="770" y2="135"/><text class="stl" x="766" y="130" text-anchor="end">COLLEGE ST</text>
-    <line class="st" x1="90" y1="225" x2="770" y2="225"/><text class="stl" x="766" y="220" text-anchor="end">DUNDAS ST W</text>
-    <line class="st" x1="90" y1="337" x2="770" y2="337"/><text class="stl" x="766" y="330" text-anchor="end">QUEEN ST W</text>
-    <line class="st" x1="90" y1="372" x2="770" y2="372"/><text class="stl" x="766" y="367" text-anchor="end">KING ST W</text>
-    <line class="st" x1="90" y1="413" x2="770" y2="413"/><text class="stl" x="766" y="408" text-anchor="end">FRONT ST W</text>
-    <line class="st" x1="286" y1="110" x2="286" y2="500"/><text class="stl" x="290" y="122">BATHURST</text>
-    <line class="st" x1="498" y1="110" x2="498" y2="500"/><text class="stl" x="502" y="122">SPADINA</text>
-    <path d="M90,516 Q200,508 310,516 T530,516 T750,516 L770,516 L770,570 L90,570 Z" fill="#0C1A24" stroke="#152A38" stroke-width="1"/>
-    <text class="stl" x="404" y="547" fill="#2E4656">LAKE ONTARIO</text>
+    <line class="st" x1="90" y1="135" x2="820" y2="135"/><text class="stl" x="816" y="130" text-anchor="end">COLLEGE ST</text>
+    <line class="st" x1="90" y1="225" x2="820" y2="225"/><text class="stl" x="816" y="220" text-anchor="end">DUNDAS ST W</text>
+    <line class="st" x1="90" y1="337" x2="820" y2="337"/><text class="stl" x="816" y="332" text-anchor="end">QUEEN ST</text>
+    <line class="st" x1="90" y1="372" x2="820" y2="372"/><text class="stl" x="816" y="367" text-anchor="end">KING ST</text>
+    <line class="st" x1="90" y1="413" x2="820" y2="413"/><text class="stl" x="816" y="408" text-anchor="end">FRONT ST</text>
+    <line class="st" x1="286" y1="110" x2="286" y2="505"/><text class="stl" x="290" y="122">BATHURST</text>
+    <line class="st" x1="498" y1="110" x2="498" y2="505"/><text class="stl" x="502" y="122">SPADINA</text>
+    <line class="st" x1="650" y1="110" x2="650" y2="505"/><text class="stl" x="654" y="122">YONGE</text>
+    <path d="M90,528 Q200,520 310,528 T530,528 T750,528 L820,528 L820,590 L90,590 Z" fill="#0C1A24" stroke="#152A38" stroke-width="1"/>
+    <text class="stl" x="404" y="562" fill="#2E4656">LAKE ONTARIO</text>
+    <text class="stl" x="786" y="470" text-anchor="middle" fill="#2E4656">DISTILLERY</text>
   </g>
 
-  <path class="done" d="M256,467 L407,377 L392,307 L286,243 L438,135 L332,485 L262,491" fill="none" stroke="#3FB950" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.75"/>
+  <path class="done" d="M256,470 L407,377 L392,307 L286,243 L438,135 L332,487 L256,470"
+        fill="none" stroke="#3FB950" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
 
-  <path id="route" class="todo" d="M262,491 L196,341 L498,270 L620,372"
-        fill="none" stroke="#F0A020" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path class="drift" d="M256,470 L566,419 L652,486 L786,440"
+        fill="none" stroke="#D8A657" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+        stroke-dasharray="9 7" opacity="0.85"/>
 
-  <circle r="5.5" fill="#FFD98A" opacity="0.95">
-    <animateMotion dur="7s" begin="4.6s" repeatCount="indefinite" rotate="auto">
-      <mpath href="#route"/>
-    </animateMotion>
-  </circle>
-
-  <g class="pin p0"><circle cx="256" cy="467" r="7" fill="#3FB950" opacity="0.75"/><path d="M252.7 467 l2.5 2.6 l4.5 -4.9" fill="none" stroke="#0F1117" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></g>
-  <text class="tag lbld p0" x="242" y="471" text-anchor="end"><tspan class="tm" fill="#3FB950">11:17</tspan> Milky's</text>
+  <g class="pin p0"><circle cx="256" cy="470" r="11" fill="#3FB950" opacity="0.85"/><text class="tm" x="256" y="474" text-anchor="middle" fill="#0F1117">4</text></g>
+  <text class="tag lbld p0" x="242" y="464" text-anchor="end"><tspan class="tm" fill="#3FB950">11:17</tspan> Milky's · Stackt</text>
+  <text class="tag lbld p0" x="242" y="480" text-anchor="end">four photos never left this block</text>
 
   <g class="pin p1"><circle cx="407" cy="377" r="7" fill="#3FB950" opacity="0.75"/><path d="M403.7 377 l2.5 2.6 l4.5 -4.9" fill="none" stroke="#0F1117" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></g>
   <text class="tag lbld p1" x="421" y="381"><tspan class="tm" fill="#3FB950">12:21</tspan> Fungo Cafe</text>
@@ -77,23 +75,35 @@
   <g class="pin p4"><circle cx="438" cy="135" r="7" fill="#3FB950" opacity="0.75"/><path d="M434.7 135 l2.5 2.6 l4.5 -4.9" fill="none" stroke="#0F1117" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></g>
   <text class="tag lbld p4" x="452" y="139"><tspan class="tm" fill="#3FB950">3:26</tspan> TPL Lillian H. Smith</text>
 
-  <g class="pin p5"><circle cx="332" cy="485" r="7" fill="#3FB950" opacity="0.75"/><path d="M328.7 485 l2.5 2.6 l4.5 -4.9" fill="none" stroke="#0F1117" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></g>
-  <text class="tag lbld p5" x="346" y="489"><tspan class="tm" fill="#3FB950">4:31</tspan> TPL Fort York</text>
+  <g class="pin p5"><circle cx="332" cy="487" r="7" fill="#3FB950" opacity="0.75"/><path d="M328.7 487 l2.5 2.6 l4.5 -4.9" fill="none" stroke="#0F1117" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></g>
+  <text class="tag lbld p5" x="346" y="500"><tspan class="tm" fill="#3FB950">4:31</tspan> TPL Fort York</text>
 
-  <g class="pin p6"><circle cx="262" cy="491" r="7" fill="#3FB950" opacity="0.75"/><path d="M258.7 491 l2.5 2.6 l4.5 -4.9" fill="none" stroke="#0F1117" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></g>
-  <text class="tag lbld p6" x="248" y="495" text-anchor="end"><tspan class="tm" fill="#3FB950">5:39</tspan> The Studio <tspan fill="#4A5565">+1 · base</tspan></text>
+  <g class="pin p6"><circle cx="566" cy="419" r="6.5" fill="#D8A657" opacity="0.8"/></g>
+  <text class="tag lbld p6" x="580" y="410"><tspan class="tm" fill="#D8A657">8:43</tspan> Front Street <tspan fill="#4A5565">+1</tspan></text>
 
-  <g class="pin p7">
-    <circle class="halo" cx="196" cy="341" r="8" fill="none" stroke="#F0A020" stroke-width="2"/>
-    <circle cx="196" cy="341" r="8" fill="#F0A020"/><circle cx="196" cy="341" r="3" fill="#0F1117"/>
+  <g class="pin p7"><circle cx="652" cy="486" r="6.5" fill="#D8A657" opacity="0.8"/></g>
+  <text class="tag lbld p7" x="652" y="507" text-anchor="middle"><tspan class="tm" fill="#D8A657">9:43</tspan> Kinton · WaterPark <tspan fill="#4A5565">+1</tspan></text>
+
+  <g class="pin p8"><circle cx="786" cy="440" r="9" fill="#D8A657" opacity="0.85"/><text class="tm" x="786" y="444" text-anchor="middle" fill="#0F1117" style="font-size:10px">2</text></g>
+  <text class="tag lbld p8" x="782" y="428" text-anchor="middle"><tspan class="tm" fill="#D8A657">10:45 + 11:49</tspan> the apartment <tspan fill="#4A5565">+2</tspan></text>
+
+  <g class="pin m0">
+    <circle class="miss" cx="196" cy="341" r="8" fill="none" stroke="#F0A020" stroke-width="2"/>
+    <circle cx="196" cy="341" r="7.5" fill="#10151F" stroke="#F0A020" stroke-width="2.5"/>
   </g>
-  <text class="tag lbl p7" x="182" y="338" text-anchor="end"><tspan class="tm" fill="#F0A020">6:39</tspan> Botanic <tspan fill="#F0A020">· closes 7</tspan></text>
+  <text class="tag lbl m0" x="182" y="338" text-anchor="end">Botanic <tspan fill="#F0A020">· 2 pts</tspan></text>
 
-  <g class="pin p8"><circle cx="498" cy="270" r="7" fill="#10151F" stroke="#A371F7" stroke-width="2.5"/></g>
-  <text class="tag lbl p8" x="512" y="266"><tspan class="tm" fill="#A371F7">7:39</tspan> ICHA Tea · Chinatown</text>
+  <g class="pin m1">
+    <circle class="miss" cx="498" cy="270" r="8" fill="none" stroke="#F0A020" stroke-width="2"/>
+    <circle cx="498" cy="270" r="7.5" fill="#10151F" stroke="#F0A020" stroke-width="2.5"/>
+  </g>
+  <text class="tag lbl m1" x="512" y="266">ICHA Tea <tspan fill="#F0A020">· 2 pts</tspan></text>
 
-  <g class="pin p9"><circle cx="620" cy="372" r="7" fill="#10151F" stroke="#A371F7" stroke-width="2.5"/></g>
-  <text class="tag lbl p9" x="634" y="392"><tspan class="tm" fill="#A371F7">8:39</tspan> Varda · TIFF</text>
+  <g class="pin m2">
+    <circle class="miss" cx="620" cy="372" r="8" fill="none" stroke="#F0A020" stroke-width="2"/>
+    <circle cx="620" cy="372" r="7.5" fill="#10151F" stroke="#F0A020" stroke-width="2.5"/>
+  </g>
+  <text class="tag lbl m2" x="634" y="368">Varda <tspan fill="#F0A020">· 2 pts</tspan></text>
 
-  <text class="foot" x="44" y="589">Green = banked · amber = next up, the only slot before Botanic closes · purple = open to 10 PM · The Studio = free +1 any hour we can't get out</text>
+  <text class="foot" x="44" y="609">Green = six new spots, all banked by 4:31 · amber = the evening drift east, six photos worth one point each · rings = the three list spots still unlogged</text>
 </svg>

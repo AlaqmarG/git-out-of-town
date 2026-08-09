@@ -44,12 +44,19 @@ PHOTOS = [
     ("1526-lillian", "TPL Lillian H. Smith Branch", "Sat Aug 8 · 3:26 PM · new spot", False),
     ("1631-fortyork", "TPL Fort York Branch", "Sat Aug 8 · 4:31 PM · new spot", True),
     ("1739-studio", "The Studio", "Sat Aug 8 · 5:39 PM · off-list", False),
+    ("1841-stackt", "Stackt Market", "Sat Aug 8 · 6:41 PM · off-list", False),
+    ("1941-icecream", "Making ice cream", "Sat Aug 8 · 7:41 PM · off-list", False),
+    ("2043-frontst", "Somewhere in Front Street", "Sat Aug 8 · 8:43 PM · off-list", False),
+    ("2143-kinton", "Kinton by WaterPark Place", "Sat Aug 8 · 9:43 PM · off-list", False),
+    ("2245-apartment", "The apartment (Distillery District)", "Sat Aug 8 · 10:45 PM · off-list", False),
+    ("2349-apartment2", "Still grinding at the apartment", "Sat Aug 8 · 11:49 PM · last photo", False),
 ]
 
+# Never logged — the hunt closed at midnight with these three still open.
 PENDING = [
-    ("6-39-botanic", "Botanic Coffee and Caphe", "Sat Aug 8 · 6:39 PM · closes 7 PM"),
-    ("7-39-icha", "ICHA Tea / Project Seoul", "Sat Aug 8 · 7:39 PM · unlogged"),
-    ("8-39-varda", "Varda", "Sat Aug 8 · 8:39 PM · unlogged"),
+    ("unlogged-botanic", "Botanic Coffee and Caphe", "662 Queen St W · never logged · 2"),
+    ("unlogged-varda", "Varda", "350 King St W · never logged · 2"),
+    ("unlogged-icha", "ICHA Tea / Project Seoul", "235 Spadina · never logged · 2"),
 ]
 
 
