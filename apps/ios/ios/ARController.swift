@@ -54,9 +54,27 @@ final class ARController {
         }
     }
 
+    /// ARKit's coaching overlay is up, giving its own full-screen guidance.
+    /// Ours has to get out of the way — two sets of "pan slowly" is noise.
+    private(set) var isCoaching = false
+
+    /// A printed marker has pinned the world origin, so this device's
+    /// coordinates line up with any other device that sees the same poster.
+    private(set) var markerLocked = false
+
     func setPlaceable(_ placeable: Bool) {
         guard isPlaceable != placeable else { return }
         isPlaceable = placeable
+    }
+
+    func setCoaching(_ coaching: Bool) {
+        guard isCoaching != coaching else { return }
+        isCoaching = coaching
+    }
+
+    func setMarkerLocked(_ locked: Bool) {
+        guard markerLocked != locked else { return }
+        markerLocked = locked
     }
 
     /// Call from `ARSessionObserver.session(_:didFailWithError:)`.
@@ -87,6 +105,12 @@ final class ARController {
     /// configuration. Rebuilding it here is how the LiDAR mesh gets lost.
     func restart() {
         failure = nil
+        // A session that died and came back has no reason to have kept its world
+        // origin, and a stale marker frame is worse than none: every shared piece
+        // lands against a frame that no longer exists, `adopt` refuses to run
+        // again, and the UI keeps promising exactness.
+        ImageMarkerOrigin.reset()
+        markerLocked = false
         coordinator?.setActive(false)
         coordinator?.setActive(true)
     }

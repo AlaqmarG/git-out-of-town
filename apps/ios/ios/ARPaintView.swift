@@ -18,6 +18,9 @@ struct PlacementSnapshot {
     let usedGeoAnchor: Bool
     let hasLidar: Bool
     let placementTransform: [Double]
+    /// The same placement in the printed poster's frame, when one was in view.
+    /// Nil is the norm, and means viewers fall back to lat/lng.
+    let markerTransform: [Double]?
 }
 
 /// A piece placed by someone else, to be rendered from its stored transform.
@@ -29,6 +32,7 @@ struct RemotePiece: Identifiable {
     let altitudeM: Double?
     let surfaceType: String?
     let placementTransform: [Double]?
+    let markerTransform: [Double]?
 }
 
 struct ARPaintView: UIViewRepresentable {
@@ -82,13 +86,25 @@ extension ARPaintView {
         private var dressedIDs: Set<Int> = []
         private var dressAttempts: [Int: Int] = [:]
         private var lastDress = Date.distantPast
+        /// Bumped whenever the scene is emptied. An in-flight image download
+        /// carries the generation it started in, so a placement computed against
+        /// a world origin that has since moved is dropped instead of landing.
+        private var sceneGeneration = 0
+        /// Last set the poll loop handed us. Server state, not scene state, so
+        /// `clearPieces` leaves it alone and the scene can be rebuilt from it
+        /// without waiting for the next poll.
+        private var lastRemotePieces: [RemotePiece] = []
         private var lastPlacedFrame: simd_float4x4?
         private var lastPlacedSize: Float = 0.3
         private var anchoredPieceIDs: Set<Int> = []
         private var knownImagePaths: [Int: String] = [:]
         private var relocalizeAttempted = false
         private var relocalizeInFlight = false
-        private var relocalizing = false
+        private var relocalizeTask: Task<Void, Never>?
+        private var coaching: CoachingOverlay?
+        private var relocalizing = false {
+            didSet { coaching?.goal = relocalizing ? .tracking : .anyPlane }
+        }
         private var sessionStartedAt: TimeInterval = 0
         /// The venue map this session is extending: whatever we relocalized
         /// against, then every version we ship on top of it. Nil means this
@@ -128,6 +144,44 @@ extension ARPaintView {
 
         func setupSession(in scnView: ARSCNView) {
             scnView.session.run(makeWorldConfiguration())
+            coaching = CoachingOverlay(
+                session: scnView.session,
+                in: scnView,
+                onActive: { [weak self] in self?.controller.setCoaching($0) },
+                onReset: { [weak self] in self?.startOver() }
+            )
+        }
+
+        /// "Start Over" on the coaching overlay — the escape hatch from a
+        /// relocalization that will never match. Resetting only the session
+        /// would leave the in-flight attempt free to swap another world map in
+        /// underneath, and every node still parked at the old world origin.
+        private func startOver() {
+            guard let scnView else { return }
+            relocalizeTask?.cancel()
+            relocalizeTask = nil
+            relocalizing = false
+            // One attempt per session, and this was it: retrying would drop the
+            // user straight back into the stall they just escaped.
+            relocalizeAttempted = true
+            everMapped = false
+            meshCount = 0
+            sessionStartedAt = 0
+            anchoredPieceIDs.removeAll()
+            lastPlacedFrame = nil
+            resetWorld(with: makeWorldConfiguration())
+        }
+
+        /// The one way to re-run with `.resetTracking`. Every world coordinate in
+        /// the app is about to mean somewhere else, so the marker origin and the
+        /// whole scene go with it. Marker-placed pieces especially: they sit
+        /// outside `fallbackNodes` precisely so nothing repositions them, which
+        /// also means nothing would ever fix them.
+        private func resetWorld(with config: ARWorldTrackingConfiguration) {
+            ImageMarkerOrigin.reset()
+            controller.setMarkerLocked(false)
+            clearPieces()
+            scnView?.session.run(config, options: [.resetTracking, .removeExistingAnchors])
         }
 
         /// ARKit relocalizes after a `pause()` and, when that fails, restarts the
@@ -146,6 +200,9 @@ extension ARPaintView {
             // North-up world frame: x = east, y = up, z = south. Both placer and
             // viewer use this, so a stored transform reconstructs identically.
             config.worldAlignment = .gravityAndHeading
+            // Detection only (`maximumNumberOfTrackedImages` stays 0): the
+            // poster fires one anchor, we take the origin off it, done.
+            config.detectionImages = ImageMarkerOrigin.referenceImages
             if hasLidar {
                 config.sceneReconstruction = .meshWithClassification
                 // The dense per-pixel depth map. The reconstruction mesh is ~5cm
@@ -207,6 +264,12 @@ extension ARPaintView {
                 node.geometry = MeshOcclusion.geometry(from: mesh.geometry)
                 node.renderingOrder = -1
                 node.name = "occlusion"
+                return
+            }
+            if let marker = anchor as? ARImageAnchor {
+                Task { @MainActor [weak self] in
+                    self?.adoptMarker(marker)
+                }
                 return
             }
             // Anchors named piece:<id>:<mm> arrive out of a relocalized world
@@ -319,6 +382,7 @@ extension ARPaintView {
         /// occlusion meshes above all — must survive, or occlusion silently
         /// dies for the rest of the session.
         func clearPieces() {
+            sceneGeneration += 1
             for node in placedNodes { node.removeFromParentNode() }
             placedNodes.removeAll()
             lastPlacedNode = nil
@@ -516,6 +580,24 @@ extension ARPaintView {
             return snapshot(placement: placement, position: position, size: sizeMeters, scene: scene)
         }
 
+        // MARK: - Shared origin (printed marker)
+
+        /// The poster gives every device that sees it the same world origin.
+        /// Only worth doing while the scene is still empty: nothing we have
+        /// added is anchor-backed, so ARKit will not carry it across the origin
+        /// change, and a piece the user already painted would jump.
+        private func adoptMarker(_ anchor: ARImageAnchor) {
+            guard let scnView, sessionActive, placedNodes.isEmpty, anchoredPieceIDs.isEmpty,
+                  ImageMarkerOrigin.adopt(anchor, in: scnView.session) else { return }
+            // Remote pieces are sitting at coordinates from the old origin. Drop
+            // them and rebuild in the new frame right here — waiting on the poll
+            // loop would mean waiting for the piece SET to change, which at a
+            // quiet venue is never.
+            clearPieces()
+            controller.setMarkerLocked(true)
+            renderRemotePieces(lastRemotePieces)
+        }
+
         // MARK: - Visual relocalization (ARWorldMap)
 
         /// After a successful post: pin the piece as a named anchor and ship the
@@ -632,7 +714,7 @@ extension ARPaintView {
             // Set before the await, or every render frame spawns another copy
             // of this task and they run competing session resets.
             relocalizeInFlight = true
-            Task { @MainActor [weak self] in
+            relocalizeTask = Task { @MainActor [weak self] in
                 guard let self else { return }
                 defer { self.relocalizeInFlight = false }
                 // One exit for every way this ends — matched, exhausted,
@@ -641,7 +723,7 @@ extension ARPaintView {
                 // Indoors at ±20 m GPS the nearest map is often the wrong room,
                 // so walk the candidates rather than betting on one.
                 guard let records = try? await WorldMapStore.nearby(location: location, radiusM: 80),
-                      !records.isEmpty else { return }
+                      !records.isEmpty, !Task.isCancelled else { return }
                 // Only now: a network blip shouldn't disable relocalization for
                 // the whole session.
                 self.relocalizeAttempted = true
@@ -664,6 +746,8 @@ extension ARPaintView {
                     let downloaded = try? await WorldMapStore.download(record)
                     let ghost = await guide
                     guard let map = downloaded else { continue }
+                    // Start Over cancels us, and has already reset the session.
+                    guard !Task.isCancelled else { return }
                     guard let scnView = self.scnView, self.sessionActive,
                           // The download took time; a mesh that grew meanwhile is
                           // worth more than the relocalization.
@@ -674,13 +758,14 @@ extension ARPaintView {
                     config.initialWorldMap = map
                     reset = true
                     self.relocalizing = true
-                    scnView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
+                    self.resetWorld(with: config)
 
                     // Apple gives no failure callback: `.normal` is the only
                     // signal a match landed, and a miss stays "relocalizing"
                     // forever. So poll, then move to the next candidate.
                     for _ in 0..<20 {
                         try? await Task.sleep(for: .milliseconds(500))
+                        guard !Task.isCancelled else { return }
                         if case .normal = scnView.session.currentFrame?.camera.trackingState {
                             self.relocalizing = false
                             // Matched. The session now holds this map's anchors,
@@ -695,8 +780,8 @@ extension ARPaintView {
                 }
                 self.relocalizing = false
                 // Nothing matched: drop back to a clean session + GPS fallback.
-                if reset, let scnView = self.scnView, self.sessionActive {
-                    scnView.session.run(self.makeWorldConfiguration(), options: [.resetTracking, .removeExistingAnchors])
+                if reset, self.sessionActive {
+                    self.resetWorld(with: self.makeWorldConfiguration())
                 }
             }
         }
@@ -935,12 +1020,17 @@ extension ARPaintView {
             // Viewers apply this to a 0.3 m quad, so bake the real size into the
             // rotation columns' length.
             let scale = max(size, 0.05) / 0.3
-            let stored = simd_float4x4(columns: (
+            let sized = simd_float4x4(columns: (
                 placement.columns.0 * scale,
                 placement.columns.1 * scale,
                 placement.columns.2 * scale,
-                simd_float4(0, 0, 0, 1)
+                simd_float4(position, 1)
             ))
+            // lat/lng carries the position for the geo path, so its copy of the
+            // matrix has none. The marker copy keeps it: that is the whole point
+            // — a position measured off the poster instead of off the GPS.
+            var stored = sized
+            stored.columns.3 = simd_float4(0, 0, 0, 1)
 
             return PlacementSnapshot(
                 lat: lat,
@@ -953,7 +1043,8 @@ extension ARPaintView {
                 surfaceType: scene.surfaceType == "unknown" ? nil : scene.surfaceType,
                 usedGeoAnchor: false,
                 hasLidar: hasLidar,
-                placementTransform: flatten(stored)
+                placementTransform: flatten(stored),
+                markerTransform: ImageMarkerOrigin.local(of: sized).map(flatten)
             )
         }
 
@@ -969,6 +1060,7 @@ extension ARPaintView {
 
         func renderRemotePieces(_ pieces: [RemotePiece]) {
             guard let scnView else { return }
+            lastRemotePieces = pieces
             for piece in pieces { knownImagePaths[piece.id] = piece.imagePath }
             let wanted = Set(pieces.map(\.id))
             for (id, node) in remoteNodes where !wanted.contains(id) && !anchoredPieceIDs.contains(id) {
@@ -997,9 +1089,13 @@ extension ARPaintView {
         private func addRemoteNode(for piece: RemotePiece, scnView: ARSCNView) {
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                let generation = self.sceneGeneration
+                // A piece painted off the poster needs no fix at all — which is
+                // the whole point indoors, where a usable one never arrives.
+                let byMarker = piece.markerTransform != nil && ImageMarkerOrigin.isLocked
                 // Cheap gates first — don't download an image we can't place.
                 guard scnView.session.currentFrame != nil,
-                      let gateFix = LocationService.shared.location, self.isUsableFix(gateFix) else {
+                      byMarker || LocationService.shared.location.map(self.isUsableFix) == true else {
                     self.renderedRemoteIDs.remove(piece.id)
                     return
                 }
@@ -1016,24 +1112,49 @@ extension ARPaintView {
                     return
                 }
 
+                // The scene was torn down while we downloaded — the world origin
+                // moved, or the user started over. Whatever we computed is stale,
+                // and the poll loop has already queued a replacement.
+                guard generation == self.sceneGeneration else { return }
                 // attachAnchoredPiece may have claimed this piece while the
                 // image downloaded; a second GPS copy would overwrite its
                 // remoteNodes entry and never be removed.
                 guard !self.anchoredPieceIDs.contains(piece.id) else { return }
-
-                guard let frame = scnView.session.currentFrame,
-                      let loc = LocationService.shared.location, self.isUsableFix(loc) else {
+                guard let frame = scnView.session.currentFrame else {
                     self.renderedRemoteIDs.remove(piece.id)
                     return
                 }
-
                 let camPos = simd_make_float3(frame.camera.transform.columns.3)
-                let position = self.worldPosition(for: piece, from: loc, cameraPos: camPos)
-                let stored = piece.placementTransform.flatMap(unflatten)
-                let rotation = stored ?? matrix_identity_float4x4
 
                 let node = SCNNode(geometry: SCNPlane(width: 0.3, height: 0.3))
                 node.geometry?.materials = [self.remoteMaterial(image: image)]
+
+                // Measured off the same physical poster the painter used: exact,
+                // and nothing here may second-guess it afterwards.
+                if let world = piece.markerTransform.flatMap(unflatten).flatMap(ImageMarkerOrigin.world(of:)) {
+                    node.simdTransform = world
+                    self.snappedIDs.insert(piece.id)
+                    self.remoteScale[piece.id] = simd_length(simd_make_float3(world.columns.0))
+                    self.applyVisibility(to: node, id: piece.id, snapped: true, camPos: camPos)
+                    // Exact to a few centimetres — which is inside the LiDAR
+                    // mesh's own error, so depth-testing it is a coin flip on
+                    // whether the wall swallows it. Nothing here is allowed to
+                    // reposition the piece, so draw it through instead.
+                    node.geometry?.firstMaterial?.readsFromDepthBuffer = false
+                    node.renderingOrder = 5
+                    scnView.scene.rootNode.addChildNode(node)
+                    self.remoteNodes[piece.id] = node
+                    self.publishNearby()
+                    return
+                }
+
+                guard let loc = LocationService.shared.location, self.isUsableFix(loc) else {
+                    self.renderedRemoteIDs.remove(piece.id)
+                    return
+                }
+                let position = self.worldPosition(for: piece, from: loc, cameraPos: camPos)
+                let stored = piece.placementTransform.flatMap(unflatten)
+                let rotation = stored ?? matrix_identity_float4x4
 
                 var world = simd_float4x4(columns: (
                     rotation.columns.0,

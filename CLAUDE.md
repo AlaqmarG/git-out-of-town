@@ -10,6 +10,7 @@ can visit. SummerHacks 2026.
 | What we're building, scope, rubric | [`docs/PLAN.md`](docs/PLAN.md) |
 | Deploy, VPS, onboarding | [`docs/OPS.md`](docs/OPS.md) |
 | Reve API lookup | [`docs/reve-api.md`](docs/reve-api.md) |
+| The printed AR origin marker | [`docs/marker.md`](docs/marker.md) |
 
 Each directory has its own `CLAUDE.md` with local detail. Read the one for the area you're touching.
 

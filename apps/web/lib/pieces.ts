@@ -15,7 +15,7 @@ const COLS = `
   weathered_image_path, scene_image_path,
   kind, sticker_id, colors, stroke_count, duration_ms, city, country,
   client, surface_type, distance_m, device_pitch, used_geo_anchor, has_lidar,
-  altitude_m, placement_transform, created_at
+  altitude_m, placement_transform, marker_transform, created_at
 `;
 
 interface Row {
@@ -43,6 +43,7 @@ interface Row {
   has_lidar: boolean | null;
   altitude_m: number | null;
   placement_transform: number[] | null;
+  marker_transform: number[] | null;
   created_at: Date;
 }
 
@@ -73,6 +74,7 @@ function toPiece(r: Row): Piece {
     hasLidar: r.has_lidar,
     altitudeM: r.altitude_m,
     placementTransform: r.placement_transform,
+    markerTransform: r.marker_transform,
     createdAt: r.created_at.toISOString(),
   };
 }
@@ -102,9 +104,9 @@ export async function insertPiece(
        lat, lng, heading, accuracy_m, raw_image_path, kind, sticker_id, colors,
        stroke_count, duration_ms, city, country, session_id,
        client, surface_type, distance_m, device_pitch, used_geo_anchor, has_lidar,
-       scene_image_path, altitude_m, placement_transform
+       scene_image_path, altitude_m, placement_transform, marker_transform
      ) VALUES (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
      ) RETURNING ${COLS}`,
     [
       meta.lat,
@@ -129,6 +131,7 @@ export async function insertPiece(
       sceneImagePath,
       meta.altitudeM ?? null,
       meta.placementTransform ? JSON.stringify(meta.placementTransform) : null,
+      meta.markerTransform ? JSON.stringify(meta.markerTransform) : null,
     ],
   );
   return toPiece(rows[0]!);
@@ -240,7 +243,7 @@ function colors(v: unknown): Rgb[] | undefined {
  * Returns the validated request, or a human-readable reason it was rejected.
  *
  * Only the fields a piece cannot exist without are fatal: lat, lng, kind,
- * sessionId, and the shape of placementTransform if one was sent. Everything
+ * sessionId, and the shape of either transform if one was sent. Everything
  * else is decorative — a heading, a duration, a palette — and is clamped or
  * dropped rather than refused.
  *
@@ -277,6 +280,13 @@ export function validateMeta(raw: unknown): { ok: true; meta: CreatePieceRequest
     return { ok: false, error: "placementTransform must be a 16-number column-major 4x4" };
   }
 
+  // Fatal for the same reason: this one is what a second phone anchors off, so
+  // a malformed matrix would put the piece somewhere no one painted.
+  const markerTransform = given(m.markerTransform) ? m.markerTransform : undefined;
+  if (markerTransform !== undefined && !isTransform16(markerTransform)) {
+    return { ok: false, error: "markerTransform must be a 16-number column-major 4x4" };
+  }
+
   return {
     ok: true,
     meta: {
@@ -300,6 +310,7 @@ export function validateMeta(raw: unknown): { ok: true; meta: CreatePieceRequest
       hasLidar: typeof m.hasLidar === "boolean" ? m.hasLidar : undefined,
       altitudeM: clamped(m.altitudeM, -500, 10_000),
       placementTransform: placementTransform as number[] | undefined,
+      markerTransform: markerTransform as number[] | undefined,
     },
   };
 }

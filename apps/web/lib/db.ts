@@ -27,7 +27,13 @@ export const UPLOAD_DIR = process.env.UPLOAD_DIR ?? "/data/uploads";
 let schema: Promise<unknown> | null = null;
 export function ensureSchema(): Promise<void> {
   schema ??= pool
-    .query("ALTER TABLE pieces ADD COLUMN IF NOT EXISTS weathered_image_path TEXT")
+    // One simple-protocol query, so both statements share the round trip. Every
+    // column added here must read correctly as NULL on a pre-existing row —
+    // there is no backfill step.
+    .query(
+      `ALTER TABLE pieces ADD COLUMN IF NOT EXISTS weathered_image_path TEXT;
+       ALTER TABLE pieces ADD COLUMN IF NOT EXISTS marker_transform JSONB;`,
+    )
     .catch((err) => {
       schema = null;
       throw err;

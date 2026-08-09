@@ -96,6 +96,15 @@ struct ContentView: View {
                 PlacementGuideView(image: guide) { ar.dismissGuide() }
             }
 
+            if showDebug {
+                // Same coordinate space as the ARSCNView underneath — both fill
+                // the screen — so a crosshair drawn here is where the projector
+                // says the point is.
+                ProjectionCheckOverlay(controller: ar)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+            }
+
             if pendingPost == nil {
                 placementReticle
                     .allowsHitTesting(false)
@@ -238,20 +247,32 @@ struct ContentView: View {
             }
 
             // Long-press, not a button: the tracking readout is for us, and a
-            // stranger tapping it by accident just sees jargon.
-            Label(ar.status, systemImage: ar.isReady ? "checkmark.circle.fill" : "camera.metering.center.weighted")
-                .font(.caption.weight(.medium))
-                .lineLimit(2)
-                .padding(.horizontal, 13)
-                .padding(.vertical, 8)
-                .glassEffect(.regular, in: Capsule())
-                .foregroundStyle(ar.isReady ? Color.spray : .primary)
-                .animation(.easeInOut, value: ar.isReady)
-                .onLongPressGesture {
-                    haptic(.rigid)
-                    showDebug.toggle()
-                }
-                .accessibilityHint("Long press to show tracking diagnostics")
+            // stranger tapping it by accident just sees jargon. Hidden while
+            // the coaching overlay is up — it is saying the same thing, bigger.
+            if !ar.isCoaching {
+                Label(ar.status, systemImage: ar.isReady ? "checkmark.circle.fill" : "camera.metering.center.weighted")
+                    .font(.caption.weight(.medium))
+                    .lineLimit(2)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 8)
+                    .glassEffect(.regular, in: Capsule())
+                    .foregroundStyle(ar.isReady ? Color.spray : .primary)
+                    .animation(.easeInOut, value: ar.isReady)
+                    .onLongPressGesture {
+                        haptic(.rigid)
+                        showDebug.toggle()
+                    }
+                    .accessibilityHint("Long press to show tracking diagnostics")
+            }
+
+            if ar.markerLocked {
+                Label("Marker found — positions are now exact", systemImage: "scope")
+                    .font(.caption.weight(.medium))
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 8)
+                    .glassEffect(.regular, in: Capsule())
+                    .foregroundStyle(Color.spray)
+            }
 
             if showDebug {
                 Text(debugLine)
@@ -274,15 +295,19 @@ struct ContentView: View {
 
     private var shutterBar: some View {
         VStack(spacing: 16) {
-            Label(
-                ar.isReady ? "Take a photo of the spot" : "Pan slowly to scan the surface",
-                systemImage: ar.isReady ? "camera.fill" : "arrow.left.and.right"
-            )
-            .font(.subheadline.weight(.medium))
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .glassEffect(.regular, in: Capsule())
-            .animation(.easeInOut, value: ar.isReady)
+            // "Pan slowly to scan" is exactly what the coaching overlay is
+            // already animating; don't say it twice.
+            if !ar.isCoaching {
+                Label(
+                    ar.isReady ? "Take a photo of the spot" : "Pan slowly to scan the surface",
+                    systemImage: ar.isReady ? "camera.fill" : "arrow.left.and.right"
+                )
+                .font(.subheadline.weight(.medium))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .glassEffect(.regular, in: Capsule())
+                .animation(.easeInOut, value: ar.isReady)
+            }
 
             Button {
                 shoot()
@@ -488,6 +513,7 @@ struct ContentView: View {
             // field, so drop it rather than lose the piece.
             altitudeM: snapshot.altitudeM.flatMap { (-500...9999).contains($0) ? $0 : nil },
             placementTransform: snapshot.placementTransform,
+            markerTransform: snapshot.markerTransform,
             colors: pending.stats.colors.map { RgbDTO(r: $0.r, g: $0.g, b: $0.b) },
             strokeCount: pending.stats.strokeCount,
             durationMs: pending.stats.durationMs
@@ -536,8 +562,13 @@ struct ContentView: View {
 
     private func loadLoop() async {
         while !Task.isCancelled {
-            if let loc = LocationService.shared.location,
-               loc.horizontalAccuracy >= 0, loc.horizontalAccuracy < 50 {
+            // The fix only decides which neighbourhood to fetch. Normally it has
+            // to be good, because it also positions what comes back — but once
+            // the poster is locked the marker does that, and a coarse indoor fix
+            // is plenty to pick a 300 m radius. Without this the one place the
+            // marker matters most is the one place nothing ever loads.
+            if let loc = LocationService.shared.location, loc.horizontalAccuracy >= 0,
+               loc.horizontalAccuracy < (ar.markerLocked ? 300 : 50) {
                 if let pieces = try? await APIClient.listPieces(
                     lat: loc.coordinate.latitude,
                     lng: loc.coordinate.longitude,
@@ -554,7 +585,8 @@ struct ContentView: View {
                                 lng: $0.lng,
                                 altitudeM: $0.altitudeM,
                                 surfaceType: $0.surfaceType,
-                                placementTransform: $0.placementTransform
+                                placementTransform: $0.placementTransform,
+                                markerTransform: $0.markerTransform
                             )
                         }
                     // Every assignment rebuilds the AR view; only do it when the

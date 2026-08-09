@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS pieces (
   has_lidar        BOOLEAN,
   altitude_m       DOUBLE PRECISION,  -- metres above mean sea level (ARGeoAnchor altitude)
   placement_transform JSONB,          -- 4x4 COLUMN-major (16 floats, simd order) in a north-up frame at lat/lng; exact AR reconstruction
+  marker_transform    JSONB,          -- same 4x4, in the printed marker's own frame; NULL unless the painter saw the poster. Exact across devices.
   deleted_at       TIMESTAMPTZ,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
