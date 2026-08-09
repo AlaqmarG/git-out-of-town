@@ -1,9 +1,15 @@
 # The Third Space Trek
 
-Side quest for SummerHacks 2026 — one photo per hour, nine spots on the list, 18 points on the board.
+[Overview](../README.md) · [Plan](PLAN.md) · [Devpost](devpost.md) · [Reve playbook](reve-playbook.md) · [Reve prompts](reve-prompts-used.md) · **Third Space Trek**
 
-**Standing: 🥇 #1 · 13 pts · 6 spots · 7 photos.** Second place (AEIOU) is on 12 — one photo behind.
-Next photo unlocks **6:39 PM**. Team code `FTA8PD` — Alaqmar, Connor.
+Side quest for SummerHacks 2026 — one photo per hour, nine spots on the list.
+
+**Final: 🥈 #2 · 19 pts · 6 spots · 13 photos.** Standings are locked. `strawberry soda` took it on
+**20** with all nine spots logged; AEIOU third on 16. Team code `FTA8PD` — Alaqmar, Connor.
+
+**We lost by one point, with six sitting unclaimed in three cafés.** The hunt closed at midnight
+Saturday. Botanic, Varda and ICHA were all open during the evening and none of them got logged —
+any single one would have won it. See [Where the point went](#where-the-point-went).
 
 <p align="center">
   <img src="assets/hunt-timeline.svg" alt="Photo schedule timeline" width="100%">
@@ -24,108 +30,132 @@ Next photo unlocks **6:39 PM**. Team code `FTA8PD` — Alaqmar, Connor.
 <td><img src="assets/photos/1526-lillian-stamp.png" width="100%" alt="TPL Lillian H. Smith Branch — Sat Aug 8, 3:26 PM, new spot, +2 pts"></td>
 <td><img src="assets/photos/1631-fortyork-stamp.png" width="100%" alt="TPL Fort York Branch — Sat Aug 8, 4:31 PM, new spot, +2 pts"></td>
 <td><img src="assets/photos/1739-studio-stamp.png" width="100%" alt="The Studio — Sat Aug 8, 5:39 PM, off-list, +1 pt"></td>
-<td></td>
+<td><img src="assets/photos/1841-stackt-stamp.png" width="100%" alt="Stackt Market — Sat Aug 8, 6:41 PM, off-list, +1 pt"></td>
+</tr>
+<tr>
+<td><img src="assets/photos/1941-icecream-stamp.png" width="100%" alt="Making ice cream — Sat Aug 8, 7:41 PM, off-list, +1 pt"></td>
+<td><img src="assets/photos/2043-frontst-stamp.png" width="100%" alt="Somewhere in Front Street — Sat Aug 8, 8:43 PM, off-list, +1 pt"></td>
+<td><img src="assets/photos/2143-kinton-stamp.png" width="100%" alt="Kinton by WaterPark Place — Sat Aug 8, 9:43 PM, off-list, +1 pt"></td>
+<td><img src="assets/photos/2245-apartment-stamp.png" width="100%" alt="The apartment, Distillery District — Sat Aug 8, 10:45 PM, off-list, +1 pt"></td>
+</tr>
+<tr>
+<td><img src="assets/photos/2349-apartment2-stamp.png" width="100%" alt="Still grinding at the apartment — Sat Aug 8, 11:49 PM, the last photo, +1 pt"></td>
+<td></td><td></td><td></td>
 </tr>
 </table>
 
-Three spots left, all cafés, all worth 2:
+The three that never got taken, worth 2 each:
 
 <table>
 <tr>
-<td width="33%"><img src="assets/photos/6-39-botanic-stamp.png" width="100%" alt="Botanic Coffee and Caphe — 6:39 PM slot, closes 7 PM"></td>
-<td width="33%"><img src="assets/photos/7-39-icha-stamp.png" width="100%" alt="ICHA Tea / Project Seoul — 7:39 PM slot, unlogged"></td>
-<td width="33%"><img src="assets/photos/8-39-varda-stamp.png" width="100%" alt="Varda — 8:39 PM slot, unlogged"></td>
+<td width="33%"><img src="assets/photos/unlogged-botanic-stamp.png" width="100%" alt="Botanic Coffee and Caphe — never logged, 2 pts"></td>
+<td width="33%"><img src="assets/photos/unlogged-varda-stamp.png" width="100%" alt="Varda — never logged, 2 pts"></td>
+<td width="33%"><img src="assets/photos/unlogged-icha-stamp.png" width="100%" alt="ICHA Tea / Project Seoul — never logged, 2 pts"></td>
 </tr>
 </table>
 
-> Everyone in frame, lanyards visible, or it doesn't count. Organizers review every photo after
-> standings lock.
+> Everyone in frame, lanyards visible, or it doesn't count. Organizers are reviewing every photo now
+> that standings have locked.
 >
-> To add one: drop the shot in `docs/assets/photos/` as `HHMM-slug.jpg`, move its row from
-> `PENDING` to `PHOTOS` in [`scripts/make-stamps.py`](../scripts/make-stamps.py), and run
-> `python3 scripts/make-stamps.py`. The frame, crop, badge and caption are all generated —
-> the stamp border is lifted from the portal's own `.trek-stamp` so the log matches the site.
+> The log is generated: drop a shot in `docs/assets/photos/` as `HHMM-slug.jpg` (24-hour), add its
+> row to `PHOTOS` in [`scripts/make-stamps.py`](../scripts/make-stamps.py), and run
+> `python3 scripts/make-stamps.py`. Frame, crop, badge and caption are all derived — the badge reads
+> `+2 pts` when the caption contains `new spot`, `+1 pt` otherwise. The stamp border is lifted from
+> the portal's own `.trek-stamp` so the log matches the site.
 
 ---
 
-## The route
+## Where the point went
+
+Final margin: **20 – 19**. The three cafés we never logged were worth **6**.
+
+We led at 5:39 PM on 13 points. From there the cadence never lapsed — seven straight hourly photos,
+right up to 11:49 PM, eleven minutes before the hunt closed. Not one of them was a new spot.
+
+**A +1 is only free when there's no 2 available in the same hour.** There were three 2s open for
+most of that evening, and every one of them was reachable from where we already were:
+
+| Hour | What we shot | What was open, and how far |
+|---|---|---|
+| 5:39 PM | The Studio | Botanic — 12 min walk, open until 7 |
+| 6:41 PM | Stackt Market | Botanic — same walk, still 19 min of margin |
+| 7:41 PM | Making ice cream | Varda and ICHA, both until 10 |
+| 8:43 PM | Somewhere in Front Street | **Varda — a few minutes north on King** |
+| 9:43 PM | Kinton, WaterPark Place | Varda — still closer than the ride home was |
+
+The 8:43 slot is the sharpest one. Front Street and 350 King St W are a short walk apart, the photo
+was taken outdoors on the way past, and Varda had another 75 minutes of trading left. That single
+substitution is a two-point swing and the trek is won.
+
+**Four of our thirteen photos never left Stackt** (Milky's, The Studio, Stackt Market, ice cream),
+and the last two were both the same apartment. The route map shows it: a tight, productive western
+loop until 4:31, then a straight drift east, away from all three remaining spots.
+
+`strawberry soda` won by doing the opposite — nine spots in eleven photos, closing out the entire
+list. They finished with **fewer photos than us** and two more points, which is the whole lesson in
+one line: the cadence was never the constraint, the map was.
+
+## Saturday's route
 
 <p align="center">
-  <img src="assets/hunt-route.svg" alt="Animated route map" width="100%">
+  <img src="assets/hunt-route.svg" alt="Animated route map of Saturday" width="100%">
 </p>
 
-## Schedule
+## The log
 
-| Time | Stop | Where | Cost | Pts | Closes | Getting there |
-|---|---|---|---|---:|---|---|
-| ~~11:17~~ | ~~Milky's Cloud Room~~ | Inside Stackt | Purchase | ✅ 2 | — | — |
-| ~~12:21~~ | ~~Fungo Cafe~~ | King St W | Purchase | ✅ 2 | — | — |
-| ~~1:24~~ | ~~Waterworks / The Well~~ | Richmond & Brant | Free | ✅ 2 | — | — |
-| ~~2:25~~ | ~~Scadding Court Community Ctr~~ | Bathurst & Dundas | Free | ✅ 2 | — | — |
-| ~~3:26~~ | ~~TPL Lillian H. Smith~~ | College & Spadina | Free | ✅ 2 | — | — |
-| ~~4:31~~ | ~~TPL Fort York Branch~~ | Fort York Blvd | Free | ✅ 2 | — | — |
-| ~~5:39~~ | ~~The Studio~~ | Inside Stackt — our room | Free | ✅ 1 | — | — |
-| **6:39** | **Botanic Coffee and Caphe** | 662 Queen St W | Purchase | 2 | **7 PM** | 12 min walk |
-| 7:39 | ICHA Tea / Project Seoul / Cafe Foret | 235 Spadina | Purchase | 2 | 10 PM | ~10 min |
-| 8:39 | Varda | 350 King St W (TIFF) | Purchase | 2 | 10 PM | ~10 min |
+| Time | Stop | Where | Cost | Pts |
+|---|---|---|---|---:|
+| 11:17 AM | Milky's Cloud Room | Inside Stackt | Purchase | 2 |
+| 12:21 PM | Fungo Cafe | King St W | Purchase | 2 |
+| 1:24 PM | Waterworks / The Well | Richmond & Brant | Free | 2 |
+| 2:25 PM | Scadding Court Community Ctr | Bathurst & Dundas | Free | 2 |
+| 3:26 PM | TPL Lillian H. Smith | College & Spadina | Free | 2 |
+| 4:31 PM | TPL Fort York Branch | Fort York Blvd | Free | 2 |
+| 5:39 PM | The Studio | Inside Stackt — our room | Free | 1 |
+| 6:41 PM | Stackt Market | Our own venue | Free | 1 |
+| 7:41 PM | Making ice cream | Stackt — hackathon activity | Free | 1 |
+| 8:43 PM | Somewhere in Front Street | Front St W | Free | 1 |
+| 9:43 PM | Kinton by WaterPark Place | Queens Quay / Bay | Purchase | 1 |
+| 10:45 PM | The apartment | Distillery District | Free | 1 |
+| 11:49 PM | Still grinding at the apartment | Distillery District | Free | 1 |
 
-**13 banked · 6 still on the table · three cafés, all within a streetcar hop.**
+**19 final · 6 never claimed.**
 
-Saturday hours checked against each venue's own listing — Botanic 8 AM–7 PM (their Instagram bio),
-ICHA 11:30 AM–10 PM (their Facebook), Varda 11 AM–10 PM ([tiff.net](https://tiff.net/varda)). All
-three are open at the slots above; Botanic is the only one without slack.
+| Never logged | Where | Open Saturday | Worth |
+|---|---|---|---:|
+| Botanic Coffee and Caphe | 662 Queen St W | 8 AM – 7 PM | 2 |
+| Varda | 350 King St W (TIFF) | 11 AM – 10 PM | 2 |
+| ICHA Tea / Project Seoul / Cafe Foret | 235 Spadina | 11:30 AM – 10 PM | 2 |
 
-Note the clock drifted all day: the hourly lock runs off the last submission, so the slot moved
-11:17 → 12:21 → 1:24 → 2:25 → 3:26 → 4:31 → 5:39. The portal says the next one opens at **6:39** —
-don't queue up early, the button won't take it.
+The portal treats ICHA / Project Seoul / Cafe Foret as **one** spot, so any of the three would have
+counted for that 2.
+
+The hourly lock runs off the last submission, so the slot drifted all day:
+11:17 → 12:21 → 1:24 → 2:25 → 3:26 → 4:31 → 5:39 → 6:41 → 7:41 → 8:43 → 9:43 → 10:45 → 11:49.
+The hunt closed at midnight; 11:49 PM was the last slot we could reach.
 
 ## Scoring, as the portal actually counts it
 
 - **New spot — 2 pts.** Anywhere on the list the team hasn't logged yet. "Purchase" is about the
   table, not the score; a café you haven't logged is still worth the full 2.
-- **Repeat spot — 1 pt.** Somewhere already logged.
+- **Repeat spot — 1 pt.** Somewhere already logged. The list page now shows all six of ours as
+  `Logged · 1 pt`.
 - **Off-list — 1 pt.** Counts, but never earns the discovery bonus.
 - **One scoring photo per hour, per team.** The cadence is the ceiling, not the map.
 
-Three unlogged spots remain, so the list tops out at 19 for us — 13 banked plus 6. Everything still
-on the list is worth 2, so there's no reason to repeat a spot while new ones are open.
+Six spots × 2 = 12, plus seven 1-pointers = **19**. The three cafés were the only 2s still available
+to us, and they expired with the hunt at midnight.
 
-## The Studio is the floor, and it's free
+## Final standings
 
-**The Studio is our own room at Stackt — the hall the hackathon is running in.** It isn't on the
-portal's list, so it only scores as an off-list spot: **+1 pt, from the chair we're already sitting
-in.** That's what 5:39 was.
+| # | Team | Spots | Photos | Pts |
+|---:|---|---:|---:|---:|
+| 1 | strawberry soda | 9 | 11 | **20** |
+| 2 | **Git Out of Town** | 6 | 13 | **19** |
+| 3 | AEIOU | 7 | 9 | 16 |
+| 4 | tall dark and handsome | 4 | 6 | 10 |
+| 5 | Ema & Andy | 2 | 5 | 7 |
 
-It changes the shape of the rest of the night. The downside of any hour is no longer zero — if a
-café is packed, or a leg runs long, or we're mid-merge and nobody wants to move, we take the photo
-where we sit and still bank a point. **Never let an hour lapse empty.** A +1 costs nothing but the
-30 seconds to line up the shot, and AEIOU is one photo behind us.
-
-The corollary: don't spend a *good* hour on it. While list spots are open they're worth double, so
-The Studio is the fallback, never the plan.
-
-## Why this order
-
-Distance stopped mattering — everything left is one streetcar hop. **Closing times decide it, and
-there's exactly one hard call:**
-
-- **Botanic closes at 7 PM, and 6:39 is the last slot before it — 21 minutes of margin, total.**
-  This is the same call Fort York was at 4:26, and it's tighter.
-
-  **Go now, don't leave at 6:25.** The walk is 12 min, so leaving immediately puts you there
-  around 6:20 with a table and a drink already bought when the button unlocks at 6:39. Waiting
-  until 6:25 means walking in at 6:37 and shooting in a café that's closing up behind you — and
-  any slip at all loses the spot for the weekend.
-- **ICHA and Varda both run to 10 PM,** so they're safe in either order. Geography picks it:
-  Queen → Spadina → King is one continuous sweep, and it ends at Varda, back near the venue.
-- **If 6:39 slips, take The Studio instead and go to Botanic at 7:39 — Sunday morning.** Losing the
-  photo is worse than losing the café.
-
-**Best build block:** now until ~6:25 here at The Studio, then Botanic until close — the run east
-is three photos in three hours with a real table under us for most of it.
-
-## Sunday fallback
-
-Only the three cafés are still open to us, and all three keep Sunday hours against the 1 PM
-submission cutoff. Botanic is the one at risk tonight; if it slips, it's the first stop Sunday.
-Every Sunday hour we're still on-site is also a free +1 at The Studio.
+Standings are locked and organizers are reviewing every photo for validity, so the final number can
+still move if any shot is thrown out. Two photos separated first from second, and both of them were
+sitting in cafés we walked past.

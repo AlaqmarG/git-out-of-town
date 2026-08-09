@@ -1,5 +1,7 @@
 # Git Out of Town
 
+**Overview** · [Plan](docs/PLAN.md) · [Devpost](docs/devpost.md) · [Reve playbook](docs/reve-playbook.md) · [Reve prompts](docs/reve-prompts-used.md) · [Third Space Trek](docs/hunt.md)
+
 Spray-paint the real world. Hold up your phone, paint on what you see, and it pins to that spot
 forever — on a living world map anyone can explore.
 

@@ -1,5 +1,7 @@
 # Reve Playbook — sticker pack + brand kit
 
+[Overview](../README.md) · [Plan](PLAN.md) · [Devpost](devpost.md) · **Reve playbook** · [Reve prompts](reve-prompts-used.md) · [Third Space Trek](hunt.md)
+
 Issue #5. Web app only (`https://app.reve.com`), Free plan, no API. ~60 minutes.
 
 Everything below assumes you have never opened Reve before and are not a designer. Follow it in
