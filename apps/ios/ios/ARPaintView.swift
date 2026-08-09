@@ -1,5 +1,6 @@
 import ARKit
 import CoreLocation
+import Metal
 import SceneKit
 import SwiftUI
 
@@ -81,8 +82,8 @@ extension ARPaintView {
         private var anchoredPieceIDs: Set<Int> = []
         private var knownImagePaths: [Int: String] = [:]
         private var relocalizeAttempted = false
+        private var relocalizeInFlight = false
         private var relocalizing = false
-        private var relocalizeDeadline: Date?
         private var sessionStartedAt: TimeInterval = 0
         /// Apple's gate for saving a world map: has this session ever reached
         /// `.mapped`? Sticky, because the live status oscillates.
@@ -108,7 +109,6 @@ extension ARPaintView {
         // MARK: - Session
 
         func setupSession(in scnView: ARSCNView) {
-            sessionStartedAt = scnView.session.currentFrame?.timestamp ?? 0
             scnView.session.run(makeWorldConfiguration())
         }
 
@@ -162,7 +162,6 @@ extension ARPaintView {
                 self?.publishStatus()
                 self?.publishPlaceability(at: time)
                 self?.maybeRelocalize()
-                self?.settleRelocalization()
                 self?.maybeReanchor()
             }
         }
@@ -545,13 +544,20 @@ extension ARPaintView {
         /// user just spent 30 seconds building, killing wrapping and occlusion
         /// for the rest of the session. So: only before there is a mesh to lose.
         private func maybeRelocalize() {
-            guard !relocalizeAttempted, sessionActive, meshCount == 0,
-                  let scnView, let frame = scnView.session.currentFrame,
-                  frame.timestamp - sessionStartedAt < 6,
+            guard !relocalizeAttempted, !relocalizeInFlight, sessionActive, meshCount == 0,
+                  let scnView, let frame = scnView.session.currentFrame else { return }
+            // The first frame arrives well after setupSession, so the session
+            // start can only be read off a real frame (timestamps are uptime).
+            if sessionStartedAt == 0 { sessionStartedAt = frame.timestamp }
+            guard frame.timestamp - sessionStartedAt < 6,
                   let location = LocationService.shared.location,
                   location.horizontalAccuracy >= 0, location.horizontalAccuracy < 80 else { return }
+            // Set before the await, or every render frame spawns another copy
+            // of this task and they run competing session resets.
+            relocalizeInFlight = true
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                defer { self.relocalizeInFlight = false }
                 // Indoors at ±20 m GPS the nearest map is often the wrong room,
                 // so walk the candidates rather than betting on one.
                 guard let records = try? await WorldMapStore.nearby(location: location, radiusM: 80),
@@ -560,51 +566,38 @@ extension ARPaintView {
                 // the whole session.
                 self.relocalizeAttempted = true
 
+                // Whether any candidate reset the session: only then does a
+                // failure leave it pinned to an unmatched map, and only then is
+                // the clean reset below worth the anchors it costs.
+                var reset = false
                 for record in records.prefix(3) {
-                    guard let map = try? await WorldMapStore.download(record),
-                          let scnView = self.scnView, self.sessionActive,
+                    guard let map = try? await WorldMapStore.download(record) else { continue }
+                    guard let scnView = self.scnView, self.sessionActive,
                           // The download took time; a mesh that grew meanwhile is
                           // worth more than the relocalization.
-                          self.meshCount == 0 else { return }
+                          self.meshCount == 0 else { break }
                     let config = self.makeWorldConfiguration()
                     config.initialWorldMap = map
+                    reset = true
                     self.relocalizing = true
                     scnView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
 
                     // Apple gives no failure callback: `.normal` is the only
                     // signal a match landed, and a miss stays "relocalizing"
                     // forever. So poll, then move to the next candidate.
-                    var matched = false
                     for _ in 0..<20 {
                         try? await Task.sleep(for: .milliseconds(500))
                         if case .normal = scnView.session.currentFrame?.camera.trackingState {
-                            matched = true
-                            break
+                            self.relocalizing = false
+                            return
                         }
                     }
-                    self.relocalizing = false
-                    if matched { return }
                 }
+                self.relocalizing = false
                 // Nothing matched: drop back to a clean session + GPS fallback.
-                if let scnView = self.scnView, self.sessionActive {
+                if reset, let scnView = self.scnView, self.sessionActive {
                     scnView.session.run(self.makeWorldConfiguration(), options: [.resetTracking, .removeExistingAnchors])
                 }
-            }
-        }
-
-        /// Relocalization either matched (tracking goes normal — the map's piece
-        /// anchors are live) or it never will; don't leave the user stuck.
-        private func settleRelocalization() {
-            guard relocalizing, let frame = scnView?.session.currentFrame else { return }
-            if case .normal = frame.camera.trackingState {
-                relocalizing = false
-                return
-            }
-            // No second reset here: that would wipe anchors again. Relocalization
-            // simply gives up and the session carries on with the GPS fallback.
-            if let deadline = relocalizeDeadline, Date() > deadline {
-                relocalizing = false
-                relocalizeDeadline = nil
             }
         }
 
@@ -670,13 +663,36 @@ extension ARPaintView {
                 // paint can look. The same map perturbs the normal, so the paint
                 // catches light along mortar lines instead of reading as a
                 // printed sheet, and thins slightly where the wall is dark.
-                material.shaderModifiers = [.surface: Self.aerosolShader]
-                material.setValue(SCNMaterialProperty(contents: luminance), forKey: "wallTex")
-                material.setValue(Float(0.7), forKey: "wallStrength")
-                material.setValue(Float(0.99), forKey: "paintOpacity")
+                if Self.aerosolShaderCompiles {
+                    material.shaderModifiers = [.surface: Self.aerosolShader]
+                    material.setValue(SCNMaterialProperty(contents: luminance), forKey: "wallTex")
+                    material.setValue(Float(0.7), forKey: "wallStrength")
+                    material.setValue(Float(0.99), forKey: "paintOpacity")
+                } else {
+                    material.multiply.contents = luminance
+                }
             }
             return material
         }
+
+        /// SceneKit gives no callback when a shader modifier fails to compile —
+        /// it just logs and renders the material wrong, mid-demo. Prove the body
+        /// compiles on this device once; otherwise use the plain multiply blend.
+        private static let aerosolShaderCompiles: Bool = {
+            guard let device = MTLCreateSystemDefaultDevice(),
+                  let body = aerosolShader.components(separatedBy: "#pragma body").last else { return false }
+            let harness = """
+            #include <metal_stdlib>
+            using namespace metal;
+            struct GotSurface { float4 diffuse; float2 diffuseTexcoord; float3 normal; };
+            static void gotBody(thread GotSurface &_surface,
+                                texture2d<float, access::sample> wallTex,
+                                float wallStrength, float paintOpacity) {
+            \(body)
+            }
+            """
+            return (try? device.makeLibrary(source: harness, options: nil)) != nil
+        }()
 
         /// Blends the art into the wall it is projected onto. Runs per fragment
         /// with the decal's own projected UVs, so the wall sample under any
@@ -897,9 +913,11 @@ extension ARPaintView {
         private func publishNearby() {
             let camPos = scnView?.session.currentFrame
                 .map { simd_make_float3($0.camera.transform.columns.3) }
+            // World position: anchored pieces live on a child node whose local
+            // position is zero.
             let distances = remoteNodes.values.map { node -> Float in
                 guard let camPos else { return .greatestFiniteMagnitude }
-                return simd_distance(node.simdPosition, camPos)
+                return simd_distance(node.simdWorldPosition, camPos)
             }
             controller.setNearby(
                 rendered: remoteNodes.count,
