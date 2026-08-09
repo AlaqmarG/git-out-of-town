@@ -118,8 +118,18 @@ enum APIClient {
         }
     }
 
-    /// Downloads an image for use as a quad texture.
+    private static let imageCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 120
+        return cache
+    }()
+
+    /// Downloads an image for use as a quad texture. Cached — the AR view
+    /// re-requests the same paths every few seconds as pieces come and go.
     static func loadImage(path: String) async throws -> UIImage {
+        if let cached = imageCache.object(forKey: path as NSString) {
+            return cached
+        }
         let (data, response) = try await URLSession.shared.data(from: imageURL(path: path))
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw APIError.badStatus((response as? HTTPURLResponse)?.statusCode ?? -1)
@@ -127,6 +137,7 @@ enum APIClient {
         guard let image = UIImage(data: data) else {
             throw APIError.decoding(DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "not an image")))
         }
+        imageCache.setObject(image, forKey: path as NSString)
         return image
     }
 }

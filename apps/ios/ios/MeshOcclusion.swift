@@ -70,6 +70,12 @@ enum MeshOcclusion {
 extension ARMeshGeometry {
     func centerOf(face: Int) -> SIMD3<Float> {
         let indices = vertexIndices(of: face)
+        // NaN on a torn index: every distance comparison fails, so callers
+        // skip the face instead of reading out of bounds.
+        let count = UInt32(clamping: vertices.count)
+        guard indices.0 < count, indices.1 < count, indices.2 < count else {
+            return SIMD3<Float>(repeating: .nan)
+        }
         return (vertex(at: indices.0) + vertex(at: indices.1) + vertex(at: indices.2)) / 3
     }
 
