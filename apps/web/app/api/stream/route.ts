@@ -25,10 +25,23 @@ export async function GET() {
       };
 
       const heartbeat = setInterval(() => {
-        controller.enqueue(encoder.encode(`: ping\n\n`));
+        // A client that vanished without a clean cancel leaves this firing at a
+        // closed controller, which throws. Tear down instead of throwing.
+        try {
+          controller.enqueue(encoder.encode(`: ping\n\n`));
+        } catch {
+          cleanup();
+        }
       }, 15_000);
 
       const client = new Client({ connectionString: process.env.DATABASE_URL });
+      // `pg.Client` emits 'error' for a dropped connection, and an unhandled
+      // 'error' on an EventEmitter takes the whole process down — one Postgres
+      // restart would otherwise kill the site, not just this stream.
+      client.on("error", (err) => {
+        console.error("[stream] connection lost", err);
+        cleanup();
+      });
       cleanup = () => {
         clearInterval(heartbeat);
         client.removeAllListeners("notification");

@@ -1,6 +1,6 @@
 "use client";
 
-import type { Piece, PiecesResponse } from "@got/shared";
+import type { NewPieceEvent, Piece, PiecesResponse } from "@got/shared";
 import type { GeoJSONSource, Map as MapLibreMap, Marker } from "maplibre-gl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -28,6 +28,7 @@ export default function MapCanvas() {
   const [total, setTotal] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Piece | null>(null);
+  const [dropIn, setDropIn] = useState<NewPieceEvent | null>(null);
 
   const pieces = useRef<Piece[]>([]);
   const markers = useRef(new Map<number, Marker>());
@@ -38,6 +39,7 @@ export default function MapCanvas() {
   // overwrite the results for where the user actually ended up.
   const inflight = useRef<AbortController | null>(null);
   const revealTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const dropInTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const resizeObs = useRef<ResizeObserver | null>(null);
 
   /**
@@ -150,6 +152,31 @@ export default function MapCanvas() {
     if (!container.current || map.current) return;
     let cancelled = false;
 
+    /**
+     * Live drop-ins. Postgres fires `new_piece` on insert and /api/stream relays
+     * it, so a piece painted in AR lands on this map on its own — nobody has to
+     * refresh, which is the whole point of a wall that is still being painted.
+     *
+     * The event carries only id/lat/lng/city, which is not enough to build a
+     * marker, so it triggers a refetch of the current viewport rather than
+     * being rendered directly. EventSource reconnects by itself if wifi drops.
+     */
+    const events = new EventSource("/api/stream");
+    events.addEventListener("piece", (ev) => {
+      if (cancelled) return;
+      let piece: NewPieceEvent;
+      try {
+        piece = JSON.parse((ev as MessageEvent<string>).data) as NewPieceEvent;
+      } catch {
+        return;
+      }
+      setDropIn(piece);
+      clearTimeout(dropInTimerRef.current);
+      // Long enough that someone watching a projected map has time to notice it.
+      dropInTimerRef.current = setTimeout(() => setDropIn(null), 12_000);
+      if (map.current) void load(map.current);
+    });
+
     (async () => {
       // maplibre-gl touches `window` at import time, so it cannot be imported
       // at module scope in a server-rendered tree.
@@ -230,7 +257,9 @@ export default function MapCanvas() {
 
     return () => {
       cancelled = true;
+      events.close();
       clearTimeout(revealTimerRef.current);
+      clearTimeout(dropInTimerRef.current);
       resizeObs.current?.disconnect();
       inflight.current?.abort();
       for (const marker of liveMarkers.values()) marker.remove();
@@ -304,6 +333,36 @@ export default function MapCanvas() {
       >
         What the wall knows →
       </a>
+
+      {/* Someone just painted. Tapping flies there, so a live drop-in is an
+          invitation rather than a notification you can only watch go by. */}
+      {dropIn && (
+        <button
+          type="button"
+          onClick={() =>
+            map.current?.flyTo({
+              center: [dropIn.lng, dropIn.lat],
+              zoom: Math.max(map.current.getZoom(), ZOOM.art),
+              duration: 1600,
+              essential: true,
+            })
+          }
+          className="got-chip absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full px-4 py-2 text-xs tracking-wide"
+          style={{
+            background: "rgba(11,11,13,0.82)",
+            color: palette.textMuted,
+            border: `1px solid ${palette.line}`,
+            backdropFilter: "blur(8px)",
+          }}
+        >
+          <span
+            className="got-live-dot inline-block h-1.5 w-1.5 rounded-full"
+            style={{ background: palette.accent }}
+          />
+          <span style={{ color: palette.text, fontWeight: 600 }}>Just painted</span>
+          {dropIn.city ? `in ${dropIn.city}` : "somewhere"} · tap to see it
+        </button>
+      )}
 
       {error && (
         <div

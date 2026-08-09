@@ -1,11 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { UPLOAD_DIR } from "@/lib/db";
 
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 /** Scene photos are camera frames, so they run larger than line art. */
 export const MAX_SCENE_BYTES = 12 * 1024 * 1024;
+/**
+ * Ceiling on the whole multipart body, checked from Content-Length before any
+ * of it is read. The per-part limits above can only be enforced once
+ * `formData()` has buffered everything into memory, which is far too late to be
+ * a defence — by then an attacker has already had us allocate the lot.
+ */
+export const MAX_BODY_BYTES = MAX_IMAGE_BYTES + MAX_SCENE_BYTES + 1024 * 1024;
 
 const SIGNATURES: { ext: string; test: (b: Buffer) => boolean }[] = [
   { ext: "png", test: (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
@@ -34,4 +41,10 @@ export async function saveImage(buf: Buffer, ext: string): Promise<string> {
   await mkdir(path.dirname(abs), { recursive: true });
   await writeFile(abs, buf);
   return rel;
+}
+
+/** Undo a `saveImage` whose database row never landed, so a failed write
+ *  doesn't leave an image nothing will ever reference. */
+export async function deleteImage(rel: string): Promise<void> {
+  await unlink(path.join(UPLOAD_DIR, rel)).catch(() => {});
 }

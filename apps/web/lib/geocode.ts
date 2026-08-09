@@ -13,6 +13,13 @@
 const NOMINATIM = "https://nominatim.openstreetmap.org/reverse";
 const CONTACT = "git-out-of-town (SummerHacks 2026)";
 const TIMEOUT_MS = 2500;
+/**
+ * Longest a contribution will wait on a label. Lookups are serialised at ~1/sec,
+ * so a rush of pieces from unseen places would otherwise queue up behind each
+ * other and make posting feel broken. The lookup still finishes and fills the
+ * cache; only *this* caller stops waiting for it.
+ */
+const BUDGET_MS = 3000;
 
 export interface Place {
   city: string | null;
@@ -82,5 +89,10 @@ export async function reverseGeocode(lat: number, lng: number): Promise<Place> {
   });
 
   chain = run.catch(() => undefined);
-  return run;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const budget = new Promise<Place>((resolve) => {
+    timer = setTimeout(() => resolve({ city: null, country: null }), BUDGET_MS);
+  });
+  return Promise.race([run, budget]).finally(() => clearTimeout(timer));
 }

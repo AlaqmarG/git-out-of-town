@@ -2,7 +2,14 @@ import { parseBBox } from "@got/shared";
 import { reverseGeocode } from "@/lib/geocode";
 import { insertPiece, listPieces, upsertSession, validateMeta } from "@/lib/pieces";
 import { clientIp, rateLimit } from "@/lib/ratelimit";
-import { MAX_IMAGE_BYTES, MAX_SCENE_BYTES, detectImage, saveImage } from "@/lib/storage";
+import {
+  MAX_BODY_BYTES,
+  MAX_IMAGE_BYTES,
+  MAX_SCENE_BYTES,
+  deleteImage,
+  detectImage,
+  saveImage,
+} from "@/lib/storage";
 
 // fs access + pg, so this must not run on the edge runtime.
 export const runtime = "nodejs";
@@ -65,8 +72,10 @@ export async function GET(req: Request) {
  *   meta:  JSON, shape of CreatePieceRequest
  */
 export async function POST(req: Request) {
-  // 10 per burst, refilling 1 every 6s (~10/min sustained).
-  const limit = rateLimit(`pieces:${clientIp(req)}`, 10, 1 / 6);
+  // 20 per burst, refilling 1 every 3s (~20/min sustained). Deliberately roomy:
+  // at a venue every phone shares one NAT address, so this budget is spent by a
+  // whole room, not by one person.
+  const limit = rateLimit(`pieces:${clientIp(req)}`, 20, 1 / 3);
   if (!limit.ok) {
     return Response.json(
       { error: "slow down" },
@@ -77,6 +86,14 @@ export async function POST(req: Request) {
   const contentType = req.headers.get("content-type") ?? "";
   if (!contentType.includes("multipart/form-data")) {
     return bad(415, "expected multipart/form-data with 'image' and 'meta' parts");
+  }
+
+  // Refuse before reading a byte. `formData()` buffers the entire body into
+  // memory, so the per-part limits below can only ever be an after-the-fact
+  // complaint.
+  const declared = Number(req.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+    return bad(413, `body exceeds ${MAX_BODY_BYTES} bytes`);
   }
 
   let form: FormData;
@@ -128,6 +145,9 @@ export async function POST(req: Request) {
     }
   }
 
+  // Written before the row exists, so they have to be cleaned up by hand if the
+  // insert then fails — otherwise a 500 leaves an image nothing references.
+  const written: string[] = [];
   try {
     // Best effort, never blocks the write — a piece without a city label is fine.
     const place = await reverseGeocode(meta.lat, meta.lng);
@@ -140,13 +160,18 @@ export async function POST(req: Request) {
     );
 
     const rawImagePath = await saveImage(buf, ext);
-    const sceneImagePath =
-      sceneBuf && sceneExt ? await saveImage(sceneBuf, sceneExt) : null;
+    written.push(rawImagePath);
+    let sceneImagePath: string | null = null;
+    if (sceneBuf && sceneExt) {
+      sceneImagePath = await saveImage(sceneBuf, sceneExt);
+      written.push(sceneImagePath);
+    }
     const piece = await insertPiece(meta, rawImagePath, place, sceneImagePath);
 
     return Response.json(piece, { status: 201 });
   } catch (err) {
     console.error("[pieces] create failed", err);
+    await Promise.all(written.map(deleteImage));
     return bad(500, "could not save piece");
   }
 }

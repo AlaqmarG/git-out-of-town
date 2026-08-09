@@ -179,6 +179,42 @@ function num(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
+/**
+ * An absent optional field and an explicit `null` mean the same thing to us.
+ * Swift's JSONEncoder omits nil, but nothing in the contract requires that, and
+ * a client that spells it out must not be rejected.
+ */
+function given(v: unknown): boolean {
+  return v !== undefined && v !== null;
+}
+
+/** Optional measurements are pulled into range rather than refused. */
+function clamped(v: unknown, lo: number, hi: number): number | undefined {
+  const n = num(v);
+  return n === undefined ? undefined : Math.min(hi, Math.max(lo, n));
+}
+
+/**
+ * INTEGER columns. Rounded and clamped rather than validated: a float here used
+ * to reach Postgres and come back as an opaque 500.
+ */
+function int32(v: unknown, hi = 2147483647): number | undefined {
+  const n = clamped(v, 0, hi);
+  return n === undefined ? undefined : Math.round(n);
+}
+
+/** A bearing wraps: 365° is 5°, not a lost contribution. */
+function bearing(v: unknown): number | undefined {
+  const n = num(v);
+  return n === undefined ? undefined : ((n % 360) + 360) % 360;
+}
+
+/** One of `allowed`, or nothing. An unrecognised value is dropped, never fatal. */
+function oneOf<T extends string>(v: unknown, allowed: readonly T[]): T | undefined {
+  return typeof v === "string" && allowed.includes(v as T) ? (v as T) : undefined;
+}
+
+/** A malformed palette is dropped, never fatal — losing the piece would be worse. */
 function colors(v: unknown): Rgb[] | undefined {
   if (!Array.isArray(v) || v.length === 0 || v.length > 16) return undefined;
   const out: Rgb[] = [];
@@ -194,7 +230,20 @@ function colors(v: unknown): Rgb[] | undefined {
   return out;
 }
 
-/** Returns the validated request, or a human-readable reason it was rejected. */
+/**
+ * Returns the validated request, or a human-readable reason it was rejected.
+ *
+ * Only the fields a piece cannot exist without are fatal: lat, lng, kind,
+ * sessionId, and the shape of placementTransform if one was sent. Everything
+ * else is decorative — a heading, a duration, a palette — and is clamped or
+ * dropped rather than refused.
+ *
+ * The reason is that a 400 here destroys the contribution: the painting is
+ * already made, the client shows a failure, and retrying sends the same bad
+ * field forever. Losing a piece because its altimeter read 99999 is a far worse
+ * outcome than storing it without an altitude. This mirrors what the route
+ * already does with a malformed scene photo.
+ */
 export function validateMeta(raw: unknown): { ok: true; meta: CreatePieceRequest } | { ok: false; error: string } {
   if (typeof raw !== "object" || raw === null) return { ok: false, error: "meta must be an object" };
   const m = raw as Record<string, unknown>;
@@ -214,39 +263,17 @@ export function validateMeta(raw: unknown): { ok: true; meta: CreatePieceRequest
     return { ok: false, error: "sessionId must be a string of 8-64 chars" };
   }
 
-  const heading = num(m.heading);
-  if (heading !== undefined && (heading < 0 || heading >= 360)) {
-    return { ok: false, error: "heading must be in [0, 360)" };
-  }
-
-  const surfaceType = m.surfaceType;
-  if (surfaceType !== undefined && (typeof surfaceType !== "string" || !SURFACES.includes(surfaceType as SurfaceType))) {
-    return { ok: false, error: `surfaceType must be one of ${SURFACES.join(", ")}` };
-  }
-
-  const client = m.client;
-  if (client !== undefined && client !== "ios" && client !== "web") {
-    return { ok: false, error: "client must be 'ios' or 'web'" };
-  }
-
-  const stickerId = m.stickerId;
-  if (stickerId !== undefined && (typeof stickerId !== "string" || stickerId.length > 64)) {
-    return { ok: false, error: "stickerId must be a string of at most 64 chars" };
-  }
-
-  const altitudeM = num(m.altitudeM);
-  if (altitudeM !== undefined && (altitudeM < -500 || altitudeM > 10000)) {
-    return { ok: false, error: "altitudeM must be a sane number in metres" };
-  }
-
-  const placementTransform = m.placementTransform;
+  // The placement matrix is the one optional field that is still fatal when
+  // malformed: a wrong-length one silently mis-anchors the piece in AR, and the
+  // client can only be sending it as a bug.
+  const placementTransform = given(m.placementTransform) ? m.placementTransform : undefined;
   if (
     placementTransform !== undefined &&
     (!Array.isArray(placementTransform) ||
       placementTransform.length !== 16 ||
       placementTransform.some((n) => typeof n !== "number" || !Number.isFinite(n)))
   ) {
-    return { ok: false, error: "placementTransform must be a 16-number row-major 4x4" };
+    return { ok: false, error: "placementTransform must be a 16-number column-major 4x4" };
   }
 
   return {
@@ -256,19 +283,21 @@ export function validateMeta(raw: unknown): { ok: true; meta: CreatePieceRequest
       lng,
       kind: kind as PieceKind,
       sessionId,
-      heading,
-      accuracyM: num(m.accuracyM),
-      stickerId: stickerId as string | undefined,
+      // Everything below is decorative: clamped, wrapped or dropped, never fatal.
+      heading: bearing(m.heading),
+      accuracyM: clamped(m.accuracyM, 0, 100_000),
+      stickerId:
+        typeof m.stickerId === "string" && m.stickerId.length <= 64 ? m.stickerId : undefined,
       colors: colors(m.colors),
-      strokeCount: num(m.strokeCount),
-      durationMs: num(m.durationMs),
-      client: client as Client | undefined,
-      surfaceType: surfaceType as SurfaceType | undefined,
-      distanceM: num(m.distanceM),
-      devicePitch: num(m.devicePitch),
+      strokeCount: int32(m.strokeCount, 100_000),
+      durationMs: int32(m.durationMs),
+      client: oneOf<Client>(m.client, ["ios", "web"]),
+      surfaceType: oneOf<SurfaceType>(m.surfaceType, SURFACES),
+      distanceM: clamped(m.distanceM, 0, 10_000),
+      devicePitch: clamped(m.devicePitch, -180, 180),
       usedGeoAnchor: typeof m.usedGeoAnchor === "boolean" ? m.usedGeoAnchor : undefined,
       hasLidar: typeof m.hasLidar === "boolean" ? m.hasLidar : undefined,
-      altitudeM: altitudeM as number | undefined,
+      altitudeM: clamped(m.altitudeM, -500, 10_000),
       placementTransform: placementTransform as number[] | undefined,
     },
   };
