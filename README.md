@@ -26,8 +26,8 @@ The website uses a custom MapLibre style over OpenFreeMap tiles. PostgreSQL stor
 pushes new pieces to open maps through Server-Sent Events. The `/data` dashboard shows live
 locations, colours, surfaces, painting time, and views.
 
-We made 18 sticker symbols with Reve and paired them with 18 word stickers rendered from a graffiti
-alphabet we wrote ourselves.
+Reve generated 18 sticker symbols from our shared style guide and contact-sheet prompts. The other
+18 came from the project's procedural graffiti renderer.
 
 ## Stack
 
