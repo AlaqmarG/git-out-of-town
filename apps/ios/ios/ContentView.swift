@@ -88,6 +88,11 @@ struct ContentView: View {
 
             vignette.ignoresSafeArea().allowsHitTesting(false)
 
+            if pendingPost == nil {
+                placementReticle
+                    .allowsHitTesting(false)
+            }
+
             if shutterFlash {
                 Color.white.ignoresSafeArea().transition(.opacity)
             }
@@ -150,6 +155,42 @@ struct ContentView: View {
     }
 
     // MARK: - Chrome
+
+    /// Screen-space confirmation of the exact point ARKit can paint. Keeping
+    /// this in SwiftUI means it never gets burned into the captured photo.
+    private var placementReticle: some View {
+        let tint = ar.isPlaceable
+            ? Color(red: 0.25, green: 1.0, blue: 0.35)
+            : Color.white.opacity(0.55)
+
+        return ZStack {
+            Image(systemName: "viewfinder")
+                .font(.system(size: 56, weight: .medium))
+                .foregroundStyle(tint)
+                .shadow(color: .black.opacity(0.65), radius: 3)
+
+            Circle()
+                .fill(ar.isPlaceable ? tint : .clear)
+                .frame(width: 8, height: 8)
+                .shadow(color: tint.opacity(0.8), radius: 6)
+
+            if ar.isPlaceable {
+                Text("PLACEABLE")
+                    .font(.caption2.weight(.black))
+                    .tracking(1.2)
+                    .foregroundStyle(tint)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .offset(y: 49)
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .frame(width: 120, height: 120)
+        .animation(.easeInOut(duration: 0.18), value: ar.isPlaceable)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(ar.isPlaceable ? "Surface is placeable" : "No placeable surface at center")
+    }
 
     private var vignette: some View {
         VStack(spacing: 0) {

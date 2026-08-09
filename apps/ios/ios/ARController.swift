@@ -24,6 +24,9 @@ final class ARController {
     private(set) var status = "starting camera…"
     private(set) var hasLidar = ARWorldTrackingConfiguration.supportsSceneReconstruction(.meshWithClassification)
     private(set) var isReady = false
+    /// True when the viewfinder's center is over reconstructed mesh or a
+    /// detected plane — i.e. the point under the reticle can hold paint.
+    private(set) var isPlaceable = false
 
     /// Why the session stopped, if it did. A dead session is indistinguishable
     /// from one still warming up — same nil frame, same "starting camera…" —
@@ -45,6 +48,11 @@ final class ARController {
             failure = nil
             didRetry = false
         }
+    }
+
+    func setPlaceable(_ placeable: Bool) {
+        guard isPlaceable != placeable else { return }
+        isPlaceable = placeable
     }
 
     /// Call from `ARSessionObserver.session(_:didFailWithError:)`.
