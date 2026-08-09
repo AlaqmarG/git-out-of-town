@@ -39,19 +39,27 @@ function imageSize(buf: Buffer): { width: number; height: number } | null {
   return null;
 }
 
-async function runModel(model: string, input: Record<string, unknown>): Promise<string> {
+/**
+ * `version` is required for community models — only official models (reve/*)
+ * expose the model-scoped predictions endpoint; everything else 404s there
+ * and must go through /predictions with a pinned version.
+ */
+async function runModel(model: string, input: Record<string, unknown>, version?: string): Promise<string> {
   const token = process.env.REPLICATE_API_TOKEN;
   if (!token) throw new Error("REPLICATE_API_TOKEN not configured");
 
-  const res = await fetch(`${REPLICATE}/models/${model}/predictions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      Prefer: "wait=60",
+  const res = await fetch(
+    version ? `${REPLICATE}/predictions` : `${REPLICATE}/models/${model}/predictions`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Prefer: "wait=60",
+      },
+      body: JSON.stringify(version ? { version, input } : { input }),
     },
-    body: JSON.stringify({ input }),
-  });
+  );
   let prediction = await res.json();
   if (!res.ok) {
     throw new Error(`${model}: HTTP ${res.status} ${prediction?.detail ?? ""}`);
@@ -103,7 +111,11 @@ export async function transformPiece(id: number): Promise<string | null> {
     });
     // The styled output is opaque; cut it back out so it reads as paint on a
     // wall in AR rather than a pasted rectangle.
-    const isolated = await runModel("851-labs/background-remover", { image: styled });
+    const isolated = await runModel(
+      "851-labs/background-remover",
+      { image: styled },
+      "a029dff38972b5fda4ec5d75d7d1cd25aeff621d2cf4946a41055d7db66b80bc",
+    );
 
     const download = await fetch(isolated);
     if (!download.ok) throw new Error(`download: HTTP ${download.status}`);
