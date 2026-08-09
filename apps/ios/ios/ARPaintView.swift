@@ -116,9 +116,9 @@ extension ARPaintView {
             if hasLidar {
                 config.sceneReconstruction = .meshWithClassification
             }
-            if ARWorldTrackingConfiguration.supportsFrameSemantics(.personSegmentationWithDepth) {
-                config.frameSemantics.insert(.personSegmentationWithDepth)
-            }
+            // Person segmentation competes with scene reconstruction for the same
+            // depth pipeline and slows mesh growth. Wrapping art onto real
+            // geometry matters more than people occluding it.
             return config
         }
 
@@ -378,7 +378,10 @@ extension ARPaintView {
                 placement = projected.placement
                 position = projected.position
                 sizeMeters = projected.extent
-                controller.setLastPlacement("wrapped · \(projected.triangleCount) tris")
+                controller.setLastPlacement(
+                    "Wrapped onto \(projected.triangleCount) surface facets",
+                    wrapped: true
+                )
             } else {
                 // No usable mesh: a flat quad on the raycast surface, cropped to
                 // what the user actually painted.
@@ -400,7 +403,10 @@ extension ARPaintView {
                 let height = Float(bounds.height) * screenHeightM
 
                 let plane = SCNPlane(width: CGFloat(width), height: CGFloat(height))
-                plane.materials = [material(art: art, shade: nil)]
+                // The wall behind the art, cropped to the same screen region, so
+                // the flat path picks up surface grain too. Without this, every
+                // fallback placement rendered as flat colour on flat colour.
+                plane.materials = [material(art: art, shade: crop(scene.photo, to: bounds))]
                 node = SCNNode(geometry: plane)
 
                 // Slide it to where it sat on screen: +x right, +y down in the mask.
@@ -414,7 +420,12 @@ extension ARPaintView {
                 position = simd_make_float3(t.columns.3)
                 sizeMeters = max(width, height)
                 node.simdTransform = placement
-                controller.setLastPlacement(scene.triangles.isEmpty ? "flat · no mesh" : "flat · mesh missed")
+                controller.setLastPlacement(
+                    scene.triangles.isEmpty
+                        ? "Flat — no depth mesh here yet (scan longer)"
+                        : "Flat — mesh had \(scene.triangles.count) facets but none under the art",
+                    wrapped: false
+                )
             }
 
             node.renderingOrder = 10

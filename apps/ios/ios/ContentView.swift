@@ -365,11 +365,18 @@ struct ContentView: View {
         case "good": ("dot.radiowaves.left.and.right", "Good scan — keep panning to lock it in", Color.yellow)
         default: ("location.circle", "Rough spot — pan around the piece to scan it", Color.orange)
         }
-        return Label(text, systemImage: symbol)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(color)
-            .contentTransition(.opacity)
-            .animation(.easeInOut, value: ar.scanQuality)
+        return VStack(alignment: .leading, spacing: 3) {
+            Label(text, systemImage: symbol)
+                .foregroundStyle(color)
+                .animation(.easeInOut, value: ar.scanQuality)
+            Label(
+                ar.lastPlacement,
+                systemImage: ar.lastPlacementWrapped ? "square.3.layers.3d.top.filled" : "square.dashed"
+            )
+            .foregroundStyle(ar.lastPlacementWrapped ? Color.green : Color.orange)
+        }
+        .font(.caption2.weight(.semibold))
+        .contentTransition(.opacity)
     }
 
     private func subtitle(_ pending: PendingPost) -> String {

@@ -87,10 +87,15 @@ final class ARController {
         coordinator?.setActive(true)
     }
 
-    /// How the last piece landed: draped over N mesh triangles, or flat.
+    /// How the last piece landed: draped over N mesh facets, or flat. Shown on
+    /// the Post card — if wrapping silently stops working, it says so.
     private(set) var lastPlacement = "—"
+    private(set) var lastPlacementWrapped = false
 
-    func setLastPlacement(_ text: String) { lastPlacement = text }
+    func setLastPlacement(_ text: String, wrapped: Bool) {
+        lastPlacement = text
+        lastPlacementWrapped = wrapped
+    }
 
     func setNearby(rendered: Int, snapped: Int, nearestM: Double?) {
         self.rendered = rendered
