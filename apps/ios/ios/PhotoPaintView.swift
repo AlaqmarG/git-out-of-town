@@ -8,7 +8,7 @@ struct PhotoPaintView: View {
     var stickers: [Sticker]
     /// Takes the overlay (transparent, viewport-sized) and the sticker ids used.
     /// Returns why it could not be sprayed, or nil on success.
-    var onPlace: (UIImage, [String]) -> String?
+    var onPlace: (UIImage, [String], PaintStats) -> String?
     var onCancel: () -> Void
 
     @State private var placed: [PlacedSticker] = []
@@ -18,6 +18,7 @@ struct PhotoPaintView: View {
     @State private var clearToken = 0
     @State private var isDrawing = false
     @State private var failure: String?
+    @State private var openedAt = Date()
 
     struct PlacedSticker: Identifiable {
         let id = UUID()
@@ -313,11 +314,35 @@ struct PhotoPaintView: View {
         }
         // Failing here keeps the editor open — the art is the expensive part, so
         // it is never thrown away just because the wall or the fix wasn't ready.
-        if let why = onPlace(overlay, placed.map(\.sticker.id)) {
+        if let why = onPlace(overlay, placed.map(\.sticker.id), paintStats()) {
             failure = why
             UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
     }
+
+    /// Feeds the /data dashboard: how long the piece took, how many marks it
+    /// is made of, and the palette actually used.
+    private func paintStats() -> PaintStats {
+        var colors: [(r: Int, g: Int, b: Int)] = []
+        for stroke in drawing.strokes {
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            stroke.ink.color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            let rgb = (r: Int(red * 255), g: Int(green * 255), b: Int(blue * 255))
+            if !colors.contains(where: { $0 == rgb }) { colors.append(rgb) }
+            if colors.count >= 6 { break }
+        }
+        return PaintStats(
+            strokeCount: drawing.strokes.count + placed.count,
+            durationMs: Int(Date().timeIntervalSince(openedAt) * 1000),
+            colors: colors
+        )
+    }
+}
+
+struct PaintStats {
+    let strokeCount: Int
+    let durationMs: Int
+    let colors: [(r: Int, g: Int, b: Int)]
 }
 
 /// One stamped sticker: drag to move, pinch to size, twist to rotate.

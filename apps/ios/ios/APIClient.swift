@@ -26,6 +26,12 @@ struct PieceDTO: Decodable {
     let createdAt: String
 }
 
+struct RgbDTO: Encodable {
+    let r: Int
+    let g: Int
+    let b: Int
+}
+
 /// Mirror of `CreatePieceRequest` — sent as the `meta` JSON part.
 struct MetaDTO: Encodable {
     let lat: Double
@@ -43,6 +49,9 @@ struct MetaDTO: Encodable {
     let hasLidar: Bool?
     let altitudeM: Double?
     let placementTransform: [Double]?
+    let colors: [RgbDTO]?
+    let strokeCount: Int?
+    let durationMs: Int?
 }
 
 extension PieceDTO: Identifiable {}

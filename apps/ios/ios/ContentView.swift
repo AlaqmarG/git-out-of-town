@@ -32,6 +32,7 @@ struct ContentView: View {
         let scenePreview: UIImage
         let sceneJPEG: Data?
         let stickerIDs: [String]
+        let stats: PaintStats
     }
 
     /// Stable per-install id. Resolved once, not on every view rebuild — this
@@ -138,7 +139,7 @@ struct ContentView: View {
             PhotoPaintView(
                 scene: scene,
                 stickers: stickers,
-                onPlace: { overlay, ids in place(overlay: overlay, ids: ids, scene: scene) },
+                onPlace: { overlay, ids, stats in place(overlay: overlay, ids: ids, stats: stats, scene: scene) },
                 onCancel: { captured = nil }
             )
         }
@@ -339,7 +340,7 @@ struct ContentView: View {
 
     /// Returns a message if the art could not be pinned — the editor stays open
     /// on failure so half a minute of painting is never thrown away.
-    private func place(overlay: UIImage, ids: [String], scene: CapturedScene) -> String? {
+    private func place(overlay: UIImage, ids: [String], stats: PaintStats, scene: CapturedScene) -> String? {
         // Checked before placing, not after: the placer drops the art into the
         // world first and only then discovers it has no fix to pin it with.
         guard LocationService.shared.location != nil else {
@@ -358,7 +359,8 @@ struct ContentView: View {
                 artPNG: artwork(from: overlay),
                 scenePreview: preview,
                 sceneJPEG: preview.jpegData(compressionQuality: 0.8),
-                stickerIDs: ids
+                stickerIDs: ids,
+                stats: stats
             )
         }
         return nil
@@ -411,7 +413,10 @@ struct ContentView: View {
             // accepted range, which 400s the whole upload. It's a nice-to-have
             // field, so drop it rather than lose the piece.
             altitudeM: snapshot.altitudeM.flatMap { (-500...9999).contains($0) ? $0 : nil },
-            placementTransform: snapshot.placementTransform
+            placementTransform: snapshot.placementTransform,
+            colors: pending.stats.colors.map { RgbDTO(r: $0.r, g: $0.g, b: $0.b) },
+            strokeCount: pending.stats.strokeCount,
+            durationMs: pending.stats.durationMs
         )
         Task {
             do {
