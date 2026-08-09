@@ -93,6 +93,51 @@ jobs:
           echo "build=$before" >> "$GITHUB_OUTPUT"
           echo "currently live: ${before:-unknown}"
 
+      - name: Sync REPLICATE_API_TOKEN into the Komodo stack env
+        env:
+          KOMODO_URL: ${{ secrets.KOMODO_URL }}
+          KOMODO_API_KEY: ${{ secrets.KOMODO_API_KEY }}
+          KOMODO_API_SECRET: ${{ secrets.KOMODO_API_SECRET }}
+          KOMODO_STACK: ${{ secrets.KOMODO_STACK }}
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+        run: |
+          if [ -z "$KOMODO_URL" ] || [ -z "$REPLICATE_API_TOKEN" ]; then
+            echo "::notice::Komodo or Replicate secret not set — skipping env sync."
+            exit 0
+          fi
+          # Read the stack's current environment. Every failure path here warns
+          # and moves on — a botched sync must never block or corrupt a deploy.
+          if ! curl -sS --max-time 60 -o /tmp/stack.json \
+            -X POST "${KOMODO_URL%/}/read" \
+            -H 'Content-Type: application/json' \
+            -H "X-Api-Key: $KOMODO_API_KEY" \
+            -H "X-Api-Secret: $KOMODO_API_SECRET" \
+            -d "{\"type\":\"GetStack\",\"params\":{\"stack\":\"$KOMODO_STACK\"}}"; then
+            echo "::warning::GetStack failed — skipping env sync."; exit 0
+          fi
+          envstr=$(jq -r 'if (.config.environment|type) == "string" then .config.environment else "" end' /tmp/stack.json)
+          if [ -z "$envstr" ]; then
+            echo "::warning::Stack environment missing or not a string — skipping env sync."; exit 0
+          fi
+          if printf '%s\n' "$envstr" | grep -qxF "REPLICATE_API_TOKEN=$REPLICATE_API_TOKEN"; then
+            echo "Token already in sync."; exit 0
+          fi
+          merged=$(printf '%s\n' "$envstr" | grep -v '^REPLICATE_API_TOKEN=' ; printf 'REPLICATE_API_TOKEN=%s\n' "$REPLICATE_API_TOKEN")
+          body=$(jq -n --arg stack "$KOMODO_STACK" --arg env "$merged" \
+            '{type:"UpdateStack",params:{id:$stack,config:{environment:$env}}}')
+          code=$(curl -sS --max-time 60 -o /tmp/update.json -w '%{http_code}' \
+            -X POST "${KOMODO_URL%/}/write" \
+            -H 'Content-Type: application/json' \
+            -H "X-Api-Key: $KOMODO_API_KEY" \
+            -H "X-Api-Secret: $KOMODO_API_SECRET" \
+            -d "$body")
+          if [ "$code" -ge 300 ]; then
+            echo "::warning::UpdateStack returned HTTP $code — env not synced (deploy continues)."
+            cat /tmp/update.json || true
+          else
+            echo "Stack env updated with REPLICATE_API_TOKEN."
+          fi
+
       - name: Trigger Komodo deploy
         env:
           KOMODO_URL: ${{ secrets.KOMODO_URL }}
