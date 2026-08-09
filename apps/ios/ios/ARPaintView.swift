@@ -49,6 +49,9 @@ struct ARPaintView: UIViewRepresentable {
     }
 
     func updateUIView(_ scnView: ARSCNView, context: Context) {
+        // The wireframe answers "is ARKit meshing at all?" — the one question
+        // that can't be answered from a Mac.
+        MeshOcclusion.showWireframe = showDebug
         context.coordinator.setActive(isActive)
         context.coordinator.renderRemotePieces(remotePieces)
         scnView.debugOptions = context.coordinator.debugOptions(showDebug)
@@ -80,6 +83,7 @@ extension ARPaintView {
         private var relocalizeAttempted = false
         private var relocalizing = false
         private var relocalizeDeadline: Date?
+        private var sessionStartedAt: TimeInterval = 0
         private var lastPlaceabilityUpdate: TimeInterval = 0
         /// The interface orientation the still was shot in. Everything that maps
         /// between the overlay and the world has to use *that* orientation, not
@@ -101,7 +105,15 @@ extension ARPaintView {
         // MARK: - Session
 
         func setupSession(in scnView: ARSCNView) {
+            sessionStartedAt = scnView.session.currentFrame?.timestamp ?? 0
             scnView.session.run(makeWorldConfiguration())
+        }
+
+        /// ARKit relocalizes after a `pause()` and, when that fails, restarts the
+        /// session — which deletes every anchor, mesh included. We would rather
+        /// keep the reconstruction and let tracking recover on its own.
+        nonisolated func sessionShouldAttemptRelocalization(_ session: ARSession) -> Bool {
+            false
         }
 
         /// World tracking with every depth capability the device offers: LiDAR
@@ -468,11 +480,19 @@ extension ARPaintView {
             }
         }
 
-        /// Once per session: if someone scanned near here, relocalize against the
-        /// closest scan — anchors inside it put their pieces on the exact wall.
+        /// Once per session, and ONLY in the first seconds: if someone scanned
+        /// near here, relocalize against the closest scan — anchors inside it put
+        /// their pieces on the exact wall.
+        ///
+        /// The window matters enormously. Relocalizing means `.resetTracking`,
+        /// and Apple documents that as removing every anchor in the session —
+        /// mesh anchors included. Do it late and it deletes the depth mesh the
+        /// user just spent 30 seconds building, killing wrapping and occlusion
+        /// for the rest of the session. So: only before there is a mesh to lose.
         private func maybeRelocalize() {
-            guard !relocalizeAttempted, sessionActive,
-                  let scnView, scnView.session.currentFrame != nil,
+            guard !relocalizeAttempted, sessionActive, meshCount == 0,
+                  let scnView, let frame = scnView.session.currentFrame,
+                  frame.timestamp - sessionStartedAt < 6,
                   let location = LocationService.shared.location,
                   location.horizontalAccuracy >= 0, location.horizontalAccuracy < 80 else { return }
             relocalizeAttempted = true
@@ -480,7 +500,10 @@ extension ARPaintView {
                 guard let self else { return }
                 guard let record = (try? await WorldMapStore.nearby(location: location, radiusM: 80))?.first,
                       let map = try? await WorldMapStore.download(record),
-                      let scnView = self.scnView, self.sessionActive else { return }
+                      let scnView = self.scnView, self.sessionActive,
+                      // The download took time; if a mesh grew meanwhile, it is
+                      // worth more than the relocalization.
+                      self.meshCount == 0 else { return }
                 let config = self.makeWorldConfiguration()
                 config.initialWorldMap = map
                 self.relocalizeDeadline = Date().addingTimeInterval(25)
@@ -492,14 +515,16 @@ extension ARPaintView {
         /// Relocalization either matched (tracking goes normal — the map's piece
         /// anchors are live) or it never will; don't leave the user stuck.
         private func settleRelocalization() {
-            guard relocalizing, let scnView, let frame = scnView.session.currentFrame else { return }
+            guard relocalizing, let frame = scnView?.session.currentFrame else { return }
             if case .normal = frame.camera.trackingState {
                 relocalizing = false
                 return
             }
+            // No second reset here: that would wipe anchors again. Relocalization
+            // simply gives up and the session carries on with the GPS fallback.
             if let deadline = relocalizeDeadline, Date() > deadline {
                 relocalizing = false
-                scnView.session.run(makeWorldConfiguration(), options: [.resetTracking, .removeExistingAnchors])
+                relocalizeDeadline = nil
             }
         }
 
@@ -542,7 +567,15 @@ extension ARPaintView {
             material.diffuse.contents = art
             material.diffuse.wrapS = .clamp
             material.diffuse.wrapT = .clamp
-            material.lightingModel = .constant
+            // NOT .constant. Constant shading renders every triangle identically,
+            // so a decal draped over a corner looks exactly like a flat one —
+            // the wrap is there but invisible. .blinn responds to the ARKit light
+            // estimate, which is what makes a corner read as a corner. (.blinn
+            // and not .physicallyBased: `multiply` is broken under PBR.)
+            material.lightingModel = .blinn
+            material.ambient.contents = UIColor.white
+            material.specular.contents = UIColor(white: 0.16, alpha: 1)
+            material.shininess = 0.3
             material.isDoubleSided = true
             material.writesToDepthBuffer = false
             if let shade, let luminance = SurfaceTexture.luminance(of: shade) {

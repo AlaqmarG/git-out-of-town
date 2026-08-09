@@ -4,6 +4,11 @@ import SceneKit
 /// LiDAR scene-reconstruction helpers: depth-only geometry so real objects
 /// occlude graffiti behind them, and per-face classification for `surface_type`.
 enum MeshOcclusion {
+    /// Draws the reconstruction as green wireframe instead of hiding it. There
+    /// is no SceneKit equivalent of RealityKit's `.showSceneUnderstanding`, so
+    /// this is the only way to see whether ARKit is meshing at all.
+    nonisolated(unsafe) static var showWireframe = false
+
     /// Invisible geometry that writes depth only — anything behind it is hidden.
     ///
     /// Every buffer is copied. ARKit recycles an `ARMeshAnchor`'s Metal buffers
@@ -39,7 +44,13 @@ enum MeshOcclusion {
 
         let geometry = SCNGeometry(sources: [source], elements: [element])
         let material = SCNMaterial()
-        material.colorBufferWriteMask = []
+        if showWireframe {
+            material.fillMode = .lines
+            material.diffuse.contents = UIColor.systemGreen
+            material.lightingModel = .constant
+        } else {
+            material.colorBufferWriteMask = []
+        }
         material.isDoubleSided = true
         geometry.materials = [material]
         return geometry

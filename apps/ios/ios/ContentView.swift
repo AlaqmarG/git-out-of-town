@@ -81,7 +81,11 @@ struct ContentView: View {
             ARPaintView(
                 controller: ar,
                 showDebug: showDebug,
-                isActive: isActive && captured == nil,
+                // Deliberately NOT paused while the paint sheet is up. Pausing
+                // makes ARKit try to relocalize on resume and, when that fails,
+                // restart the session — which deletes every mesh anchor. That
+                // is why the depth mesh vanished after the first piece.
+                isActive: isActive,
                 remotePieces: remotePieces
             )
             .ignoresSafeArea()

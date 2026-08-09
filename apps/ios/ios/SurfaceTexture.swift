@@ -10,13 +10,19 @@ enum SurfaceTexture {
 
     static func luminance(of image: UIImage) -> UIImage? {
         guard let cg = image.cgImage else { return nil }
-        var ci = CIImage(cgImage: cg).applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0])
+        // Contrast first: normalising below flattens the map toward a uniform
+        // grey, and grain that survives that is the whole point of this map.
+        var ci = CIImage(cgImage: cg).applyingFilter("CIColorControls", parameters: [
+            kCIInputSaturationKey: 0,
+            kCIInputContrastKey: 1.7,
+        ])
 
         // Push the average toward white so multiplying darkens only where the
         // surface itself darkens. The bias is a floor: without it a shadowed or
         // dark-painted wall multiplies the art down to black and the piece the
-        // user just made is simply not there.
-        let bias: CGFloat = 0.25
+        // user just made is simply not there. Kept low — at 0.25 the floor ate
+        // the shading it exists to preserve.
+        let bias: CGFloat = 0.12
         let gain = min(max(0.9 / max(averageLuminance(of: ci), 0.05), 0.6), 3.5) * (1 - bias)
         ci = ci.applyingFilter("CIColorMatrix", parameters: [
             "inputRVector": CIVector(x: gain, y: 0, z: 0, w: 0),

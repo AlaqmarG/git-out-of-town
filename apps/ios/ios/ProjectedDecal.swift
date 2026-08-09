@@ -112,6 +112,7 @@ enum ProjectedDecal {
         // Keep only the front-most surface per screen cell, so paint lands on the
         // wall you can see and not on whatever stands behind it.
         var positions: [SCNVector3] = []
+        var normals: [SCNVector3] = []
         var texcoords: [CGPoint] = []
         var indices: [UInt32] = []
         var sum = SIMD3<Float>.zero
@@ -122,19 +123,26 @@ enum ProjectedDecal {
         texcoords.reserveCapacity(candidates.count * 3)
         indices.reserveCapacity(candidates.count * 3)
 
-        for candidate in candidates where candidate.depth < nearest[candidate.cell] + 0.35 {
+        // 10 cm, not 35: a looser window keeps two depth layers per screen cell,
+        // and with depth writes off they blend in arbitrary order — ghosting.
+        for candidate in candidates where candidate.depth < nearest[candidate.cell] + 0.10 {
             guard let faceNormal = unitVector(simd_cross(
                 candidate.tri.b - candidate.tri.a,
                 candidate.tri.c - candidate.tri.a
             )) else { continue }
             // The decal sits on the very triangles the occlusion mesh renders, so
-            // without a lift it z-fights with them and vanishes. 12 mm is enough
-            // to win the depth test and still read as painted on.
-            let lift = faceNormal * 0.012
+            // without a lift it z-fights with them. 3 mm clears a 24-bit depth
+            // buffer at wall distance; more visibly slides against the wall at
+            // grazing angles — the paint's own "sticker" tell.
+            let lift = faceNormal * 0.003
             let base = UInt32(positions.count)
             positions.append(SCNVector3(candidate.tri.a + lift))
             positions.append(SCNVector3(candidate.tri.b + lift))
             positions.append(SCNVector3(candidate.tri.c + lift))
+            // Flat per face, deliberately not smoothed: the hard shading break
+            // at a corner is what reads as "painted on that wall".
+            let faceVector = SCNVector3(faceNormal)
+            normals.append(contentsOf: [faceVector, faceVector, faceVector])
             texcoords.append(contentsOf: [candidate.uv.0, candidate.uv.1, candidate.uv.2])
             indices.append(contentsOf: [base, base + 1, base + 2])
             sum += candidate.tri.centroid
@@ -148,6 +156,7 @@ enum ProjectedDecal {
         let geometry = SCNGeometry(
             sources: [
                 SCNGeometrySource(vertices: positions),
+                SCNGeometrySource(normals: normals),
                 SCNGeometrySource(textureCoordinates: texcoords),
             ],
             elements: [SCNGeometryElement(indices: indices, primitiveType: .triangles)]
