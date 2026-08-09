@@ -125,11 +125,10 @@
   .shot { width: 100%; border: 2px solid var(--ink); border-radius: 4px; display: block; }
   /* Both web captures are natively 16:9, so they sit in the grid uncropped. */
   .shot.wide { aspect-ratio: 16 / 9; object-fit: cover; max-height: 46vh; }
-  .shot.wall { max-width: 168px; aspect-ratio: 1 / 1; object-fit: cover; object-position: 50% 47%; }
   .caption { font-size: 0.82rem; color: var(--ink-soft); margin-top: 0.5rem; }
 
   /* The diagram is drawn on the deck's own paper colour, so it needs no frame. */
-  .diagram { display: block; width: 100%; max-width: 1100px; max-height: 40vh; margin: 0 auto; }
+  .diagram { display: block; width: 100%; max-width: 1100px; max-height: 56vh; flex-shrink: 0; margin: 0 auto; }
 
   .chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   .chip {
@@ -259,10 +258,7 @@
   <div class="kicker">Technical core — the part that's hard</div>
   <h2>Placing something is easy. <em>Agreeing on where it is</em> is the hard part.</h2>
   <img class="diagram" src="../assets/deck/pipeline.svg" alt="How a piece stays put: a printed marker gives two phones one shared frame, the venue map thickens with every visitor, LiDAR depth wraps the paint onto real geometry, and placement degrades down a ladder from marker to geo anchor to surface-aligned to GPS">
-  <div class="split" style="align-items:center">
-    <img class="shot wall" src="../assets/deck/ar-wall.jpg" alt="A piece anchored to a wall in AR">
-    <p class="small">Relocalized from the shared frame, so a spot is a <em>place</em> rather than one person's session — the second device sees the same paint in the same physical position.</p>
-  </div>
+  <p class="small">Relocalized from the shared frame, so a spot is a <em>place</em> rather than one person's session — the second device sees the same paint in the same physical position.</p>
 </section>
 
 <!-- 4 — REALISM / REVE -->
