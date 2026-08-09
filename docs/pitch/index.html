@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Git Out of Town — SummerHacks 2026</title>
+<style>
+  /* Colours are lifted verbatim from apps/web/lib/theme.ts. Do not invent new ones. */
+  :root {
+    --ink: #0a0b0f;
+    --surface: #15171e;
+    --raised: #1c1f28;
+    --line: #272b36;
+    --label: #848b9c;
+    --label-bright: #b6bccb;
+    --accent: #ff5230;
+    --accent-dim: #7c2716;
+    --accent-soft: rgba(255, 82, 48, 0.24);
+    --text: #e9ecf4;
+    --text-muted: #8a90a0;
+    --cyan: #35d0e8;
+    --amber: #ffb021;
+    --violet: #a277ff;
+    --lime: #9be855;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--ink);
+    color: var(--text);
+    font-family: ui-sans-serif, -apple-system, "Segoe UI", Inter, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    scroll-snap-type: y mandatory;
+    overflow-y: scroll;
+    height: 100vh;
+  }
+
+  .slide {
+    scroll-snap-align: start;
+    min-height: 100vh;
+    padding: 5vh 6vw;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1.4rem;
+    position: relative;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .num {
+    position: absolute;
+    top: 3vh;
+    right: 6vw;
+    font-size: 0.75rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .kicker {
+    font-size: 0.8rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  h1 {
+    font-size: clamp(2.6rem, 7vw, 6rem);
+    line-height: 0.95;
+    letter-spacing: -0.03em;
+    margin: 0;
+    font-weight: 800;
+  }
+
+  h2 {
+    font-size: clamp(1.8rem, 3.8vw, 3.2rem);
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+    margin: 0;
+    font-weight: 800;
+  }
+
+  h3 {
+    font-size: clamp(1rem, 1.5vw, 1.25rem);
+    margin: 0 0 0.4rem;
+    letter-spacing: -0.01em;
+  }
+
+  p, li {
+    font-size: clamp(1rem, 1.55vw, 1.35rem);
+    line-height: 1.5;
+    color: var(--label-bright);
+    margin: 0;
+  }
+
+  .lede { font-size: clamp(1.15rem, 2vw, 1.7rem); color: var(--text); max-width: 30ch; }
+  .muted { color: var(--text-muted); }
+  .small { font-size: clamp(0.85rem, 1.1vw, 1rem); }
+  em { color: var(--accent); font-style: normal; font-weight: 700; }
+
+  ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.7rem; }
+  li::marker { color: var(--accent); }
+
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 4vw; align-items: center; }
+  .split.narrow-left { grid-template-columns: 0.85fr 1.15fr; }
+  .split.narrow-right { grid-template-columns: 1.15fr 0.85fr; }
+  .stack { display: grid; gap: 1.2rem; }
+
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2rem; }
+  .card {
+    background: var(--raised);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 1.4rem;
+  }
+  .card .tag {
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 700;
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+
+  .phone {
+    border-radius: 26px;
+    border: 1px solid var(--line);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,82,48,0.08);
+    display: block;
+    max-height: 82vh;
+    width: auto;
+    margin: 0 auto;
+  }
+
+  .shot {
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    display: block;
+  }
+
+  .caption { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.6rem; }
+
+  /* -------- SCREENSHOT PLACEHOLDER --------
+     Drop the venue capture in, then delete the wrapping .todo div and keep the <img>. */
+  .todo {
+    border: 2px dashed var(--accent);
+    border-radius: 14px;
+    background: repeating-linear-gradient(
+      45deg, transparent, transparent 12px,
+      rgba(255,82,48,0.05) 12px, rgba(255,82,48,0.05) 24px
+    );
+    min-height: 34vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 1.5rem;
+    gap: 0.5rem;
+  }
+  .todo b {
+    color: var(--accent);
+    font-size: 0.75rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+  .todo span { color: var(--label-bright); font-size: 0.95rem; max-width: 34ch; }
+  .todo code { color: var(--text-muted); font-size: 0.78rem; }
+  .todo.tall { min-height: 66vh; }
+
+  .pipeline { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.9rem; }
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px;
+    padding: 1rem 1.1rem;
+  }
+  .step b { display: block; font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); margin-bottom: 0.35rem; }
+  .step p { font-size: clamp(0.85rem, 1.15vw, 1.05rem); color: var(--label-bright); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .chip {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 999px;
+    padding: 0.35rem 0.85rem;
+    font-size: 0.85rem;
+    color: var(--label-bright);
+  }
+  .chip.hot { border-color: var(--accent-dim); color: var(--accent); }
+
+  .rule { height: 1px; background: var(--line); }
+
+  .honest {
+    border: 1px solid var(--accent-dim);
+    background: rgba(255,82,48,0.06);
+    border-radius: 12px;
+    padding: 1.1rem 1.3rem;
+  }
+  .honest b { color: var(--accent); }
+
+  .bignum { font-size: clamp(2rem, 4vw, 3.4rem); font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+  .bignum + .small { margin-top: 0.4rem; }
+
+  .fill { position: relative; padding: 0; align-items: stretch; }
+  .fill img { width: 100%; height: 100vh; object-fit: cover; display: block; }
+  .fill .overlay {
+    position: absolute;
+    inset: auto 0 0 0;
+    padding: 6vh 6vw;
+    background: linear-gradient(to top, rgba(10,11,15,0.96) 15%, rgba(10,11,15,0.0));
+  }
+
+  .hint {
+    position: fixed;
+    bottom: 1rem;
+    right: 1.2rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    background: rgba(10,11,15,0.7);
+    padding: 0.3rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    pointer-events: none;
+  }
+
+  @media print, (max-width: 820px) {
+    .split, .cards, .pipeline { grid-template-columns: 1fr; }
+    .slide { min-height: auto; padding: 8vh 7vw; }
+    body { scroll-snap-type: none; height: auto; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 1 — HOOK -->
+<section class="slide" style="justify-content:center">
+  <div class="num">01</div>
+  <div class="kicker">SummerHacks 2026 · Main · Best Use of Reve · TECHNATION</div>
+  <h1>Git Out<br>of Town</h1>
+  <p class="lede">Spray-paint the real world in AR. It pins to that spot, and anyone with a link can walk up to it.</p>
+  <div class="chips">
+    <span class="chip hot">gitoutoftown.129-153-49-190.sslip.io</span>
+    <span class="chip">iOS · ARKit · LiDAR</span>
+    <span class="chip">Live public map</span>
+  </div>
+</section>
+
+<!-- 2 — PROBLEM -->
+<section class="slide">
+  <div class="num">02</div>
+  <div class="split narrow-right">
+    <div class="stack">
+      <div class="kicker">The problem</div>
+      <h2>Graffiti works because of <em>where</em> it is.</h2>
+      <p>You have to go to the wall. That's the whole point — and it's exactly what the internet strips out. Post it online and it becomes an image of a place instead of the place.</p>
+      <p>Meanwhile the real thing gets painted over, and the people who paint it get fined.</p>
+      <p class="muted">We wanted a version where your tag stays put, costs nobody a wall, and someone on the other side of the world can still stand in front of it.</p>
+    </div>
+    <div>
+      <img class="shot" src="../assets/deck/art-neon.png" alt="House-style piece generated for the app">
+      <p class="caption">One palette file drives the artwork, the map, the markers and the charts.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 3 — THE MOMENT / LIVE DEMO -->
+<section class="slide">
+  <div class="num">03</div>
+  <div class="split narrow-left">
+    <div class="stack">
+      <div class="kicker">Demo — do this live</div>
+      <h2>Point. Paint. Tap.</h2>
+      <p>Under 60 seconds, no login, no explanation. Point the phone at a wall, drop a piece, and it lands on the public map before you put the phone down.</p>
+      <ul>
+        <li>ARKit raycast finds the real surface</li>
+        <li><code>ARMeshClassification</code> tells us wall / floor / ceiling from LiDAR</li>
+        <li><code>pg_notify</code> → SSE → every open map updates with no refresh</li>
+      </ul>
+      <div class="honest small"><b>Say it out loud:</b> the piece you are watching appear was painted thirty seconds ago, on this phone, in this room.</div>
+    </div>
+    <!-- SCREENSHOT SLOT 1 of 5 — mid-paint, sticker picker visible -->
+    <div class="todo tall">
+      <b>Screenshot slot 1 of 5</b>
+      <span>Mid-paint in AR with the sticker picker open.</span>
+      <code>docs/assets/deck/venue-paint.jpg</code>
+    </div>
+  </div>
+</section>
+
+<!-- 4 — THE FLOOR SHOT -->
+<section class="slide fill">
+  <div class="num" style="z-index:2">04</div>
+  <img src="../assets/deck/ar-floor.jpg" alt="Graffiti lying flat on the floor, correctly foreshortened, in AR">
+  <div class="overlay">
+    <div class="kicker">The thing a web app cannot do</div>
+    <h2 style="max-width:18ch">It's lying on the floor.<br>Not floating in front of it.</h2>
+    <p class="lede" style="max-width:46ch">Correct foreshortening, wrapped to the dense depth map, occluded by real geometry. This is a photograph of our app running, not a mockup.</p>
+  </div>
+</section>
+
+<!-- 5 — HOW PLACEMENT ACTUALLY WORKS -->
+<section class="slide">
+  <div class="num">05</div>
+  <div class="kicker">Technical core — the part that's hard</div>
+  <h2>Placing something is easy. <em>Agreeing on where it is</em> is the hard part.</h2>
+  <div class="pipeline">
+    <div class="step">
+      <b>1 · Marker frame</b>
+      <p>A printed marker gives every device the same origin. We send a <code>markerTransform</code> on the wire, so "here" means the same thing on your phone and mine — indoors, where GPS is useless.</p>
+    </div>
+    <div class="step">
+      <b>2 · World-map chaining</b>
+      <p>Each visitor's <code>ARWorldMap</code> merges into the venue's map, versioned with lineage. The spot gets <em>easier</em> to find the more people scan it. A ghosted guide shows you where to stand to relocalize.</p>
+    </div>
+    <div class="step">
+      <b>3 · Depth &amp; occlusion</b>
+      <p>The decal wraps to the LiDAR depth map instead of sitting on a flat quad, and real geometry occludes it. Walk behind a pillar and the paint goes behind the pillar.</p>
+    </div>
+  </div>
+  <div class="split" style="margin-top:0.6rem; align-items:start">
+    <div>
+      <img class="phone" style="max-height:38vh" src="../assets/deck/ar-wall.jpg" alt="A piece anchored to a wall in AR">
+      <p class="caption">Wall placement, relocalized from the shared frame.</p>
+    </div>
+    <!-- SCREENSHOT SLOT 2 of 5 — post card showing the "Spot scanned" chip -->
+    <div class="todo">
+      <b>Screenshot slot 2 of 5</b>
+      <span>The post card with the <em>"Spot scanned"</em> chip — proof the shared frame locked on.</span>
+      <code>docs/assets/deck/venue-spot-scanned.jpg</code>
+    </div>
+  </div>
+</section>
+
+<!-- 6 — REALISM -->
+<section class="slide">
+  <div class="num">06</div>
+  <div class="split">
+    <div class="stack">
+      <div class="kicker">Craft — 20% of the score, and the whole Reve track</div>
+      <h2>We made it behave like <em>aerosol</em>, not like a sticker.</h2>
+      <ul>
+        <li><b>Feathered noise edges</b> — overspray, not a crisp alpha cut</li>
+        <li><b>Colour pulled toward the wall</b> so pigment sits <em>in</em> the surface</li>
+        <li><b>Grazing-incidence thinning</b> — paint thins as the wall turns away from you</li>
+        <li><b>Multi-coat variation</b> so no two passes look identical</li>
+        <li><b>Sobel wall-grain normal map</b> — brick and concrete texture read through the paint</li>
+      </ul>
+      <p class="muted small">Applied to <em>remote</em> pieces too, so someone else's tag looks painted on your wall, not pasted over your camera. Plus an <code>ARCoachingOverlay</code> so a stranger never sees a frozen screen.</p>
+    </div>
+    <!-- SCREENSHOT SLOT 3 of 5 — AR view mode, 2+ pieces in frame -->
+    <div class="todo tall">
+      <b>Screenshot slot 3 of 5</b>
+      <span>AR view mode with <em>two or more</em> pieces in frame — the decluttered viewing mode.</span>
+      <code>docs/assets/deck/venue-ar-view.jpg</code>
+    </div>
+  </div>
+</section>
+
+<!-- 7 — THE PUBLIC ARTIFACT -->
+<section class="slide">
+  <div class="num">07</div>
+  <div class="stack">
+    <div class="kicker">A stranger sees it — no install, just a link</div>
+    <h2>The map is the public half of the project.</h2>
+  </div>
+  <div class="split">
+    <div>
+      <img class="shot" src="../assets/deck/web-map.png" alt="The live map with clustered pieces">
+      <p class="caption">Hand-authored basemap over free OpenFreeMap tiles — no stock style, no map API key. Three zoom tiers: density glow → pins tinted with each piece's own dominant colour → the framed artwork itself.</p>
+    </div>
+    <div>
+      <img class="shot" src="../assets/deck/web-lightbox.png" alt="A piece opened in the lightbox with its scene photo">
+      <p class="caption">Every piece carries the photo of the surface it was painted on, plus an async Replicate upscale and weathering pass.</p>
+    </div>
+  </div>
+  <!-- SCREENSHOT SLOT 4 of 5 — map with the area gallery expanded -->
+  <div class="todo">
+    <b>Screenshot slot 4 of 5</b>
+    <span>The map with the <em>area gallery expanded</em>, showing several pieces from one spot.</span>
+    <code>docs/assets/deck/venue-gallery.png</code>
+  </div>
+</section>
+
+<!-- 8 — DATA / TECHNATION -->
+<section class="slide">
+  <div class="num">08</div>
+  <div class="split narrow-right">
+    <div class="stack">
+      <div class="kicker">TECHNATION — Data Intelligence</div>
+      <h2><code>/data</code> is explorable, and it moves while you watch.</h2>
+      <p>Surface mix read straight off LiDAR, where contributors paint from, which client they used, and the count ticking up over SSE — not a screenshot, a page the judges can drive themselves.</p>
+      <div class="honest">
+        <b>Being straight with you:</b> most rows in the database right now are seeded <code>client: "web"</code> demo data, and the dashboard labels them as such. The real number is the AR pieces — which is why we're painting live in this room.
+        <br><br>
+        <span class="muted small">PLACEHOLDER — refresh before pitching: <b id="counts">__ real AR pieces / __ total rows</b>. Check <code>/data</code> at 2:45 PM.</span>
+      </div>
+    </div>
+    <div>
+      <img class="shot" src="../assets/deck/web-data.png" alt="The /data dashboard">
+      <p class="caption">Live dashboard. The count moves during the pitch.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 9 — FULL-SCREEN PREVIEW / GETS BETTER WITH PEOPLE -->
+<section class="slide">
+  <div class="num">09</div>
+  <div class="split narrow-left">
+    <div class="stack">
+      <div class="kicker">Lasting value</div>
+      <h2>A community garden, not a personal diary.</h2>
+      <p>Every visitor who scans the venue makes the world map thicker, so the next person relocalizes faster. The wall genuinely gets better the more people show up — that's a property of the system, not a promise.</p>
+      <ul class="small">
+        <li>Shared coordinate frame means a spot is a <em>place</em>, not one person's session</li>
+        <li>Area galleries — a surface fills up and you scroll it</li>
+        <li>The map is public and permanent; the paint costs nobody a wall</li>
+      </ul>
+    </div>
+    <!-- SCREENSHOT SLOT 5 of 5 — full-screen piece preview -->
+    <div class="todo tall">
+      <b>Screenshot slot 5 of 5</b>
+      <span>A <em>full-screen piece preview</em> on device.</span>
+      <code>docs/assets/deck/venue-preview.jpg</code>
+    </div>
+  </div>
+</section>
+
+<!-- 10 — TRACKS -->
+<section class="slide">
+  <div class="num">10</div>
+  <div class="kicker">Three tracks, one build</div>
+  <h2>What we're claiming, and why.</h2>
+  <div class="cards">
+    <div class="card">
+      <span class="tag">Main</span>
+      <h3>One moment of input</h3>
+      <p class="small">Under 60 seconds, zero explanation. The transformation is real and named: a finger drawing becomes a depth-wrapped, aerosol-shaded decal locked to a shared coordinate frame. Public, live, and better with more people.</p>
+    </div>
+    <div class="card">
+      <span class="tag">Best Use of Reve</span>
+      <h3>A visual identity, not a filter</h3>
+      <p class="small">Reve is the design backbone — the house style for the artwork. Every colour in both apps comes from one file, hand-tuned, and hand-edited output only. Nothing here is a default AI aesthetic.</p>
+    </div>
+    <div class="card">
+      <span class="tag">TECHNATION</span>
+      <h3>Real, current, explorable</h3>
+      <p class="small">Postgres <code>LISTEN/NOTIFY</code> → SSE. Surface classification, geography and client breakdown, updating live. Seeded rows are labelled as seeded.</p>
+    </div>
+  </div>
+  <div class="rule"></div>
+  <p class="small muted">26 hours, two people, two apps, one API contract. Self-hosted: Docker, TLS, deployed from <code>main</code> on push.</p>
+</section>
+
+<!-- 11 — WHAT'S NEXT -->
+<section class="slide">
+  <div class="num">11</div>
+  <div class="split">
+    <div class="stack">
+      <div class="kicker">What's next</div>
+      <h2>Walls, crews, and time.</h2>
+      <ul>
+        <li><b>Persistent shared anchors</b> beyond a session — Cloud Anchors or our own world-map store, so a spot survives without the printed marker</li>
+        <li><b>Walls and crews</b> — a surface that fills up, and the people who claim it</li>
+        <li><b>Time-lapse</b> — scrub a wall's history and watch it get painted over</li>
+        <li><b>Android via WebXR</b>, so the barrier is a link rather than an install</li>
+        <li><b>Community moderation</b> — this is public art pinned to real addresses, and the neighbourhood should get a say</li>
+      </ul>
+    </div>
+    <div class="stack">
+      <img class="shot" src="../assets/deck/web-data-2.png" alt="Second view of the data dashboard">
+      <p class="caption">The dashboard the community would actually run on.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 12 — CLOSE -->
+<section class="slide" style="align-items:flex-start">
+  <div class="num">12</div>
+  <div class="kicker">Thank you</div>
+  <h1 style="max-width:16ch">Go paint<br>something.</h1>
+  <p class="lede">Open the link on your phone right now. There's a piece in this room waiting for you.</p>
+  <div class="chips">
+    <span class="chip hot">gitoutoftown.129-153-49-190.sslip.io</span>
+    <span class="chip">github.com — Git Out of Town</span>
+  </div>
+</section>
+
+<div class="hint">← → to move</div>
+
+<script>
+  const slides = [...document.querySelectorAll('.slide')];
+  addEventListener('keydown', e => {
+    const i = slides.findIndex(s => s.getBoundingClientRect().top > -window.innerHeight / 2);
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
+      e.preventDefault();
+      slides[Math.min(i + 1, slides.length - 1)]?.scrollIntoView({ behavior: 'smooth' });
+    }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
+      e.preventDefault();
+      slides[Math.max(i - 1, 0)]?.scrollIntoView({ behavior: 'smooth' });
+    }
+  });
+</script>
+</body>
+</html>
