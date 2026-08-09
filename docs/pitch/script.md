@@ -15,7 +15,10 @@ from slide 03, never from slides 01–02.
 - [ ] Second screen or laptop on `/data`, already loaded, count visible.
 - [ ] Deck open in a third window, slide 01.
 - [ ] Refresh the numbers on **slide 05** — it ships with `__ real AR pieces / __ total rows`.
-- [ ] Fill the five screenshot slots (dashed boxes in the deck) with the venue captures.
+      There are at least four real AR pieces at the venue; check `/data` for the live figure
+      rather than quoting that from memory.
+- [ ] Fill the three remaining screenshot slots (dashed boxes): the "Spot scanned" post card
+      (slide 03), AR view mode with 2+ pieces (slide 04), a full-screen piece preview (slide 07).
 
 ---
 
@@ -42,7 +45,7 @@ Point at `/data`. The count ticks up over SSE, no refresh. *(~105 words + painti
 > depth map, occluded by real geometry. A web app cannot produce this frame. That's the line between
 > a filter and actual placement." *(~44 words)*
 
-**1:25 – 2:20 · How placement works (slide 03)** — *the technical core, take your time*
+**1:25 – 2:20 · How placement works (slide 03)** — *the technical core; walk the diagram*
 
 > "Placing something is easy. Agreeing on *where* it is is the hard part, and it's where the
 > engineering went.
@@ -55,7 +58,10 @@ Point at `/data`. The count ticks up over SSE, no refresh. *(~105 words + painti
 > roadmap promise — a community garden, not a personal diary.
 >
 > Three — the decal wraps to the depth map instead of a flat quad, and real geometry occludes it.
-> Walk behind a pillar, the paint goes behind the pillar." *(~125 words)*
+> Walk behind a pillar, the paint goes behind the pillar.
+>
+> And it never just fails — it falls down the ladder at the bottom: marker, geo anchor,
+> surface-aligned, GPS. There is always something." *(~145 words)*
 
 **2:20 – 2:50 · Realism and Reve (slide 04)**
 
@@ -66,11 +72,11 @@ Point at `/data`. The count ticks up over SSE, no refresh. *(~105 words + painti
 
 **2:50 – 3:20 · The public half (slide 05)**
 
-> "The map is the public artifact. Hand-authored basemap, no stock style, no map API key, and every
-> piece carries a photo of the surface it was painted on. `/data` is the TECHNATION side — surface
-> mix off LiDAR, geography, client breakdown, live over Postgres `LISTEN/NOTIFY`. And I'll be
-> straight: most rows are seeded demo data, labelled as seeded. The real number is the AR pieces,
-> which is why I painted one in front of you." *(~72 words)*
+> "The map is the public artifact — hand-authored basemap, no stock style, no map API key. Open a
+> spot and you get every piece there with a distance *and a bearing*: five metres southwest, seven
+> west. On a window, on a wall, on a floor — that's LiDAR classification, not a label anyone typed.
+> `/data` is the TECHNATION side, live over Postgres `LISTEN/NOTIFY`. And I'll be straight: most
+> rows are seeded demo data, labelled as seeded. The real number is the AR pieces." *(~80 words)*
 
 **3:20 – 3:40 · Three tracks (slide 06)**
 

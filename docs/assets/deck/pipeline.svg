@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" width="1200" height="620" role="img" aria-label="How a piece stays put: a printed marker gives two phones one shared frame, the venue map thickens with every visitor, and LiDAR depth wraps the paint onto real geometry">
+  <style>
+    .bg    { fill: #fff3e0; }
+    .card  { fill: #FFFFFF; stroke: #e3cdb2; stroke-width: 2; }
+    .h1    { fill: #1d1218; font: 700 30px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .h2    { fill: #5c4a50; font: 400 16px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .step  { fill: #1d1218; font: 700 19px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .body  { fill: #5c4a50; font: 400 14px ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .num   { fill: #FFFFFF; font: 700 15px ui-monospace, SFMono-Regular, Menlo, monospace; text-anchor: middle; }
+    .tag   { font: 700 11px ui-sans-serif, -apple-system, sans-serif; letter-spacing: 0.7px; }
+    .mono  { font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .rung  { fill: #1d1218; font: 600 13px ui-sans-serif, -apple-system, sans-serif; text-anchor: middle; }
+    .rungs { fill: #5c4a50; font: 400 11px ui-sans-serif, -apple-system, sans-serif; text-anchor: middle; }
+  </style>
+
+  <rect class="bg" width="1200" height="620" rx="20"/>
+
+  <text class="h1" x="56" y="66">How a piece stays put</text>
+  <text class="h2" x="56" y="94">Three mechanisms, each one covering for the last. Nothing here depends on the compass.</text>
+
+  <!-- 1. shared frame -->
+  <rect class="card" x="56" y="126" width="340" height="250" rx="16"/>
+  <circle cx="88" cy="158" r="15" fill="#d81e5b"/><text class="num" x="88" y="163">1</text>
+  <text class="tag" x="112" y="163" fill="#d81e5b">SHARED FRAME</text>
+  <text class="step" x="80" y="200">A printed marker</text>
+  <g transform="translate(80,216)">
+    <rect x="86" y="0" width="66" height="66" rx="6" fill="#1d1218"/>
+    <rect x="94" y="8" width="22" height="22" fill="#FFD23F"/><rect x="122" y="8" width="22" height="22" fill="#e8590c"/>
+    <rect x="94" y="36" width="22" height="22" fill="#7ED957"/><rect x="122" y="36" width="22" height="22" fill="#fff3e0"/>
+    <path d="M20,58 L74,36" stroke="#d81e5b" stroke-width="2.5" stroke-dasharray="5 4"/>
+    <path d="M218,58 L164,36" stroke="#d81e5b" stroke-width="2.5" stroke-dasharray="5 4"/>
+    <rect x="0" y="42" width="26" height="44" rx="5" fill="#1d1218"/>
+    <rect x="212" y="42" width="26" height="44" rx="5" fill="#1d1218"/>
+  </g>
+  <text class="body" x="80" y="330">Both phones measure the same poster,</text>
+  <text class="body" x="80" y="349">so both agree where "here" is —</text>
+  <text class="mono" x="80" y="368" fill="#d81e5b">markerTransform</text>
+
+  <path d="M410,250 L436,250" stroke="#E0CDB4" stroke-width="3" stroke-linecap="round"/>
+  <path d="M430,244 L438,250 L430,256 Z" fill="#E0CDB4"/>
+
+  <!-- 2. chaining -->
+  <rect class="card" x="452" y="126" width="340" height="250" rx="16"/>
+  <circle cx="484" cy="158" r="15" fill="#e8590c"/><text class="num" x="484" y="163">2</text>
+  <text class="tag" x="508" y="163" fill="#e8590c">IT COMPOUNDS</text>
+  <text class="step" x="476" y="200">The map thickens</text>
+  <g transform="translate(486,222)">
+    <rect x="0" y="42" width="76" height="30" rx="6" fill="#FFE7CC" stroke="#e8590c" stroke-width="1.5"/>
+    <text class="mono" x="12" y="62" fill="#B4611A">v1</text>
+    <rect x="98" y="30" width="92" height="42" rx="6" fill="#FFD9AE" stroke="#e8590c" stroke-width="1.5"/>
+    <text class="mono" x="110" y="56" fill="#B4611A">v2</text>
+    <rect x="212" y="14" width="110" height="58" rx="6" fill="#FFC98C" stroke="#e8590c" stroke-width="2"/>
+    <text class="mono" x="224" y="48" fill="#8A4610">v3</text>
+    <path d="M80,57 L94,52" stroke="#e8590c" stroke-width="2"/>
+    <path d="M194,50 L208,44" stroke="#e8590c" stroke-width="2"/>
+  </g>
+  <text class="body" x="476" y="330">Relocalize, keep walking, re-upload.</text>
+  <text class="body" x="476" y="349">Every visitor extends the venue map,</text>
+  <text class="body" x="476" y="368">so it gets easier the more people come.</text>
+
+  <path d="M806,250 L832,250" stroke="#E0CDB4" stroke-width="3" stroke-linecap="round"/>
+  <path d="M826,244 L834,250 L826,256 Z" fill="#E0CDB4"/>
+
+  <!-- 3. depth wrap -->
+  <rect class="card" x="848" y="126" width="296" height="250" rx="16"/>
+  <circle cx="880" cy="158" r="15" fill="#7ED957"/><text class="num" x="880" y="163">3</text>
+  <text class="tag" x="904" y="163" fill="#3f8f2f">IT LOOKS REAL</text>
+  <text class="step" x="872" y="200">Wrapped to depth</text>
+  <g transform="translate(872,214)">
+    <path d="M4,22 L212,2 L212,74 L4,100 Z" fill="#F3E7D4" stroke="#D8C6AC" stroke-width="1.5"/>
+    <g stroke="#DCCBB2" stroke-width="1">
+      <path d="M56,17 L56,94"/><path d="M108,12 L108,88"/><path d="M160,7 L160,81"/>
+      <path d="M4,48 L212,29"/><path d="M4,74 L212,52"/>
+    </g>
+    <path d="M40,38 L172,26 L172,60 L40,74 Z" fill="#d81e5b" opacity="0.92"/>
+    <path d="M40,38 L172,26" fill="none" stroke="#7ED957" stroke-width="2.5"/>
+    <path d="M0,66 L34,60 L34,100 L0,104 Z" fill="#1d1218"/>
+  </g>
+  <text class="body" x="872" y="330">The LiDAR mesh bends the paint onto</text>
+  <text class="body" x="872" y="349">the surface and hides it behind real</text>
+  <text class="body" x="872" y="368">objects. It sits in the room, not on glass.</text>
+
+  <!-- precision ladder -->
+  <rect class="card" x="56" y="410" width="1088" height="152" rx="16"/>
+  <text class="tag" x="88" y="446" fill="#5c4a50">AND IT NEVER JUST FAILS — IT FALLS DOWN THE LADDER</text>
+
+  <line x1="140" y1="500" x2="1060" y2="500" stroke="#EFE0CC" stroke-width="4" stroke-linecap="round"/>
+  <g>
+    <circle cx="196" cy="500" r="13" fill="#d81e5b"/>
+    <text class="rung" x="196" y="478">Marker</text>
+    <text class="rungs" x="196" y="530">centimetres</text>
+
+    <circle cx="484" cy="500" r="12" fill="#e8590c"/>
+    <text class="rung" x="484" y="478">Geo anchor</text>
+    <text class="rungs" x="484" y="530">where coverage exists</text>
+
+    <circle cx="772" cy="500" r="12" fill="#FFD23F"/>
+    <text class="rung" x="772" y="478">Surface-aligned</text>
+    <text class="rungs" x="772" y="530">right wall, right pose</text>
+
+    <circle cx="1004" cy="500" r="12" fill="#B9A9C4"/>
+    <text class="rung" x="1004" y="478">GPS</text>
+    <text class="rungs" x="1004" y="530">always something</text>
+  </g>
+</svg>

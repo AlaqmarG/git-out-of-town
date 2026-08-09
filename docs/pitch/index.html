@@ -125,33 +125,11 @@
   .shot { width: 100%; border: 2px solid var(--ink); border-radius: 4px; display: block; }
   /* Both web captures are natively 16:9, so they sit in the grid uncropped. */
   .shot.wide { aspect-ratio: 16 / 9; object-fit: cover; max-height: 46vh; }
-  /* ar-wall.jpg is a tall phone frame; a square window on the middle of it keeps the
-     piece large and crops the ceiling and the unmade bed out. */
-  .shot.wall { max-width: 320px; aspect-ratio: 1 / 1; object-fit: cover; object-position: 50% 47%; }
+  .shot.wall { max-width: 168px; aspect-ratio: 1 / 1; object-fit: cover; object-position: 50% 47%; }
   .caption { font-size: 0.82rem; color: var(--ink-soft); margin-top: 0.5rem; }
 
-  /* -------- SCREENSHOT PLACEHOLDER --------
-     Drop the venue capture in, then delete the wrapping .todo div and keep the <img>. */
-  .todo {
-    border: 2px dashed var(--tangerine);
-    border-radius: 4px;
-    min-height: 30vh;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    text-align: center; padding: 1.3rem; gap: 0.45rem;
-  }
-  .todo b { color: var(--tangerine); font-size: 0.74rem; letter-spacing: 0.2em; text-transform: uppercase; }
-  .todo span { color: var(--ink); font-size: 0.94rem; max-width: 34ch; }
-  .todo code { color: var(--ink-soft); font-size: 0.78rem; }
-  .todo.tall { min-height: 56vh; }
-  .hero .todo { border-color: #ffd9bd; }
-  .hero .todo b { color: #fff; }
-  .hero .todo span { color: #ffe9d6; }
-  .hero .todo code { color: #ffd9bd; }
-
-  .pipeline { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
-  .step { border-left: 4px solid var(--tangerine); padding: 0.2rem 0 0.2rem 1rem; }
-  .step b { display: block; font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--melon); margin-bottom: 0.3rem; }
-  .step p { font-size: clamp(0.85rem, 1.08vw, 1rem); }
+  /* The diagram is drawn on the deck's own paper colour, so it needs no frame. */
+  .diagram { display: block; width: 100%; max-width: 1100px; max-height: 40vh; margin: 0 auto; }
 
   .chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   .chip {
@@ -164,32 +142,30 @@
 
   .rule { height: 2px; background: var(--ink); }
 
-  .honest { border: 2px solid var(--melon); border-radius: 4px; padding: 0.9rem 1.1rem; }
-  .honest b { color: var(--melon); }
-
-  /* Slide 02 — the floor proof. The source is a tall portrait phone frame; object-fit:cover
-     crops the floor and the foreshortening straight out of shot, and those are the evidence.
-     So: contain, at full slide height, with the headline in its own column. */
-  .floor .proof {
+  /* Phone frames are tall portraits; object-fit:cover on one crops away exactly the context
+     that makes it evidence (the floor, the foreshortening). So they are contained at a set
+     height, and the border hugs the frame. */
+  .proof {
     height: 82vh; width: auto; max-width: 100%; object-fit: contain; margin: 0 auto;
     border: 2px solid var(--ink); border-radius: 4px; display: block;
   }
+  .hero .proof { border-color: var(--paper); }
 
   /* -------- MOTION --------
      Each slide staggers its content in when it becomes the current slide. Gated on .anim,
      which the script sets: if the script never runs, the deck is simply all visible. */
-  .anim .slide > *:not(.num), .anim .stack > *, .anim .pipeline > *,
+  .anim .slide > *:not(.num), .anim .stack > *,
   .anim .cards > *, .anim .split > * {
     opacity: 0;
     transform: translateY(18px);
     transition: opacity 0.5s ease, transform 0.55s cubic-bezier(0.2, 0.75, 0.3, 1);
   }
-  .slide.in > *:not(.num), .slide.in .stack > *, .slide.in .pipeline > *,
+  .slide.in > *:not(.num), .slide.in .stack > *, 
   .slide.in .cards > *, .slide.in .split > * { opacity: 1; transform: none; }
 
-  .slide.in .stack > *:nth-child(2), .slide.in .pipeline > *:nth-child(2),
+  .slide.in .stack > *:nth-child(2),
   .slide.in .cards > *:nth-child(2), .slide.in > *:nth-child(3) { transition-delay: 0.09s; }
-  .slide.in .stack > *:nth-child(3), .slide.in .pipeline > *:nth-child(3),
+  .slide.in .stack > *:nth-child(3),
   .slide.in .cards > *:nth-child(3), .slide.in > *:nth-child(4) { transition-delay: 0.18s; }
   .slide.in .stack > *:nth-child(4), .slide.in > *:nth-child(5) { transition-delay: 0.27s; }
   .slide.in .stack > *:nth-child(5) { transition-delay: 0.36s; }
@@ -213,7 +189,7 @@
   @keyframes breathe { 50% { transform: scale(1.035); } }
 
   @media (prefers-reduced-motion: reduce) {
-    .anim .slide > *:not(.num), .anim .stack > *, .anim .pipeline > *,
+    .anim .slide > *:not(.num), .anim .stack > *,
     .anim .cards > *, .anim .split > * {
       opacity: 1; transform: none; transition: none;
     }
@@ -232,7 +208,7 @@
   }
 
   @media print, (max-width: 900px) {
-    .split, .cards, .pipeline { grid-template-columns: 1fr; }
+    .split, .cards { grid-template-columns: 1fr; }
     .slide { min-height: auto; padding: 8vh 7vw; }
     .floor .proof { max-height: 70vh; }
     body { scroll-snap-type: none; height: auto; }
@@ -256,11 +232,9 @@
         <span class="chip">iOS · ARKit · LiDAR</span>
       </div>
     </div>
-    <!-- SCREENSHOT SLOT 1 of 5 — mid-paint, sticker picker visible -->
-    <div class="todo tall">
-      <b>Screenshot slot 1 of 5</b>
-      <span>Mid-paint in AR with the sticker picker open.</span>
-      <code>docs/assets/deck/venue-paint.jpg</code>
+    <div>
+      <img class="proof" style="height:66vh" src="../assets/deck/venue-paint.jpg" alt="Mid-paint in AR: a green GOT piece and a wifi sticker placed on a café wall, sticker picker open">
+      <p class="caption" style="color:#ffe0c9;text-align:center">Live in the venue. Pick a sticker, place it, spray it on the wall.</p>
     </div>
   </div>
 </section>
@@ -284,31 +258,10 @@
   <div class="num">03 / 07</div>
   <div class="kicker">Technical core — the part that's hard</div>
   <h2>Placing something is easy. <em>Agreeing on where it is</em> is the hard part.</h2>
-  <div class="pipeline">
-    <div class="step">
-      <b>1 · Marker frame</b>
-      <p>A printed marker gives every device the same origin. We send a <code>markerTransform</code> on the wire, so "here" means the same thing on your phone and mine — indoors, where GPS is useless.</p>
-    </div>
-    <div class="step">
-      <b>2 · World-map chaining</b>
-      <p>Each visitor's <code>ARWorldMap</code> merges into the venue's map, versioned with lineage. The spot gets <em>easier</em> to find the more people scan it — a community garden, not a personal diary.</p>
-    </div>
-    <div class="step">
-      <b>3 · Depth &amp; occlusion</b>
-      <p>The decal wraps to the LiDAR depth map instead of sitting on a flat quad, and real geometry occludes it. Walk behind a pillar and the paint goes behind the pillar.</p>
-    </div>
-  </div>
-  <div class="split" style="align-items:start">
-    <div>
-      <img class="shot wall" src="../assets/deck/ar-wall.jpg" alt="A piece anchored to a wall in AR">
-      <p class="caption">Wall placement, relocalized from the shared frame — a spot is a <em>place</em>, not one person's session.</p>
-    </div>
-    <!-- SCREENSHOT SLOT 2 of 5 — post card showing the "Spot scanned" chip -->
-    <div class="todo" style="min-height:320px">
-      <b>Screenshot slot 2 of 5</b>
-      <span>The post card with the <em>"Spot scanned"</em> chip — proof the shared frame locked on.</span>
-      <code>docs/assets/deck/venue-spot-scanned.jpg</code>
-    </div>
+  <img class="diagram" src="../assets/deck/pipeline.svg" alt="How a piece stays put: a printed marker gives two phones one shared frame, the venue map thickens with every visitor, LiDAR depth wraps the paint onto real geometry, and placement degrades down a ladder from marker to geo anchor to surface-aligned to GPS">
+  <div class="split" style="align-items:center">
+    <img class="shot wall" src="../assets/deck/ar-wall.jpg" alt="A piece anchored to a wall in AR">
+    <p class="small">Relocalized from the shared frame, so a spot is a <em>place</em> rather than one person's session — the second device sees the same paint in the same physical position.</p>
   </div>
 </section>
 
@@ -327,11 +280,9 @@
       </ul>
       <p class="small">Reve is the design backbone, not a filter: one hand-tuned house style drives the artwork, the map pins and the charts. Applied to <em>remote</em> pieces too, so a stranger's tag looks painted on your wall rather than pasted over your camera.</p>
     </div>
-    <!-- SCREENSHOT SLOT 3 of 5 — AR view mode, 2+ pieces in frame -->
-    <div class="todo tall">
-      <b>Screenshot slot 3 of 5</b>
-      <span>AR view mode with <em>two or more</em> pieces in frame — the decluttered viewing mode.</span>
-      <code>docs/assets/deck/venue-ar-view.jpg</code>
+    <div>
+      <img class="shot" src="../assets/deck/art-neon.png" alt="House-style artwork generated for the app" style="max-height:56vh;object-fit:contain;border:none">
+      <p class="caption">One hand-tuned house style drives the artwork, the map pins and the charts.</p>
     </div>
   </div>
 </section>
@@ -343,22 +294,14 @@
   <h2>The map is the public half. <code>/data</code> is the half that moves while you watch.</h2>
   <div class="split">
     <div class="stack">
-      <img class="shot wide" src="../assets/deck/web-map.png" alt="The live map with clustered pieces">
-      <p class="caption" style="margin:0">Hand-authored basemap over free OpenFreeMap tiles — no stock style, no map API key. Density glow → pins tinted with each piece's own colour → the artwork itself.</p>
-      <!-- SCREENSHOT SLOT 4 of 5 — map with the area gallery expanded -->
-      <div class="todo" style="min-height:64px; padding:0.8rem">
-        <b>Screenshot slot 4 of 5</b>
-        <span>The map with the <em>area gallery expanded</em>.</span>
-        <code>docs/assets/deck/venue-gallery.png</code>
-      </div>
+      <img class="shot wide" src="../assets/deck/web-map.png" alt="The live map with clustered pieces" style="max-height:25vh">
+      <p class="caption" style="margin:0">Hand-authored basemap over free OpenFreeMap tiles — no stock style, no map API key.</p>
+      <img class="shot wide" src="../assets/deck/web-data.png" alt="The /data dashboard" style="max-height:25vh">
+      <p class="caption" style="margin:0"><code>/data</code>: surface mix off LiDAR, geography, client breakdown, live over Postgres <code>LISTEN/NOTIFY</code>.</p>
     </div>
     <div class="stack">
-      <img class="shot wide" src="../assets/deck/web-data.png" alt="The /data dashboard">
-      <div class="honest small">
-        <b>Being straight with you:</b> most rows in the database right now are seeded <code>client: "web"</code> demo data, and the dashboard labels them as such. The real number is the AR pieces — which is why we're painting live in this room.
-        <br><br>
-        <span class="muted">PLACEHOLDER — refresh before pitching: <b id="counts">__ real AR pieces / __ total rows</b>. Check <code>/data</code> at 2:45 PM.</span>
-      </div>
+      <img class="shot" src="../assets/deck/venue-gallery.jpg" alt="The area gallery: four real pieces at this venue, each with distance, bearing, age and surface type" style="max-height:38vh;object-fit:contain;border:none">
+      <p class="caption" style="margin:0">Four real pieces at one spot, each with a distance <em>and a bearing</em> — 5 m southwest, 7 m west, 13 m east. "On a window / on a wall / on a floor" is LiDAR classification, not a label anyone typed. Every figure on <code>/data</code> is a live query: drive it yourself.</p>
     </div>
   </div>
 </section>
@@ -403,11 +346,9 @@
         <span class="chip">github.com — Git Out of Town</span>
       </div>
     </div>
-    <!-- SCREENSHOT SLOT 5 of 5 — full-screen piece preview -->
-    <div class="todo tall">
-      <b>Screenshot slot 5 of 5</b>
-      <span>A <em>full-screen piece preview</em> on device.</span>
-      <code>docs/assets/deck/venue-preview.jpg</code>
+    <div>
+      <img class="shot" src="../assets/deck/web-lightbox.png" alt="A piece opened in the lightbox with the photo of the surface it was painted on" style="max-height:56vh;object-fit:cover">
+      <p class="caption" style="color:#ffe0c9">Every piece keeps the photo of the surface it was painted on.</p>
     </div>
   </div>
 </section>
