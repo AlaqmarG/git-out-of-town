@@ -1,4 +1,4 @@
-import { type Piece, uploadUrl } from "@got/shared";
+import { type Piece, pieceArt, uploadUrl } from "@got/shared";
 import type { LayerSpecification } from "maplibre-gl";
 import { palette } from "@/lib/theme";
 
@@ -88,7 +88,7 @@ export function createArtElement(piece: Piece, index = 0): HTMLElement {
     // No scene photo, so show the bare artwork instead.
     const art = document.createElement("img");
     art.className = "got-marker-art bare";
-    art.src = uploadUrl(piece.finalImagePath ?? piece.rawImagePath);
+    art.src = uploadUrl(pieceArt(piece));
     art.alt = "";
     art.loading = "lazy";
     art.decoding = "async";

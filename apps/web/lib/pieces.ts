@@ -8,10 +8,11 @@ import {
   type Rgb,
   type SurfaceType,
 } from "@got/shared";
-import { pool } from "@/lib/db";
+import { ensureSchema, pool } from "@/lib/db";
 
 const COLS = `
-  id, lat, lng, heading, accuracy_m, raw_image_path, final_image_path, scene_image_path,
+  id, lat, lng, heading, accuracy_m, raw_image_path, final_image_path,
+  weathered_image_path, scene_image_path,
   kind, sticker_id, colors, stroke_count, duration_ms, city, country,
   client, surface_type, distance_m, device_pitch, used_geo_anchor, has_lidar,
   altitude_m, placement_transform, created_at
@@ -25,6 +26,7 @@ interface Row {
   accuracy_m: number | null;
   raw_image_path: string;
   final_image_path: string | null;
+  weathered_image_path: string | null;
   scene_image_path: string | null;
   kind: string;
   sticker_id: string | null;
@@ -54,6 +56,7 @@ function toPiece(r: Row): Piece {
     accuracyM: r.accuracy_m,
     rawImagePath: r.raw_image_path,
     finalImagePath: r.final_image_path,
+    weatheredImagePath: r.weathered_image_path,
     sceneImagePath: r.scene_image_path,
     kind: r.kind as PieceKind,
     stickerId: r.sticker_id,
@@ -93,6 +96,7 @@ export async function insertPiece(
   place: { city: string | null; country: string | null },
   sceneImagePath: string | null = null,
 ): Promise<Piece> {
+  await ensureSchema();
   const { rows } = await pool.query<Row>(
     `INSERT INTO pieces (
        lat, lng, heading, accuracy_m, raw_image_path, kind, sticker_id, colors,
@@ -137,6 +141,7 @@ export interface ListOptions {
 }
 
 export async function listPieces(opts: ListOptions): Promise<{ pieces: Piece[]; total: number }> {
+  await ensureSchema();
   const where: string[] = ["deleted_at IS NULL"];
   const params: unknown[] = [];
 

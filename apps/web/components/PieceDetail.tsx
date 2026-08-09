@@ -1,6 +1,6 @@
 "use client";
 
-import { type Piece, uploadUrl } from "@got/shared";
+import { type Piece, pieceArt, uploadUrl } from "@got/shared";
 import { useEffect } from "react";
 import { palette } from "@/lib/theme";
 
@@ -37,7 +37,7 @@ export default function PieceDetail({
   if (!piece) return null;
 
   const hasScene = Boolean(piece.sceneImagePath);
-  const art = piece.finalImagePath ?? piece.rawImagePath;
+  const art = pieceArt(piece);
 
   return (
     <div
