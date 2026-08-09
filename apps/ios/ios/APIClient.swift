@@ -16,6 +16,7 @@ struct PieceDTO: Decodable {
     let rawImagePath: String
     let finalImagePath: String?
     let kind: String
+    let stickerId: String?
     let client: String
     let surfaceType: String?
     let usedGeoAnchor: Bool
@@ -31,6 +32,7 @@ struct MetaDTO: Encodable {
     let heading: Double?
     let accuracyM: Double?
     let kind: String
+    let stickerId: String?
     let sessionId: String
     let client: String
     let surfaceType: String?

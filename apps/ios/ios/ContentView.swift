@@ -17,6 +17,8 @@ struct ContentView: View {
     @State private var currentDrawing: PKDrawing?
     @State private var drawingImage: UIImage?
     @State private var drawingPNG: Data?
+    @State private var selectedStickerID: String?
+    @State private var stickers: [Sticker] = []
 
     @State private var sessionId: String
     @State private var remotePieces: [RemotePiece] = []
@@ -114,6 +116,7 @@ struct ContentView: View {
             drawingSheet
         }
         .task {
+            stickers = StickerCatalog.load()
             LocationService.shared.start()
             await loadLoop()
         }
@@ -211,8 +214,9 @@ struct ContentView: View {
 
             HStack(spacing: 6) {
                 if let customImage = drawingImage {
+                    let isSticker = selectedStickerID != nil
                     Button {
-                        openDrawingCanvas()
+                        if !isSticker { openDrawingCanvas() }
                     } label: {
                         Image(uiImage: customImage)
                             .resizable()
@@ -221,12 +225,12 @@ struct ContentView: View {
                             .frame(width: 44, height: 44)
                     }
                     .buttonStyle(.glass)
-                    .accessibilityLabel("Edit custom graffiti")
+                    .accessibilityLabel(isSticker ? "Selected sticker" : "Edit custom graffiti")
 
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Custom piece")
+                        Text(isSticker ? "Sticker" : "Custom piece")
                             .font(.subheadline.weight(.semibold))
-                        Text("Tap the preview to edit")
+                        Text(isSticker ? "Tap a surface to place it" : "Tap the preview to edit")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -235,15 +239,13 @@ struct ContentView: View {
 
                     Button {
                         haptic()
-                        currentDrawing = nil
-                        drawingImage = nil
-                        drawingPNG = nil
+                        clearArt()
                     } label: {
                         Image(systemName: "xmark")
                             .frame(width: 40, height: 40)
                     }
                     .buttonStyle(.glass)
-                    .accessibilityLabel("Remove custom graffiti")
+                    .accessibilityLabel("Remove \(isSticker ? "sticker" : "custom graffiti")")
                 } else {
                     HStack(spacing: 5) {
                         ForEach(Array(palette.enumerated()), id: \.offset) { index, color in
@@ -287,7 +289,31 @@ struct ContentView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+
+            stickerStrip
         }
+    }
+
+    private var stickerStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(stickers) { sticker in
+                    Button {
+                        haptic()
+                        selectSticker(sticker)
+                    } label: {
+                        StickerThumb(image: sticker.image, isSelected: selectedStickerID == sticker.id)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Sticker \(sticker.name)")
+                    .accessibilityAddTraits(selectedStickerID == sticker.id ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+        }
+        .frame(height: 56)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
     }
 
     private var previewControls: some View {
@@ -411,6 +437,24 @@ struct ContentView: View {
         remotePieces = []
     }
 
+    private func selectSticker(_ sticker: Sticker) {
+        if selectedStickerID == sticker.id {
+            clearArt()
+        } else {
+            currentDrawing = nil
+            drawingImage = sticker.image
+            drawingPNG = sticker.image.pngData()
+            selectedStickerID = sticker.id
+        }
+    }
+
+    private func clearArt() {
+        currentDrawing = nil
+        drawingImage = nil
+        drawingPNG = nil
+        selectedStickerID = nil
+    }
+
     private func haptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .light) {
         UIImpactFeedbackGenerator(style: style).impactOccurred()
     }
@@ -424,7 +468,8 @@ struct ContentView: View {
             lng: snapshot.lng,
             heading: snapshot.heading,
             accuracyM: snapshot.accuracyM,
-            kind: "spray",
+            kind: selectedStickerID == nil ? "spray" : "sticker",
+            stickerId: selectedStickerID,
             sessionId: sessionId,
             client: "ios",
             surfaceType: snapshot.surfaceType,
@@ -513,6 +558,7 @@ struct ContentView: View {
         drawingPNG = square.pngData()
         drawingImage = square
         currentDrawing = drawing
+        selectedStickerID = nil
         showDrawer = false
     }
 
@@ -556,6 +602,30 @@ private struct ColorSwatch: View {
         .frame(width: 30, height: 30)
         .padding(3)
         .contentShape(Circle())
+        .scaleEffect(isSelected ? 1.08 : 1)
+        .animation(.snappy(duration: 0.2), value: isSelected)
+    }
+}
+
+private struct StickerThumb: View {
+    let image: UIImage
+    let isSelected: Bool
+
+    var body: some View {
+        ZStack {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .padding(2)
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(isSelected ? Color.white : Color.white.opacity(0.4), lineWidth: isSelected ? 2.5 : 1)
+                .frame(width: 48, height: 48)
+        }
+        .frame(width: 50, height: 50)
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .scaleEffect(isSelected ? 1.08 : 1)
         .animation(.snappy(duration: 0.2), value: isSelected)
     }
