@@ -1,11 +1,12 @@
-import type {
-  BBox,
-  Client,
-  CreatePieceRequest,
-  Piece,
-  PieceKind,
-  Rgb,
-  SurfaceType,
+import {
+  type BBox,
+  type Client,
+  type CreatePieceRequest,
+  isTransform16,
+  type Piece,
+  type PieceKind,
+  type Rgb,
+  type SurfaceType,
 } from "@got/shared";
 import { pool } from "@/lib/db";
 
@@ -198,7 +199,7 @@ function clamped(v: unknown, lo: number, hi: number): number | undefined {
  * INTEGER columns. Rounded and clamped rather than validated: a float here used
  * to reach Postgres and come back as an opaque 500.
  */
-function int32(v: unknown, hi = 2147483647): number | undefined {
+export function int32(v: unknown, hi = 2147483647): number | undefined {
   const n = clamped(v, 0, hi);
   return n === undefined ? undefined : Math.round(n);
 }
@@ -267,12 +268,7 @@ export function validateMeta(raw: unknown): { ok: true; meta: CreatePieceRequest
   // malformed: a wrong-length one silently mis-anchors the piece in AR, and the
   // client can only be sending it as a bug.
   const placementTransform = given(m.placementTransform) ? m.placementTransform : undefined;
-  if (
-    placementTransform !== undefined &&
-    (!Array.isArray(placementTransform) ||
-      placementTransform.length !== 16 ||
-      placementTransform.some((n) => typeof n !== "number" || !Number.isFinite(n)))
-  ) {
+  if (placementTransform !== undefined && !isTransform16(placementTransform)) {
     return { ok: false, error: "placementTransform must be a 16-number column-major 4x4" };
   }
 

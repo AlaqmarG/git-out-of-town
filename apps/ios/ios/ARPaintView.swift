@@ -85,6 +85,16 @@ extension ARPaintView {
         private var relocalizeInFlight = false
         private var relocalizing = false
         private var sessionStartedAt: TimeInterval = 0
+        /// The venue map this session is extending: whatever we relocalized
+        /// against, then every version we ship on top of it. Nil means this
+        /// session has no lineage yet and the next upload starts one.
+        private var chainParent: WorldMapStore.Record?
+        /// Frame time the current `chainParent` became ours. The visitor has to
+        /// actually walk somewhere before their map is worth re-uploading.
+        private var chainBaselineAt: TimeInterval = 0
+        /// The walk-around re-upload fires once per session. A post ships a map
+        /// of its own; this is for the visitor who only ever looks.
+        private var extendedThisSession = false
         /// Apple's gate for saving a world map: has this session ever reached
         /// `.mapped`? Sticky, because the live status oscillates.
         private var everMapped = false
@@ -162,6 +172,7 @@ extension ARPaintView {
                 self?.publishStatus()
                 self?.publishPlaceability(at: time)
                 self?.maybeRelocalize()
+                self?.maybeExtendMap(at: time)
                 self?.maybeReanchor()
             }
         }
@@ -501,35 +512,84 @@ extension ARPaintView {
             // walking up to a wall will never retrace anything.
             guard everMapped else { return }
 
-            let name = "piece:\(pieceId):\(Int(max(lastPlacedSize, 0.05) * 1000))"
+            let name = WorldMapStore.pieceName(id: pieceId, sizeM: lastPlacedSize)
             let pieceAnchor = ARAnchor(name: name, transform: frame)
             scnView.session.add(anchor: pieceAnchor)
             anchoredPieceIDs.insert(pieceId)
+            // What the painter is looking at right now, shipped with the map so
+            // a viewer can stand in the same place instead of hunting for the
+            // match. Grabbed here, before the phone drifts off the wall.
+            shipMap(pieceId: pieceId, appending: pieceAnchor, shot: PlacementGuide.capture(from: scnView))
+        }
 
+        /// The other half of chaining, and the whole pitch: a visitor who never
+        /// paints still leaves the venue's map better than they found it. Once a
+        /// session, after they have actually walked somewhere.
+        ///
+        /// Deliberately ships no placement guide. Wherever this visitor happens
+        /// to be standing after a wander is a worse "stand here" than the
+        /// painter's own view, so the server keeps the parent's.
+        private func maybeExtendMap(at time: TimeInterval) {
+            // Cheap checks first: `currentFrame` retains an ARFrame and its pixel
+            // buffers, and this runs on every rendered frame for the whole window.
+            guard !extendedThisSession, sessionActive, everMapped,
+                  chainParent != nil, time - chainBaselineAt > 25,
+                  let frame = scnView?.session.currentFrame,
+                  // A map re-serialized while tracking is shaky is exactly the
+                  // corrupt scan that must never take the head position.
+                  case .normal = frame.camera.trackingState else { return }
+            extendedThisSession = true
+            shipMap(pieceId: nil)
+        }
+
+        /// Serialize the session's map and ship it as the next version of
+        /// whatever this session is extending — or as a new venue when it is
+        /// extending nothing.
+        ///
+        /// The server decides whether the chain is actually allowed; a scan
+        /// carrying a fresh piece lands either way. Everything after the frame
+        /// grab runs off the main actor: pruning reads the whole point cloud and
+        /// archiving compresses megabytes, and both would stall the render loop.
+        private func shipMap(
+            pieceId: Int?,
+            appending extra: ARAnchor? = nil,
+            shot: (image: UIImage, transform: [Double])? = nil
+        ) {
+            guard let scnView else { return }
+            let parent = chainParent
             scnView.session.getCurrentWorldMap { map, _ in
                 guard let map else { return }
                 // `add(anchor:)` only takes effect on the NEXT captured frame, so
                 // the map we just asked for may not contain the piece at all —
                 // and a map that relocalizes perfectly but carries no anchor is
-                // indistinguishable from relocalization failing. Append it.
-                if !map.anchors.contains(where: { $0.identifier == pieceAnchor.identifier }) {
-                    map.anchors.append(pieceAnchor)
+                // indistinguishable from relocalization failing.
+                if let extra, !map.anchors.contains(where: { $0.identifier == extra.identifier }) {
+                    map.anchors.append(extra)
                 }
-                let points = map.rawFeaturePoints.points.count
-                let extent = map.extent
-                Task { @MainActor in
-                    guard let location = LocationService.shared.location else { return }
-                    // Archiving and compressing a multi-MB map on the main actor
-                    // stalls the render loop; Apple says to move it off.
-                    _ = try? await Task.detached(priority: .utility) {
-                        try await WorldMapStore.upload(
+                Task { @MainActor [weak self] in
+                    guard let self, let location = LocationService.shared.location else { return }
+                    let record = await Task.detached(priority: .utility) { () -> WorldMapStore.Record? in
+                        let stats = WorldMapStore.prune(map)
+                        // A walk-around that added nothing isn't worth a multi-MB
+                        // upload the server would only refuse. A post always is.
+                        if pieceId == nil, let parent,
+                           !WorldMapStore.improves(stats, over: parent) { return nil }
+                        return try? await WorldMapStore.upload(
                             map,
+                            stats: stats,
                             pieceId: pieceId,
+                            parentId: parent?.id,
                             location: location,
-                            featurePoints: points,
-                            extentM: max(extent.x, extent.z)
+                            guide: shot.flatMap(PlacementGuide.encode)
                         )
                     }.value
+                    guard let record else { return }
+                    // Build the next version on this one. Chaining onto `parent`
+                    // again would be refused — it is superseded now — and even our
+                    // own first scan of a venue is something the rest of this
+                    // session should thicken rather than sit beside.
+                    self.chainParent = record
+                    self.chainBaselineAt = self.scnView?.session.currentFrame?.timestamp ?? 0
                 }
             }
         }
@@ -558,6 +618,9 @@ extension ARPaintView {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 defer { self.relocalizeInFlight = false }
+                // One exit for every way this ends — matched, exhausted,
+                // cancelled — so the ghost can never outlive the search.
+                defer { self.controller.setGuide(nil) }
                 // Indoors at ±20 m GPS the nearest map is often the wrong room,
                 // so walk the candidates rather than betting on one.
                 guard let records = try? await WorldMapStore.nearby(location: location, radiusM: 80),
@@ -571,11 +634,25 @@ extension ARPaintView {
                 // the clean reset below worth the anchors it costs.
                 var reset = false
                 for record in records.prefix(3) {
-                    guard let map = try? await WorldMapStore.download(record) else { continue }
+                    // Apple's placement guide: the painter's view, shown ghosted
+                    // so the user aims at the right wall while ARKit is still
+                    // looking. Fetched alongside the map, never in front of it —
+                    // the match window is six seconds wide. Scans saved before
+                    // guides existed have none, and then the search runs blind
+                    // exactly as it always did.
+                    async let guide: UIImage? = {
+                        guard let path = record.snapshotPath else { return nil }
+                        return try? await APIClient.loadImage(path: path)
+                    }()
+                    let downloaded = try? await WorldMapStore.download(record)
+                    let ghost = await guide
+                    guard let map = downloaded else { continue }
                     guard let scnView = self.scnView, self.sessionActive,
                           // The download took time; a mesh that grew meanwhile is
                           // worth more than the relocalization.
                           self.meshCount == 0 else { break }
+                    self.controller.setGuide(ghost)
+
                     let config = self.makeWorldConfiguration()
                     config.initialWorldMap = map
                     reset = true
@@ -589,6 +666,12 @@ extension ARPaintView {
                         try? await Task.sleep(for: .milliseconds(500))
                         if case .normal = scnView.session.currentFrame?.camera.trackingState {
                             self.relocalizing = false
+                            // Matched. The session now holds this map's anchors,
+                            // so everything it serializes from here on is that
+                            // map plus wherever this visitor walks — the next
+                            // version of it, not a rival scan beside it.
+                            self.chainParent = record
+                            self.chainBaselineAt = scnView.session.currentFrame?.timestamp ?? 0
                             return
                         }
                     }
@@ -603,9 +686,7 @@ extension ARPaintView {
 
         /// A piece riding a relocalized anchor: exact placement, managed by ARKit.
         private func attachAnchoredPiece(node: SCNNode, name: String) {
-            let parts = name.split(separator: ":")
-            guard parts.count == 3, let id = Int(parts[1]), let mm = Int(parts[2]) else { return }
-            let size = CGFloat(max(Float(mm) / 1000, 0.05))
+            guard let (id, size) = WorldMapStore.pieceName(name) else { return }
             Task { @MainActor [weak self] in
                 // The anchor can resolve before the first pieces fetch lands, so
                 // wait for the poll loop to learn this piece's image path. A map

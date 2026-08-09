@@ -64,18 +64,27 @@ DROP TRIGGER IF EXISTS pieces_notify ON pieces;
 CREATE TRIGGER pieces_notify AFTER INSERT ON pieces
   FOR EACH ROW EXECUTE FUNCTION notify_new_piece();
 
--- Visual relocalization: serialized ARWorldMap scans, keyed by location.
--- The API also creates this lazily (CREATE TABLE IF NOT EXISTS) so a deploy
--- onto the existing database needs no manual migration.
+-- Visual relocalization: serialized ARWorldMap scans, keyed by location and
+-- CHAINED into versioned lineages — see `WorldMapRecord` in packages/shared.
+-- The API creates and alters this lazily, so a deploy needs no manual step, and
+-- every chaining column defaults to the truth for a row that predates it
+-- (version 1, no parent, its own root, never superseded), so no backfill.
 CREATE TABLE IF NOT EXISTS world_maps (
   id bigserial PRIMARY KEY,
-  piece_id bigint REFERENCES pieces(id) ON DELETE CASCADE,
+  piece_id bigint REFERENCES pieces(id) ON DELETE CASCADE,  -- NULL on a chained version: it carries many pieces
   lat double precision NOT NULL,
   lng double precision NOT NULL,
   map_path text NOT NULL,
   size_bytes bigint NOT NULL,
   feature_points integer NOT NULL DEFAULT 0,
   extent_m double precision NOT NULL DEFAULT 0,
+  snapshot_path text,        -- small JPEG of the painter's view, ghosted to guide relocalization
+  snapshot_transform jsonb,  -- 4x4 COLUMN-major camera pose the snapshot was shot from
+  anchor_count integer NOT NULL DEFAULT 0,   -- piece anchors carried; must never shrink along a chain
+  parent_id bigint REFERENCES world_maps(id) ON DELETE SET NULL,
+  root_id bigint REFERENCES world_maps(id) ON DELETE SET NULL,  -- NULL means "I am the root"; read as COALESCE(root_id, id)
+  version integer NOT NULL DEFAULT 1,
+  superseded_at timestamptz,                 -- set when a child extends this map
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS world_maps_loc_idx ON world_maps (lat, lng);

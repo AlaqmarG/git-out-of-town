@@ -123,14 +123,26 @@ export interface PiecesResponse {
 }
 
 /**
- * A serialized ARWorldMap scan — the poster's visual fingerprint of the spot.
- * GET /api/worldmaps?lat&lng&radiusM lists nearby scans (nearest first);
- * POST /api/worldmaps is multipart: `map` (compressed blob) + `meta` JSON
- * ({ pieceId?, lat, lng, featurePoints?, extentM? }). The blob itself is
- * served under /uploads/mapPath.
+ * A serialized ARWorldMap scan — a venue's visual fingerprint.
+ *
+ * Maps CHAIN. A device that relocalizes against a map keeps extending that same
+ * map as its owner walks, then re-uploads it as the next VERSION of the same
+ * lineage (`parentId` → the map it extends). The server supersedes the parent,
+ * so a venue converges on one thickening map instead of many thin ones, and
+ * `GET` only ever serves heads (`supersededAt === null`).
+ *
+ * GET /api/worldmaps?lat&lng&radiusM lists nearby heads, nearest first.
+ * POST /api/worldmaps is multipart: `map` (compressed blob), an optional
+ * `snapshot` (small JPEG placement guide) and `meta`
+ * (`CreateWorldMapRequest`). Both files are served under /uploads/.
  */
 export interface WorldMapRecord {
   id: number;
+  /**
+   * The piece this scan was saved with — null on a chained version, which
+   * carries many pieces' anchors and must not be hidden when any one of them
+   * is deleted.
+   */
   pieceId: number | null;
   lat: number;
   lng: number;
@@ -140,7 +152,51 @@ export interface WorldMapRecord {
   featurePoints: number;
   /** Longest side of the scanned extent, metres. */
   extentM: number;
+  /** Piece anchors carried by the map, deduped by piece. Never shrinks along a chain. */
+  anchorCount: number;
+  /**
+   * Path under /uploads — a downscaled JPEG of the scene from where the painter
+   * stood. A viewer sees it ghosted over their live camera and physically
+   * matches the view, which is Apple's own advice for turning relocalization
+   * from a blind feature search into a targeted one. Inherited by a chained
+   * version that does not send its own, so extending a venue never costs it
+   * the guide.
+   *
+   * Null on scans saved before this existed; relocalization then runs unguided,
+   * exactly as it always did.
+   */
+  snapshotPath: string | null;
+  /**
+   * Camera pose the snapshot was shot from — 16 floats, COLUMN-major, the same
+   * simd order as `Piece.placementTransform`. Null when there is no snapshot.
+   */
+  snapshotTransform: number[] | null;
+  /** The map this one extends. Null on the first scan of a venue. */
+  parentId: number | null;
+  /** The lineage's first map — the venue's identity. Equals `id` for a root. */
+  rootId: number;
+  /** Position in the chain; 1 for a root. */
+  version: number;
   createdAt: string;
+}
+
+/** POST /api/worldmaps — the JSON `meta` part alongside the `map` blob. */
+export interface CreateWorldMapRequest {
+  lat: number;
+  lng: number;
+  pieceId?: number;
+  featurePoints?: number;
+  extentM?: number;
+  anchorCount?: number;
+  /** Pose of the `snapshot` part — 16 floats, column-major. Ignored without one. */
+  snapshotTransform?: number[];
+  /**
+   * Set to chain: this map was built by relocalizing against `parentId` and
+   * walking further, so it contains everything that map did and more. The
+   * server rejects the chain (409) if the parent is already superseded or the
+   * new map is not measurably better.
+   */
+  parentId?: number;
 }
 
 /** Payload pushed over SSE when someone paints. */
@@ -155,6 +211,19 @@ export const UPLOADS_BASE = "/uploads";
 
 export function uploadUrl(path: string): string {
   return `${UPLOADS_BASE}/${path.replace(/^\/+/, "")}`;
+}
+
+/**
+ * A 4x4 COLUMN-major transform as it crosses the network: 16 finite numbers.
+ * Both `Piece.placementTransform` and `WorldMapRecord.snapshotTransform` are
+ * this shape, written by `flatten()` in `apps/ios/ios/ARPaintView.swift`.
+ */
+export function isTransform16(v: unknown): v is number[] {
+  return (
+    Array.isArray(v) &&
+    v.length === 16 &&
+    v.every((n) => typeof n === "number" && Number.isFinite(n))
+  );
 }
 
 export function parseBBox(raw: string): BBox | null {

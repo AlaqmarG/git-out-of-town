@@ -28,6 +28,7 @@ local data**.
 | `pieces` | One piece of graffiti. `client` distinguishes ios/web; native AR columns are null from web. |
 | `views` | Attention data — which pieces got looked at |
 | `sessions` | Anonymous contributor sessions |
+| `world_maps` | ARWorldMap scans. Versioned: a scan that extends an earlier one sets `parent_id`, inherits `root_id`, and stamps the parent's `superseded_at`. Reads serve heads only. The API creates and alters this lazily, so a deploy needs no manual step. |
 
 ## Live updates
 

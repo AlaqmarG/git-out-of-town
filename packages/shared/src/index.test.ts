@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBBox, uploadUrl } from "./index";
+import { isTransform16, parseBBox, uploadUrl } from "./index";
 
 describe("parseBBox", () => {
   it("parses west,south,east,north", () => {
@@ -37,5 +37,29 @@ describe("uploadUrl", () => {
 
   it("does not double the slash when the path is already rooted", () => {
     expect(uploadUrl("/b4/abc.png")).toBe("/uploads/b4/abc.png");
+  });
+});
+
+describe("isTransform16", () => {
+  const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+  it("accepts a 16-float column-major matrix", () => {
+    expect(isTransform16(IDENTITY)).toBe(true);
+  });
+
+  // A wrong-length or non-numeric matrix silently mis-anchors a piece in AR, so
+  // every caller has to be able to tell it apart from a good one.
+  it.each([
+    ["absent", undefined],
+    ["null", null],
+    ["not an array", { "0": 1 }],
+    ["a JSON string", JSON.stringify(IDENTITY)],
+    ["too short", IDENTITY.slice(0, 15)],
+    ["too long", [...IDENTITY, 1]],
+    ["numeric strings", IDENTITY.map(String)],
+    ["carrying NaN", IDENTITY.map((n, i) => (i === 5 ? Number.NaN : n))],
+    ["carrying Infinity", IDENTITY.map((n, i) => (i === 12 ? Infinity : n))],
+  ])("rejects %s", (_l, raw) => {
+    expect(isTransform16(raw)).toBe(false);
   });
 });
