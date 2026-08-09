@@ -62,13 +62,19 @@ export async function GET(req: Request) {
     const latDelta = r / 111320;
     const lngDelta = r / (111320 * Math.cos((lat * Math.PI) / 180) || 1);
     const { rows } = await pool.query(
-      `SELECT id, piece_id, lat, lng, map_path, size_bytes, feature_points, extent_m, created_at
-       FROM world_maps
-       WHERE lat BETWEEN $1 AND $2 AND lng BETWEEN $3 AND $4
+      `SELECT w.id, w.piece_id, w.lat, w.lng, w.map_path, w.size_bytes,
+              w.feature_points, w.extent_m, w.created_at
+       FROM world_maps w
+       -- A map outlives the piece it was saved with. Serving one whose piece is
+       -- gone makes a client spend its whole relocalization budget matching a
+       -- scan that can only ever restore an anchor for nothing.
+       LEFT JOIN pieces p ON p.id = w.piece_id
+       WHERE (w.piece_id IS NULL OR (p.id IS NOT NULL AND p.deleted_at IS NULL))
+         AND w.lat BETWEEN $1 AND $2 AND w.lng BETWEEN $3 AND $4
        -- Nearest first, but a richer scan beats a marginally closer thin one:
        -- relocalization succeeds on feature density, not on proximity.
-       ORDER BY (feature_points < 150),
-                (lat - $5) * (lat - $5) + (lng - $6) * (lng - $6) ASC
+       ORDER BY (w.feature_points < 150),
+                (w.lat - $5) * (w.lat - $5) + (w.lng - $6) * (w.lng - $6) ASC
        LIMIT 5`,
       [lat - latDelta, lat + latDelta, lng - lngDelta, lng + lngDelta, lat, lng],
     );
