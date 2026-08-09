@@ -26,47 +26,61 @@ struct PhotoPaintView: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                Color.black.ignoresSafeArea()
+        ZStack {
+            Color.black.ignoresSafeArea()
 
-                Image(uiImage: scene.photo)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .clipped()
-                    .overlay(stickerLayer(in: geo.size))
-                    .overlay(drawingLayer)
-                    .contentShape(Rectangle())
-                    .onTapGesture { point in
-                        guard !isDrawing else { return }
-                        if let trayID, let sticker = stickers.first(where: { $0.id == trayID }) {
-                            add(sticker, at: point)
-                        } else {
-                            withAnimation(.snappy) { selectedID = nil }
-                        }
-                    }
+            // Full-bleed and sized to the AR viewport, so screen coordinates here
+            // are exactly the coordinates the projector maps back onto the world.
+            paintSurface
+                .frame(width: scene.viewport.width, height: scene.viewport.height)
+                .ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    topBar
-                    Spacer()
-                    if showHint && placed.isEmpty && drawing.strokes.isEmpty {
-                        hintCard.transition(.opacity.combined(with: .move(edge: .bottom)))
-                    }
-                    controls
+            // Chrome stays inside the safe area — never under the clock.
+            VStack(spacing: 0) {
+                topBar
+                Spacer()
+                if showHint && placed.isEmpty && drawing.strokes.isEmpty && !isDrawing {
+                    hintCard.transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
-                .safeAreaPadding(.horizontal, 16)
-                .safeAreaPadding(.vertical, 10)
+                if !isDrawing {
+                    controls.transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
-            .ignoresSafeArea()
-            .onAppear { trayID = stickers.first?.id }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
         }
+        .animation(.snappy, value: isDrawing)
+        .onAppear { trayID = stickers.first?.id }
         .preferredColorScheme(.dark)
     }
 
     // MARK: - Layers
 
-    private func stickerLayer(in size: CGSize) -> some View {
+    private var paintSurface: some View {
+        Image(uiImage: scene.photo)
+            .resizable()
+            .scaledToFill()
+            .clipped()
+            .overlay(stickerLayer)
+            .overlay {
+                // Mounted only while drawing: PencilKit's floating tool picker
+                // would otherwise sit on top of the sticker tray.
+                if isDrawing {
+                    DrawingCanvasView(drawing: $drawing, clearToken: 0)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { point in
+                guard !isDrawing else { return }
+                if let trayID, let sticker = stickers.first(where: { $0.id == trayID }) {
+                    add(sticker, at: point)
+                } else {
+                    withAnimation(.snappy) { selectedID = nil }
+                }
+            }
+    }
+
+    private var stickerLayer: some View {
         ForEach($placed) { $item in
             StickerLayer(
                 item: $item,
@@ -76,12 +90,6 @@ struct PhotoPaintView: View {
                 onDelete: { remove(item.id) }
             )
         }
-    }
-
-    private var drawingLayer: some View {
-        DrawingCanvasView(drawing: $drawing, clearToken: 0)
-            .allowsHitTesting(isDrawing)
-            .opacity(0.999)
     }
 
     // MARK: - Chrome
@@ -116,6 +124,22 @@ struct PhotoPaintView: View {
                 .buttonStyle(.glass)
                 .accessibilityLabel("Start over")
             }
+
+            // While drawing, the bottom belongs to PencilKit — so finishing lives up here.
+            if isDrawing {
+                Button {
+                    haptic()
+                    withAnimation(.snappy) { isDrawing = false }
+                } label: {
+                    Label("Done", systemImage: "checkmark")
+                        .font(.subheadline.weight(.bold))
+                        .padding(.horizontal, 16)
+                        .frame(height: 44)
+                }
+                .buttonStyle(.glassProminent)
+                .tint(Color(red: 1.00, green: 0.84, blue: 0.00))
+                .foregroundStyle(.black)
+            }
         }
     }
 
@@ -130,30 +154,22 @@ struct PhotoPaintView: View {
 
     private var controls: some View {
         VStack(spacing: 12) {
-            if isDrawing {
-                Label("Draw straight on the photo", systemImage: "scribble.variable")
-                    .font(.subheadline.weight(.medium))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .glassEffect(.regular, in: Capsule())
-            } else {
-                stickerTray
-            }
+            stickerTray
 
             HStack(spacing: 10) {
                 Button {
                     haptic()
                     withAnimation(.snappy) {
-                        isDrawing.toggle()
+                        isDrawing = true
                         selectedID = nil
                     }
                 } label: {
-                    Image(systemName: isDrawing ? "checkmark" : "scribble.variable")
+                    Image(systemName: "scribble.variable")
                         .font(.body.weight(.semibold))
                         .frame(width: 56, height: 54)
                 }
                 .buttonStyle(.glass)
-                .accessibilityLabel(isDrawing ? "Finish drawing" : "Draw freehand")
+                .accessibilityLabel("Draw freehand")
 
                 Button {
                     haptic(.medium)
@@ -196,7 +212,6 @@ struct PhotoPaintView: View {
                                         lineWidth: 2
                                     )
                             )
-                            .scaleEffect(trayID == sticker.id ? 1.06 : 1)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Sticker \(sticker.name)")
@@ -207,7 +222,6 @@ struct PhotoPaintView: View {
             .padding(.vertical, 8)
             .animation(.snappy(duration: 0.2), value: trayID)
         }
-        .scrollClipDisabled()
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
