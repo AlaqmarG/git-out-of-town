@@ -31,6 +31,7 @@ legacy filter syntax, and layer ordering. Run it before touching the style.
 | `storage.ts` | Upload writes + type sniffing | Type comes from **magic bytes**, not `Content-Type`. This is public UGC. |
 | `geocode.ts` | lat/lng → city/country | Best effort; never blocks a write |
 | `ratelimit.ts` | In-memory token bucket | Resets on deploy. Guards Replicate credits, not a quota. |
+| `transform.ts` | Replicate passes: upscale → restyle → isolate, then weather | **Never on the AR path.** Runs after the piece is stored; every failure leaves the piece with the image it already had. Drain every response body. |
 
 ## Developing without a local database
 

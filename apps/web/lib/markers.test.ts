@@ -4,7 +4,7 @@ import { ZOOM, tierForZoom, toGeoJson } from "./markers";
 
 const piece = (over: Partial<Piece> = {}): Piece => ({
   id: 1, lat: 43.6413, lng: -79.4042, heading: 90, accuracyM: 5,
-  rawImagePath: "ab/x.png", finalImagePath: null, sceneImagePath: null,
+  rawImagePath: "ab/x.png", finalImagePath: null, weatheredImagePath: null, sceneImagePath: null,
   kind: "spray", stickerId: null, colors: null, strokeCount: 4, durationMs: 9000,
   city: "Toronto", country: "Canada", createdAt: new Date().toISOString(),
   client: "web", surfaceType: null, distanceM: null, devicePitch: null,

@@ -40,6 +40,15 @@ export interface Piece {
   /** Path under /uploads — the Reve-transformed piece. Null until it lands. */
   finalImagePath: string | null;
   /**
+   * Path under /uploads — the same piece aged: drips, fading, grime. Generated
+   * server-side after the piece is already stored, so it is null until it lands
+   * and stays null if the model fails.
+   *
+   * ⚠️ WEB MAP ONLY. The AR path must stay local and never wait on a model, so
+   * iOS renders `finalImagePath ?? rawImagePath` and ignores this.
+   */
+  weatheredImagePath: string | null;
+  /**
    * Path under /uploads — the camera frame at the moment of painting.
    *
    * ⚠️ CONTRACT: this image ALREADY CONTAINS THE ARTWORK. It is the AR view as
@@ -152,6 +161,15 @@ export interface NewPieceEvent {
 }
 
 export const UPLOADS_BASE = "/uploads";
+
+/**
+ * Which of a piece's images a web viewer should show, best first. The aged copy
+ * wins on the map because the map is the world as it has weathered; iOS
+ * deliberately stops at `finalImagePath` so AR never waits on a model.
+ */
+export function pieceArt(p: Piece): string {
+  return p.weatheredImagePath ?? p.finalImagePath ?? p.rawImagePath;
+}
 
 export function uploadUrl(path: string): string {
   return `${UPLOADS_BASE}/${path.replace(/^\/+/, "")}`;

@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS pieces (
   accuracy_m       DOUBLE PRECISION,
   raw_image_path   TEXT NOT NULL,        -- transparent art: AR anchor, map marker, Reve input
   final_image_path TEXT,                 -- Reve-transformed art, once it lands
+  weathered_image_path TEXT,             -- aged variant (drips/grime) for the web map; never used in AR
   scene_image_path TEXT,                 -- the camera frame with the art burned in (web preview)
   kind             TEXT NOT NULL DEFAULT 'spray',
   sticker_id       TEXT,
