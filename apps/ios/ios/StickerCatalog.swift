@@ -14,10 +14,13 @@ struct Sticker: Identifiable {
 
 enum StickerCatalog {
     /// Keep in step with `apps/web/public/stickers/`. Order is the picker order.
+    /// The lettering pieces are the seed throw-ups from `scripts/lib/letters.mjs`.
     static let ids = [
         "star", "heart", "bolt", "flame", "ghost", "skull", "eye", "crown",
         "wifi", "boombox", "spraycan", "roller", "raccoon", "pigeon", "splat",
         "bang", "arrow", "blob",
+        "stackt", "tdot", "6ix", "got", "wall", "fresh", "king", "bold", "crew",
+        "riot", "neon", "dusk", "halt", "void", "echo", "rust", "zine", "flux",
     ]
 
     /// Loads every sticker from the app bundle. The Xcode project syncs the whole
