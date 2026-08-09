@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 import { UPLOAD_DIR, pool } from "@/lib/db";
 import { detectImage, saveImage } from "@/lib/storage";
 
@@ -12,32 +13,17 @@ import { detectImage, saveImage } from "@/lib/storage";
 
 const REPLICATE = "https://api.replicate.com/v1";
 
+/**
+ * Restyle model is google/nano-banana: reve/remix hard-fails server-side
+ * (E001) on every input — verified 2026-08-09 with a 64px synthetic image.
+ * nano-banana in turn refuses large inputs (identical art: 1024px data URI
+ * fails, 512px succeeds), hence the downscale/flatten below.
+ */
 const STYLE_PROMPT =
-  "Redraw the drawing in the reference image as a single polished graffiti " +
-  "piece: confident spray-paint strokes, bold black outline, vivid fills, " +
-  "subtle drips. Keep the original shapes, layout and colours recognisable. " +
-  "Isolated on a plain solid white background, nothing else in frame.";
-
-/** reve/remix only accepts fixed ratios; pick the closest to the raw art. */
-const RATIOS: [string, number][] = [
-  ["1:1", 1], ["3:2", 1.5], ["2:3", 2 / 3], ["4:3", 4 / 3],
-  ["3:4", 0.75], ["16:9", 16 / 9], ["9:16", 9 / 16],
-];
-
-function nearestRatio(width: number, height: number): string {
-  const target = width / height;
-  return RATIOS.reduce((best, r) => (
-    Math.abs(r[1] - target) < Math.abs(best[1] - target) ? r : best
-  ))[0];
-}
-
-/** PNG IHDR / JPEG SOF dimensions — enough for the two types we store. */
-function imageSize(buf: Buffer): { width: number; height: number } | null {
-  if (detectImage(buf) === "png") {
-    return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
-  }
-  return null;
-}
+  "Redraw this drawing as a polished street-art style piece: bold black " +
+  "outlines, vivid spray-paint fills, subtle paint drips. Keep the shapes, " +
+  "layout and colours recognisable. Plain solid white background, nothing " +
+  "else in the image.";
 
 /**
  * `version` is required for community models — only official models (reve/*)
@@ -48,18 +34,22 @@ async function runModel(model: string, input: Record<string, unknown>, version?:
   const token = process.env.REPLICATE_API_TOKEN;
   if (!token) throw new Error("REPLICATE_API_TOKEN not configured");
 
-  const res = await fetch(
-    version ? `${REPLICATE}/predictions` : `${REPLICATE}/models/${model}/predictions`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        Prefer: "wait=60",
-      },
-      body: JSON.stringify(version ? { version, input } : { input }),
+  const url = version ? `${REPLICATE}/predictions` : `${REPLICATE}/models/${model}/predictions`;
+  const request = {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Prefer: "wait=60",
     },
-  );
+    body: JSON.stringify(version ? { version, input } : { input }),
+  };
+  let res = await fetch(url, request);
+  if (res.status === 429) {
+    // Fresh accounts burst-limit quickly; one spaced retry rides it out.
+    await new Promise((resolve) => setTimeout(resolve, 12000));
+    res = await fetch(url, request);
+  }
   let prediction = await res.json();
   if (!res.ok) {
     throw new Error(`${model}: HTTP ${res.status} ${prediction?.detail ?? ""}`);
@@ -99,21 +89,25 @@ export async function transformPiece(id: number): Promise<string | null> {
     if (rows.length === 0 || rows[0].kind !== "spray") return null;
 
     const raw = await readFile(path.join(UPLOAD_DIR, rows[0].raw_image_path));
-    const ext = detectImage(raw);
-    if (!ext) return null;
-    const dims = imageSize(raw);
-    const dataUri = `data:image/${ext === "jpg" ? "jpeg" : ext};base64,${raw.toString("base64")}`;
+    if (!detectImage(raw)) return null;
+    // ≤512px, alpha flattened to white — both verified requirements of the model.
+    const prepared = await sharp(raw)
+      .flatten({ background: "#ffffff" })
+      .resize(512, 512, { fit: "inside", withoutEnlargement: true })
+      .png()
+      .toBuffer();
+    const dataUri = `data:image/png;base64,${prepared.toString("base64")}`;
 
-    const styled = await runModel("reve/remix", {
+    const styled = await runModel("google/nano-banana", {
       prompt: STYLE_PROMPT,
-      reference_images: [dataUri],
-      aspect_ratio: dims ? nearestRatio(dims.width, dims.height) : "1:1",
+      image_input: [dataUri],
+      output_format: "png",
     });
     // The styled output is opaque; cut it back out so it reads as paint on a
     // wall in AR rather than a pasted rectangle.
     const isolated = await runModel(
       "851-labs/background-remover",
-      { image: styled },
+      { image: styled, format: "png" },
       "a029dff38972b5fda4ec5d75d7d1cd25aeff621d2cf4946a41055d7db66b80bc",
     );
 
