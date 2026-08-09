@@ -167,6 +167,24 @@ describe("validateMeta", () => {
       expect(validateMeta({ ...valid, placementTransform: m.slice(1) }).ok).toBe(false);
       expect(reason({ ...valid, placementTransform: m.slice(1) })).toContain("column-major");
     });
+
+    // The marker-relative copy is what a second phone anchors off, so a
+    // malformed one would put the piece somewhere nobody painted.
+    it("takes the marker transform as 16 finite numbers", () => {
+      const m = Array.from({ length: 16 }, (_, i) => i / 3);
+      const r = validateMeta({ ...valid, markerTransform: m });
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.meta.markerTransform).toEqual(m);
+      expect(validateMeta({ ...valid, markerTransform: [...m.slice(1), Number.NaN] }).ok).toBe(false);
+      expect(reason({ ...valid, markerTransform: m.slice(1) })).toContain("markerTransform");
+    });
+
+    // Painting without the poster in view is the normal case.
+    it("accepts a piece with no marker transform at all", () => {
+      const r = validateMeta(valid);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.meta.markerTransform).toBeUndefined();
+    });
   });
 
   // Swift omits nil, but nothing in the contract says a client must. Spelling an
@@ -175,7 +193,7 @@ describe("validateMeta", () => {
     it.each([
       "heading", "accuracyM", "stickerId", "surfaceType", "client", "hasLidar",
       "usedGeoAnchor", "distanceM", "devicePitch", "altitudeM", "colors",
-      "strokeCount", "durationMs", "placementTransform",
+      "strokeCount", "durationMs", "placementTransform", "markerTransform",
     ])("treats a null %s as absent", (field) => {
       const r = validateMeta({ ...valid, [field]: null });
       expect(r.ok).toBe(true);

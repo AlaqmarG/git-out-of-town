@@ -8,7 +8,8 @@ const piece = (over: Partial<Piece> = {}): Piece => ({
   kind: "spray", stickerId: null, colors: null, strokeCount: 4, durationMs: 9000,
   city: "Toronto", country: "Canada", createdAt: new Date().toISOString(),
   client: "web", surfaceType: null, distanceM: null, devicePitch: null,
-  usedGeoAnchor: false, hasLidar: null, altitudeM: null, placementTransform: null, ...over,
+  usedGeoAnchor: false, hasLidar: null, altitudeM: null, placementTransform: null,
+  markerTransform: null, ...over,
 });
 
 describe("tierForZoom", () => {

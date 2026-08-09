@@ -9,8 +9,9 @@ vi.mock("pg", () => ({
 }));
 
 /**
- * `weathered_image_path` postdates the deployed database and every read of a
- * piece selects it, so a deploy without it would 500 the whole map.
+ * `weathered_image_path` and `marker_transform` both postdate the deployed
+ * database and every read of a piece selects them, so a deploy without them
+ * would 500 the whole map.
  */
 describe("ensureSchema", () => {
   beforeEach(() => {
@@ -23,7 +24,10 @@ describe("ensureSchema", () => {
     const { ensureSchema } = await import("./db");
     await Promise.all([ensureSchema(), ensureSchema(), ensureSchema()]);
     expect(query).toHaveBeenCalledTimes(1);
-    expect(String(query.mock.calls[0]![0])).toContain("ADD COLUMN IF NOT EXISTS");
+    const sql = String(query.mock.calls[0]![0]);
+    for (const col of ["weathered_image_path", "marker_transform"]) {
+      expect(sql).toContain(`ADD COLUMN IF NOT EXISTS ${col}`);
+    }
   });
 
   // A cached rejection would 500 every read until the container restarted.

@@ -23,6 +23,7 @@ struct PieceDTO: Decodable {
     let usedGeoAnchor: Bool
     let altitudeM: Double?
     let placementTransform: [Double]?
+    let markerTransform: [Double]?
     let createdAt: String
 }
 
@@ -49,6 +50,7 @@ struct MetaDTO: Encodable {
     let hasLidar: Bool?
     let altitudeM: Double?
     let placementTransform: [Double]?
+    let markerTransform: [Double]?
     let colors: [RgbDTO]?
     let strokeCount: Int?
     let durationMs: Int?

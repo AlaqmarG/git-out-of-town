@@ -92,6 +92,24 @@ export interface Piece {
    * this field. Transposing it in a new client would silently mirror every piece.
    */
   placementTransform: number[] | null;
+  /**
+   * The same placement, expressed in the printed AR marker's own frame — metres,
+   * origin at the poster's centre. Null unless the painter had the poster in
+   * view, which is the common case.
+   *
+   * This is the field that makes a placement exact across devices. lat/lng and
+   * `placementTransform` are measured against each phone's own GPS and compass,
+   * so two phones disagree by metres; this one is measured against a physical
+   * object both of them can see, so they agree to a few centimetres. A viewer
+   * that has locked onto the same poster prefers it and ignores lat/lng.
+   *
+   * Identity is positional, not encoded: one poster per venue. Two posters
+   * within the ~300 m piece-fetch radius would be indistinguishable.
+   *
+   * Same 16-float COLUMN-major layout as `placementTransform` — the warning
+   * above applies here too.
+   */
+  markerTransform: number[] | null;
 }
 
 /** POST /api/pieces — multipart; `image` is the PNG, this is the JSON `meta` part. */
@@ -116,6 +134,7 @@ export interface CreatePieceRequest {
   hasLidar?: boolean;
   altitudeM?: number;
   placementTransform?: number[];
+  markerTransform?: number[];
 }
 
 /** GET /api/pieces?bbox=west,south,east,north */
