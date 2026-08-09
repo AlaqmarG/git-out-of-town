@@ -63,3 +63,17 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS pieces_notify ON pieces;
 CREATE TRIGGER pieces_notify AFTER INSERT ON pieces
   FOR EACH ROW EXECUTE FUNCTION notify_new_piece();
+
+-- Visual relocalization: serialized ARWorldMap scans, keyed by location.
+-- The API also creates this lazily (CREATE TABLE IF NOT EXISTS) so a deploy
+-- onto the existing database needs no manual migration.
+CREATE TABLE IF NOT EXISTS world_maps (
+  id bigserial PRIMARY KEY,
+  piece_id bigint REFERENCES pieces(id) ON DELETE CASCADE,
+  lat double precision NOT NULL,
+  lng double precision NOT NULL,
+  map_path text NOT NULL,
+  size_bytes bigint NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS world_maps_loc_idx ON world_maps (lat, lng);
