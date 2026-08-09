@@ -132,6 +132,20 @@ extension ARPaintView {
             }
         }
 
+        // MARK: - Session failure
+
+        nonisolated func session(_ session: ARSession, didFailWithError error: Error) {
+            Task { @MainActor [weak self] in
+                self?.controller.sessionFailed(error)
+            }
+        }
+
+        nonisolated func sessionInterruptionEnded(_ session: ARSession) {
+            Task { @MainActor [weak self] in
+                self?.controller.sessionResumed()
+            }
+        }
+
         // MARK: - Occlusion mesh
 
         nonisolated func renderer(_ renderer: SCNSceneRenderer, didAdd node: SCNNode, for anchor: ARAnchor) {
