@@ -59,15 +59,21 @@ That team belongs to someone else, and that bundle ID is already registered to i
 Apple ID cannot build it. **Do not edit the project file to fix this**; you would break whoever
 owns that team. Pass overrides on the `xcodebuild` command line instead.
 
-Find the signed-in account's team ID (free "Personal Team" is fine):
+Your values live in `.env` (gitignored), keyed as in `.env.example`:
+
+```sh
+IOS_TEAM=...      # your team ID; free "Personal Team" is fine
+IOS_BUNDLE=...    # globally unique and owned by that team
+```
+
+Find your team ID with:
 
 ```sh
 defaults read com.apple.dt.Xcode | grep -A3 IDEProvisioningTeamByIdentifier
 ```
 
-Alaqmar's is `Z95LKM9TFQ`, paired with bundle ID `com.alaqmargandhi.gitoutoftown`. A personal team
-must use a globally unique bundle ID it owns — reusing `summerhacks.ios` fails with
-*"Failed Registering Bundle Identifier"*.
+`IOS_BUNDLE` has to be yours. Reusing `summerhacks.ios` fails with *"Failed Registering Bundle
+Identifier"* because it is already registered to the team pinned in the project file.
 
 ### Build, install, launch
 
@@ -75,18 +81,20 @@ Run from the repo root, like every other script here.
 
 ```sh
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+set -a; . ./.env; set +a
+: "${IOS_TEAM:?set IOS_TEAM in .env}" "${IOS_BUNDLE:?set IOS_BUNDLE in .env}"
+
 DEVICE=$(xcrun devicectl list devices |
   grep -oE '[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}' | head -1)
-BUNDLE=com.alaqmargandhi.gitoutoftown
 
 xcodebuild -project apps/ios/ios.xcodeproj -scheme ios -configuration Debug \
   -destination "id=$DEVICE" -allowProvisioningUpdates \
-  DEVELOPMENT_TEAM=Z95LKM9TFQ PRODUCT_BUNDLE_IDENTIFIER=$BUNDLE build
+  DEVELOPMENT_TEAM="$IOS_TEAM" PRODUCT_BUNDLE_IDENTIFIER="$IOS_BUNDLE" build
 
 APP=$(find ~/Library/Developer/Xcode/DerivedData/ios-*/Build/Products/Debug-iphoneos \
   -maxdepth 1 -name '*.app' | head -1)
 xcrun devicectl device install app --device "$DEVICE" "$APP"
-xcrun devicectl device process launch --device "$DEVICE" $BUNDLE
+xcrun devicectl device process launch --device "$DEVICE" "$IOS_BUNDLE"
 ```
 
 `-allowProvisioningUpdates` is required: it creates the development certificate, registers the
@@ -109,8 +117,8 @@ original signing errors. That is expected. Build from the CLI.
 |---|---|
 | `devicectl: unable to find utility` | `DEVELOPER_DIR` not exported |
 | Device state `connected (no DDI)`, Xcode says *"developer disk image could not be mounted"* | Developer Mode off. Once on, any `devicectl` call mounts it — the Xcode alert is stale, dismiss it |
-| `No Account for Team "N3P4T5Z6P8"` | Missing `DEVELOPMENT_TEAM=` override |
-| `Failed Registering Bundle Identifier` | Missing `PRODUCT_BUNDLE_IDENTIFIER=` override |
+| `No Account for Team "N3P4T5Z6P8"` | `IOS_TEAM` unset, so the pinned team leaked through |
+| `Failed Registering Bundle Identifier` | `IOS_BUNDLE` unset, or set to one your team doesn't own |
 | App installs, won't launch, *"invalid code signature"* | Profile not trusted on device (step 2 above) |
 | App installs, won't launch, *"device was not ... unlocked"* | Screen is locked. Install works locked; launch does not |
 
