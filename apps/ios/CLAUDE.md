@@ -106,8 +106,15 @@ xcodebuild -project apps/ios/ios.xcodeproj -scheme ios -configuration Debug \
   -destination "id=$DEVICE" -allowProvisioningUpdates \
   DEVELOPMENT_TEAM="$IOS_TEAM" PRODUCT_BUNDLE_IDENTIFIER="$IOS_BUNDLE" build
 
-APP=$(find ~/Library/Developer/Xcode/DerivedData/ios-*/Build/Products/Debug-iphoneos \
-  -maxdepth 1 -name '*.app' | head -1)
+# Ask the build system where THIS checkout's product landed. Do NOT glob
+# DerivedData/ios-*/ — every worktree gets its own, and since agents are
+# required to work in worktrees there are always several. The glob installs
+# whichever one sorts first, which is silently someone else's build.
+APP=$(xcodebuild -project apps/ios/ios.xcodeproj -scheme ios -configuration Debug \
+  -destination "id=$DEVICE" \
+  DEVELOPMENT_TEAM="$IOS_TEAM" PRODUCT_BUNDLE_IDENTIFIER="$IOS_BUNDLE" \
+  -showBuildSettings 2>/dev/null |
+  awk -F' = ' '/ TARGET_BUILD_DIR = /{d=$2} / FULL_PRODUCT_NAME = /{n=$2} END{print d"/"n}')
 xcrun devicectl device install app --device "$DEVICE" "$APP"
 xcrun devicectl device process launch --device "$DEVICE" "$IOS_BUNDLE"
 ```
@@ -136,6 +143,7 @@ original signing errors. That is expected. Build from the CLI.
 | `Failed Registering Bundle Identifier` | `IOS_BUNDLE` unset, or set to one your team doesn't own |
 | App installs, won't launch, *"invalid code signature"* | Profile not trusted on device (step 2 above) |
 | App installs, won't launch, *"device was not ... unlocked"* | Screen is locked. Install works locked; launch does not |
+| Build succeeds but the phone runs an older build | `$APP` came from another worktree's DerivedData. Resolve it with `-showBuildSettings`, never a glob |
 
 Free personal-team builds **expire after 7 days**, and the account is capped at 3 apps / 10 App IDs
 per week. Reinstall before demoing.
