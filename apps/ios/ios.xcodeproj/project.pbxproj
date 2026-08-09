@@ -256,6 +256,7 @@
 				DEVELOPMENT_TEAM = N3P4T5Z6P8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Out of Town";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Uses the camera to paint graffiti on real surfaces in AR.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Uses your location and heading to pin graffiti to the real world.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -290,6 +291,7 @@
 				DEVELOPMENT_TEAM = N3P4T5Z6P8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Out of Town";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Uses the camera to paint graffiti on real surfaces in AR.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Uses your location and heading to pin graffiti to the real world.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

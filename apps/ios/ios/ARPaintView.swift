@@ -38,19 +38,25 @@ struct ARPaintView: UIViewRepresentable {
     var showDebug: Bool
     var drawingImage: UIImage?
     var remotePieces: [RemotePiece]
+    var previewSize: Float
+    var placeToken: Int
+    var cancelToken: Int
     var onPlace: (String) -> Void
     var onPiecePlaced: (PlacementSnapshot) -> Void
     var onStatus: (String) -> Void
     var onHint: (String) -> Void
+    var onPreviewState: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             color: color,
             drawingImage: drawingImage,
+            previewSize: previewSize,
             onPlace: onPlace,
             onPiecePlaced: onPiecePlaced,
             onStatus: onStatus,
-            onHint: onHint
+            onHint: onHint,
+            onPreviewState: onPreviewState
         )
     }
 
@@ -80,6 +86,9 @@ struct ARPaintView: UIViewRepresentable {
         context.coordinator.drawingImage = drawingImage
         context.coordinator.clear(clearToken)
         context.coordinator.renderRemotePieces(remotePieces)
+        context.coordinator.previewSize = previewSize
+        context.coordinator.setPreviewSize(previewSize)
+        context.coordinator.handleCommands(placeToken: placeToken, cancelToken: cancelToken)
         scnView.debugOptions = context.coordinator.debugOptions(showDebug)
     }
 }
@@ -93,6 +102,7 @@ extension ARPaintView {
         var onPiecePlaced: (PlacementSnapshot) -> Void
         var onStatus: (String) -> Void
         var onHint: (String) -> Void
+        var onPreviewState: (Bool) -> Void
         private var lastClearToken = 0
         private var lastStatus = ""
         private var renderedRemoteIDs: Set<Int> = []
@@ -102,6 +112,14 @@ extension ARPaintView {
         private var lastReanchor = Date.distantPast
         private var usingGeoAnchor = false
         private var checkedGeoTracking = false
+        var previewSize: Float = 0.3
+        private var lastPlaceToken = 0
+        private var lastCancelToken = 0
+        private var isPreviewing = false
+        private var previewNode: SCNNode?
+        private var lastCancelAt = Date.distantPast
+        private var previewInfo: (placement: simd_float4x4, position: SIMD3<Float>, surfaceType: String)?
+        private var lastAppliedPreviewSize: Float = 0
         private struct PendingGeoPiece {
             let image: UIImage
             let transform: simd_float4x4
@@ -112,17 +130,21 @@ extension ARPaintView {
         init(
             color: UIColor,
             drawingImage: UIImage?,
+            previewSize: Float,
             onPlace: @escaping (String) -> Void,
             onPiecePlaced: @escaping (PlacementSnapshot) -> Void,
             onStatus: @escaping (String) -> Void,
-            onHint: @escaping (String) -> Void
+            onHint: @escaping (String) -> Void,
+            onPreviewState: @escaping (Bool) -> Void
         ) {
             self.color = color
             self.drawingImage = drawingImage
+            self.previewSize = previewSize
             self.onPlace = onPlace
             self.onPiecePlaced = onPiecePlaced
             self.onStatus = onStatus
             self.onHint = onHint
+            self.onPreviewState = onPreviewState
         }
 
         func debugOptions(_ show: Bool) -> SCNDebugOptions {
@@ -233,6 +255,11 @@ extension ARPaintView {
             guard token != lastClearToken else { return }
             lastClearToken = token
             guard let scnView else { return }
+            previewNode?.removeFromParentNode()
+            previewNode = nil
+            previewInfo = nil
+            isPreviewing = false
+            onPreviewState(false)
             for node in scnView.scene.rootNode.childNodes {
                 node.removeFromParentNode()
             }
@@ -246,7 +273,7 @@ extension ARPaintView {
         // MARK: - Placing a piece
 
         @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
-            guard let scnView else { return }
+            guard let scnView, !isPreviewing, Date().timeIntervalSince(lastCancelAt) > 0.25 else { return }
             let location = recognizer.location(in: scnView)
 
             var results = raycast(in: scnView, at: location, target: .existingPlaneGeometry)
@@ -257,7 +284,13 @@ extension ARPaintView {
                 onHint("No surface there — aim at a wall or floor and pan around to build tracking")
                 return
             }
+            guard let preview = makePlacement(from: result) else { return }
+            enterPreview(preview, scnView: scnView)
+        }
 
+        /// Computes the surface-aligned placement for a raycast hit.
+        private func makePlacement(from result: ARRaycastResult) -> (placement: simd_float4x4, position: SIMD3<Float>, surfaceType: String)? {
+            guard let scnView else { return nil }
             let hit = result.worldTransform
             let position = simd_float3(hit.columns.3.x, hit.columns.3.y, hit.columns.3.z)
 
@@ -310,29 +343,91 @@ extension ARPaintView {
             ))
             placement = placement * upright
 
-            let size: Float = 0.3
-            let node = SCNNode()
-            node.geometry = SCNPlane(width: CGFloat(size), height: CGFloat(size))
+            let classification = (result.anchor as? ARPlaneAnchor)?.classification.label ?? "unknown"
+            return (placement, position, classification)
+        }
+
+        // MARK: - Preview / confirm flow
+
+        private func enterPreview(_ preview: (placement: simd_float4x4, position: SIMD3<Float>, surfaceType: String), scnView: ARSCNView) {
+            let node = makePieceNode(size: previewSize, transparent: true)
+            node.simdTransform = preview.placement
+            scnView.scene.rootNode.addChildNode(node)
+            previewNode = node
+            previewInfo = preview
+            isPreviewing = true
+            lastAppliedPreviewSize = previewSize
+            onPreviewState(true)
+        }
+
+        func setPreviewSize(_ size: Float) {
+            guard isPreviewing, let previewNode, abs(size - lastAppliedPreviewSize) > 0.001 else { return }
+            lastAppliedPreviewSize = size
+            let clamped = max(0.1, min(size, 2.0))
+            previewNode.geometry = SCNPlane(width: CGFloat(clamped), height: CGFloat(clamped))
+            previewNode.geometry?.materials = [makePieceMaterial(transparent: true)]
+        }
+
+        private func confirmPlacement() {
+            guard let scnView, let preview = previewInfo else { return }
+            previewNode?.removeFromParentNode()
+            previewNode = nil
+            previewInfo = nil
+            isPreviewing = false
+
+            let node = makePieceNode(size: previewSize, transparent: false)
+            node.simdTransform = preview.placement
+            scnView.scene.rootNode.addChildNode(node)
+
+            let sceneData = scnView.snapshot().jpegData(compressionQuality: 0.8)
+            let camera = scnView.session.currentFrame?.camera
+            onPlace(preview.surfaceType)
+            emitPlacementSnapshot(
+                placement: preview.placement,
+                position: preview.position,
+                surfaceType: preview.surfaceType,
+                camera: camera,
+                sceneData: sceneData
+            )
+            onPreviewState(false)
+        }
+
+        private func cancelPlacement() {
+            lastCancelAt = Date()
+            previewNode?.removeFromParentNode()
+            previewNode = nil
+            previewInfo = nil
+            isPreviewing = false
+            onPreviewState(false)
+        }
+
+        func handleCommands(placeToken: Int, cancelToken: Int) {
+            if placeToken != lastPlaceToken {
+                lastPlaceToken = placeToken
+                confirmPlacement()
+            }
+            if cancelToken != lastCancelToken {
+                lastCancelToken = cancelToken
+                cancelPlacement()
+            }
+        }
+
+        private func makePieceMaterial(transparent: Bool) -> SCNMaterial {
             let material = SCNMaterial()
             material.isDoubleSided = true
             material.lightingModel = .constant
             material.diffuse.contents = drawingImage ?? color
-            node.geometry?.materials = [material]
-            node.simdTransform = placement
-            scnView.scene.rootNode.addChildNode(node)
+            if transparent {
+                material.transparency = 0.55
+            }
+            return material
+        }
 
-            let sceneData = scnView.snapshot().jpegData(compressionQuality: 0.8)
-
-            let classification = (result.anchor as? ARPlaneAnchor)?.classification.label ?? "unknown"
-            onPlace(classification)
-
-            emitPlacementSnapshot(
-                placement: placement,
-                position: position,
-                surfaceType: classification,
-                camera: camera,
-                sceneData: sceneData
-            )
+        private func makePieceNode(size: Float, transparent: Bool) -> SCNNode {
+            let node = SCNNode()
+            node.geometry = SCNPlane(width: CGFloat(size), height: CGFloat(size))
+            node.geometry?.materials = [makePieceMaterial(transparent: transparent)]
+            return node
         }
 
         private func emitPlacementSnapshot(
