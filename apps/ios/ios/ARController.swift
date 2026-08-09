@@ -9,6 +9,10 @@ struct CapturedScene: Identifiable {
     let camera: ARCamera
     let viewport: CGSize
     let triangles: [ProjectedDecal.Triangle]
+    /// Dense per-pixel depth — the preferred surface source, far finer than the
+    /// reconstruction mesh on curved or detailed objects.
+    let depth: DepthDecal.Depth?
+    let orientation: UIInterfaceOrientation
     let hasLidar: Bool
     /// Screen-space raycast used when there is no mesh to project onto.
     let fallbackPlacement: (transform: simd_float4x4, position: SIMD3<Float>, surfaceType: String)?
@@ -87,10 +91,15 @@ final class ARController {
         coordinator?.setActive(true)
     }
 
-    /// How the last piece landed: draped over N mesh triangles, or flat.
+    /// How the last piece landed: draped over N mesh facets, or flat. Shown on
+    /// the Post card — if wrapping silently stops working, it says so.
     private(set) var lastPlacement = "—"
+    private(set) var lastPlacementWrapped = false
 
-    func setLastPlacement(_ text: String) { lastPlacement = text }
+    func setLastPlacement(_ text: String, wrapped: Bool) {
+        lastPlacement = text
+        lastPlacementWrapped = wrapped
+    }
 
     func setNearby(rendered: Int, snapped: Int, nearestM: Double?) {
         self.rendered = rendered
