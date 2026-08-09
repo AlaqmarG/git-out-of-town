@@ -57,7 +57,9 @@ struct MetaDTO: Encodable {
 extension PieceDTO: Identifiable {}
 
 enum APIClient {
-    static let baseURL = URL(string: "https://gitoutoftown.129-153-49-190.sslip.io")!
+    // nonisolated: the world-map upload path runs off the main actor so a
+    // multi-MB archive+compress can't stall the render loop, and it needs this.
+    nonisolated static let baseURL = URL(string: "https://gitoutoftown.129-153-49-190.sslip.io")!
 
     /// URL for a stored image path (`rawImagePath`, `finalImagePath`, …).
     static func imageURL(path: String) -> URL {

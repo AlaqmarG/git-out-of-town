@@ -38,10 +38,15 @@ classification, and everything still works.
   after launch with `.removeExistingAnchors` and quietly disabled every depth feature. Geo precision
   is worth less than depth, and indoors it never localises anyway. `GeoCheck.swift` is a harness
   only; do not wire it into the session.
-- **`ARWorldMap` relocalization is scoped tightly** (`WorldMapStore.swift`): save only after a
-  post, once the session has reached `.mapped`; match only in the first seconds of a fresh
-  session, before any mesh exists — a late `.resetTracking` deletes the depth mesh. Do not widen
-  either window.
+- **The `ARWorldMap` MATCH window is scoped tightly** (`WorldMapStore.swift`): match only in the
+  first seconds of a fresh session, before any mesh exists — a late `.resetTracking` deletes the
+  depth mesh. Do not widen it, and never reset late.
+- **Saving is wider, on purpose: maps CHAIN.** Relocalizing loads the earlier map's anchors into
+  the session, so a visitor who then walks around holds that map plus everything new. `shipMap`
+  re-uploads it as the next version of the same lineage (`parentId`), and the venue's map thickens
+  with every visitor. Saving still requires `.mapped`, but it now happens after a post *and* once
+  per session for a viewer who never paints. This costs nothing in depth: re-serializing is
+  `getCurrentWorldMap`, which never touches the session configuration.
 - **Get a signed build on a real device before writing features.** Provisioning is what kills iOS
   hackathon projects.
 

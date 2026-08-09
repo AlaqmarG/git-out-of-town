@@ -116,6 +116,24 @@ final class ARController {
         scanQuality = quality
     }
 
+    /// The painter's view of this spot, ghosted over the live camera while we
+    /// try to relocalize against their scan. Nil when there is nothing to show:
+    /// no relocalization running, an older scan that carries no guide, or the
+    /// user waved it away.
+    private(set) var guideImage: UIImage?
+    @ObservationIgnored private var guideDismissed = false
+
+    /// Sticky dismissal — relocalization walks several candidate scans, and
+    /// having the guide reappear after you closed it would be a bug, not a hint.
+    func setGuide(_ image: UIImage?) {
+        guideImage = guideDismissed ? nil : image
+    }
+
+    func dismissGuide() {
+        guideDismissed = true
+        guideImage = nil
+    }
+
     func capture() -> CapturedScene? { coordinator?.capture() }
 
     @discardableResult

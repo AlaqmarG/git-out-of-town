@@ -14,6 +14,16 @@ export const MAX_SCENE_BYTES = 12 * 1024 * 1024;
  */
 export const MAX_BODY_BYTES = MAX_IMAGE_BYTES + MAX_SCENE_BYTES + 1024 * 1024;
 
+/** Compressed ARWorldMaps run 1–10 MB; leave generous headroom. */
+export const MAX_MAP_BYTES = 32 * 1024 * 1024;
+/**
+ * The placement guide that rides along with a world map. Deliberately tiny: the
+ * map is already megabytes and the guide only has to be recognisable — the
+ * client sends a 640px JPEG, tens of KB.
+ */
+export const MAX_SNAPSHOT_BYTES = 512 * 1024;
+export const MAX_WORLDMAP_BODY_BYTES = MAX_MAP_BYTES + MAX_SNAPSHOT_BYTES + 1024 * 1024;
+
 const SIGNATURES: { ext: string; test: (b: Buffer) => boolean }[] = [
   { ext: "png", test: (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
   { ext: "jpg", test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
@@ -27,6 +37,23 @@ const SIGNATURES: { ext: string; test: (b: Buffer) => boolean }[] = [
 export function detectImage(buf: Buffer): string | null {
   if (buf.length < 12) return null;
   return SIGNATURES.find((s) => s.test(buf))?.ext ?? null;
+}
+
+/**
+ * An optional image part, or null when it is absent, empty, oversized or not an
+ * image. Never throws: callers use this for decorations that must not be able
+ * to fail the upload they ride along with.
+ */
+export async function readImagePart(
+  form: FormData,
+  name: string,
+  maxBytes: number,
+): Promise<{ buf: Buffer; ext: string } | null> {
+  const part = form.get(name);
+  if (!(part instanceof File) || part.size === 0 || part.size > maxBytes) return null;
+  const buf = Buffer.from(await part.arrayBuffer());
+  const ext = detectImage(buf);
+  return ext ? { buf, ext } : null;
 }
 
 /**

@@ -92,6 +92,10 @@ struct ContentView: View {
 
             vignette.ignoresSafeArea().allowsHitTesting(false)
 
+            if let guide = ar.guideImage {
+                PlacementGuideView(image: guide) { ar.dismissGuide() }
+            }
+
             if pendingPost == nil {
                 placementReticle
                     .allowsHitTesting(false)
@@ -144,6 +148,7 @@ struct ContentView: View {
             .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         }
         .animation(.snappy, value: pendingPost == nil)
+        .animation(.easeInOut, value: ar.guideImage == nil)
         .fullScreenCover(item: $captured) { scene in
             PhotoPaintView(
                 scene: scene,
