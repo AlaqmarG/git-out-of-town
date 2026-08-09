@@ -42,6 +42,89 @@ classification, and everything still works.
 - **Get a signed build on a real device before writing features.** Provisioning is what kills iOS
   hackathon projects.
 
+## Pushing a build to a physical iPhone
+
+This works today and is fully scriptable — do **not** drive the Xcode GUI for it.
+
+`xcode-select` on this Mac points at CommandLineTools, so **every** command needs:
+
+```sh
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+```
+
+### Signing: override, never commit
+
+`project.pbxproj` pins `DEVELOPMENT_TEAM = N3P4T5Z6P8` / `PRODUCT_BUNDLE_IDENTIFIER = summerhacks.ios`.
+That team belongs to someone else, and that bundle ID is already registered to it — a different
+Apple ID cannot build it. **Do not edit the project file to fix this**; you would break whoever
+owns that team. Pass overrides on the `xcodebuild` command line instead.
+
+Your values live in `.env` (gitignored), keyed as in `.env.example`:
+
+```sh
+IOS_TEAM=...      # your team ID; free "Personal Team" is fine
+IOS_BUNDLE=...    # globally unique and owned by that team
+```
+
+Find your team ID with:
+
+```sh
+defaults read com.apple.dt.Xcode | grep -A3 IDEProvisioningTeamByIdentifier
+```
+
+`IOS_BUNDLE` has to be yours. Reusing `summerhacks.ios` fails with *"Failed Registering Bundle
+Identifier"* because it is already registered to the team pinned in the project file.
+
+### Build, install, launch
+
+Run from the repo root, like every other script here.
+
+```sh
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+set -a; . ./.env; set +a
+: "${IOS_TEAM:?set IOS_TEAM in .env}" "${IOS_BUNDLE:?set IOS_BUNDLE in .env}"
+
+DEVICE=$(xcrun devicectl list devices |
+  grep -oE '[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}' | head -1)
+
+xcodebuild -project apps/ios/ios.xcodeproj -scheme ios -configuration Debug \
+  -destination "id=$DEVICE" -allowProvisioningUpdates \
+  DEVELOPMENT_TEAM="$IOS_TEAM" PRODUCT_BUNDLE_IDENTIFIER="$IOS_BUNDLE" build
+
+APP=$(find ~/Library/Developer/Xcode/DerivedData/ios-*/Build/Products/Debug-iphoneos \
+  -maxdepth 1 -name '*.app' | head -1)
+xcrun devicectl device install app --device "$DEVICE" "$APP"
+xcrun devicectl device process launch --device "$DEVICE" "$IOS_BUNDLE"
+```
+
+`-allowProvisioningUpdates` is required: it creates the development certificate, registers the
+device, and issues the profile. Without it the build fails with *"No profiles for ... were found"*.
+
+Because the overrides live on the command line, **the ▶︎ Run button in Xcode still fails** with the
+original signing errors. That is expected. Build from the CLI.
+
+### Two steps only a human can do
+
+1. **Developer Mode** — Settings → Privacy & Security → Developer Mode → on, then reboot.
+   Check with `xcrun devicectl device info details --device "$DEVICE" | grep developerModeStatus`.
+2. **Trust the profile** — after the *first* install with a new certificate, Settings → General →
+   VPN & Device Management → Developer App → Trust. Until then `process launch` fails with
+   *"its profile has not been explicitly trusted by the user"*. One-time per certificate, not per build.
+
+### Symptoms → cause
+
+| Symptom | Cause |
+|---|---|
+| `devicectl: unable to find utility` | `DEVELOPER_DIR` not exported |
+| Device state `connected (no DDI)`, Xcode says *"developer disk image could not be mounted"* | Developer Mode off. Once on, any `devicectl` call mounts it — the Xcode alert is stale, dismiss it |
+| `No Account for Team "N3P4T5Z6P8"` | `IOS_TEAM` unset, so the pinned team leaked through |
+| `Failed Registering Bundle Identifier` | `IOS_BUNDLE` unset, or set to one your team doesn't own |
+| App installs, won't launch, *"invalid code signature"* | Profile not trusted on device (step 2 above) |
+| App installs, won't launch, *"device was not ... unlocked"* | Screen is locked. Install works locked; launch does not |
+
+Free personal-team builds **expire after 7 days**, and the account is capped at 3 apps / 10 App IDs
+per week. Reinstall before demoing.
+
 ## Info.plist
 
 `NSCameraUsageDescription`, `NSLocationWhenInUseUsageDescription`
