@@ -2,16 +2,29 @@ import ARKit
 import CoreLocation
 import SwiftUI
 
-/// The camera screen: point, shoot, paint, post. One decision at a time.
+/// The camera screen, in two modes. **View** is for looking: the graffiti in
+/// the world and nothing else. **Paint** is point, shoot, paint, post — one
+/// decision at a time. Nothing about making art is on screen until it is asked
+/// for, because most people arriving in AR came to see, not to spray.
 struct ContentView: View {
     var isActive: Bool = true
     @Binding var tab: AppTab
+    @Binding var mode: ARMode
     var onHelp: () -> Void = {}
 
     @State private var ar = ARController()
     @State private var stickers: [Sticker] = []
+    @State private var nearby: [PieceDTO] = []
     @State private var remotePieces: [RemotePiece] = []
     @State private var ownPieceIDs: Set<Int> = []
+    @State private var detail: PieceDTO?
+    @State private var scanned = false
+    @State private var offline = false
+
+    /// Pieces are downloaded, decoded and textured, and a busy corner of a city
+    /// can hold hundreds. Render the closest few dozen; the rest are too far to
+    /// read anyway.
+    private static let renderLimit = 24
 
     @State private var captured: CapturedScene?
     @State private var pendingPost: PendingPost?
@@ -80,12 +93,13 @@ struct ContentView: View {
         ZStack {
             ARPaintView(
                 controller: ar,
-                showDebug: showDebug,
+                showDebug: showDebug && isPainting,
                 // Deliberately NOT paused while the paint sheet is up. Pausing
                 // makes ARKit try to relocalize on resume and, when that fails,
                 // restart the session — which deletes every mesh anchor. That
                 // is why the depth mesh vanished after the first piece.
                 isActive: isActive,
+                isViewing: !isPainting,
                 remotePieces: remotePieces
             )
             .ignoresSafeArea()
@@ -96,7 +110,7 @@ struct ContentView: View {
                 PlacementGuideView(image: guide) { ar.dismissGuide() }
             }
 
-            if showDebug {
+            if showDebug && isPainting {
                 // Same coordinate space as the ARSCNView underneath — both fill
                 // the screen — so a crosshair drawn here is where the projector
                 // says the point is.
@@ -105,7 +119,7 @@ struct ContentView: View {
                     .allowsHitTesting(false)
             }
 
-            if pendingPost == nil {
+            if isPainting && pendingPost == nil {
                 placementReticle
                     .allowsHitTesting(false)
             }
@@ -115,7 +129,7 @@ struct ContentView: View {
             }
 
             VStack(spacing: 12) {
-                topBar
+                if isPainting { topBar } else { viewTopBar }
                 Spacer(minLength: 40)
 
                 if let failure = ar.failure {
@@ -141,7 +155,10 @@ struct ContentView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
-                if let pendingPost {
+                if !isPainting {
+                    viewBar
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else if let pendingPost {
                     postCard(pendingPost)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 } else {
@@ -157,7 +174,16 @@ struct ContentView: View {
             .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         }
         .animation(.snappy, value: pendingPost == nil)
+        .animation(.snappy, value: isPainting)
         .animation(.easeInOut, value: ar.guideImage == nil)
+        .fullScreenCover(item: $detail) { piece in
+            PieceDetailView(
+                piece: piece,
+                context: nearby,
+                onOpen: { detail = $0 },
+                dismiss: { detail = nil }
+            )
+        }
         .fullScreenCover(item: $captured) { scene in
             PhotoPaintView(
                 scene: scene,
@@ -173,6 +199,155 @@ struct ContentView: View {
     }
 
     // MARK: - Chrome
+
+    private var isPainting: Bool { mode == .paint }
+
+    /// View mode chrome, entire: what this is, and the one way out of it. Every
+    /// creation control — reticle, shutter, sticker picker, scan quality — is
+    /// absent by construction, because they are all under `isPainting`.
+    private var viewTopBar: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Button {
+                    haptic()
+                    onHelp()
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.glass)
+                .accessibilityLabel("How this works")
+
+                Spacer(minLength: 0)
+
+                Button {
+                    haptic()
+                    withAnimation(.snappy) { mode = .paint }
+                } label: {
+                    Label("Paint", systemImage: "paintbrush.pointed.fill")
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 8)
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.glassProminent)
+                .tint(Color.spray)
+                .foregroundStyle(.black)
+                .accessibilityLabel("Switch to painting")
+            }
+
+            // Only while the session still needs something from the user. Once
+            // tracking is up, a viewer should see walls, not a status line.
+            if !ar.isReady && !ar.isCoaching {
+                Label(ar.status, systemImage: "camera.metering.center.weighted")
+                    .font(.caption.weight(.medium))
+                    .lineLimit(2)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 8)
+                    .glassEffect(.regular, in: Capsule())
+            }
+        }
+    }
+
+    /// The piece the camera is closest to — what the viewer is most likely
+    /// looking at right now.
+    private var nearestPiece: PieceDTO? {
+        ar.nearestId.flatMap { id in nearby.first { $0.id == id } }
+    }
+
+    @ViewBuilder
+    private var viewBar: some View {
+        if let piece = nearestPiece {
+            Button {
+                haptic()
+                detail = piece
+            } label: {
+                nearestCard(piece)
+            }
+            .buttonStyle(.plain)
+        } else if offline && nearby.isEmpty {
+            Toast(
+                message: "Can't reach the wall — paint appears as soon as you're back online",
+                symbol: "wifi.slash",
+                tint: .orange
+            )
+        } else if scanned && nearby.isEmpty {
+            emptyCard
+        } else {
+            Label(
+                "Pan slowly — paint sits on the walls it was sprayed on",
+                systemImage: "arrow.left.and.right"
+            )
+            .font(.subheadline.weight(.medium))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        }
+    }
+
+    private func nearestCard(_ piece: PieceDTO) -> some View {
+        HStack(spacing: 12) {
+            PieceImage(path: piece.artPath)
+                .frame(width: 54, height: 54)
+                .clipped()
+                .background(.black.opacity(0.35))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(piece.city.map { "\(piece.title) · \($0)" } ?? piece.title)
+                    .font(.subheadline.weight(.semibold))
+                Text(nearestLine(piece))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.up")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens the full piece")
+    }
+
+    private func nearestLine(_ piece: PieceDTO) -> String {
+        // The rendered distance is the real one — the node has been snapped to
+        // the wall, where GPS only ever had an estimate.
+        let away = ar.nearestM.map { "\(Int($0.rounded())) m away" }
+            ?? PieceGeo.relation(to: piece).map { "\(PieceGeo.distanceText($0.meters)) away" }
+        let others = max(ar.rendered - 1, 0)
+        return [away, PieceGeo.ago(piece.createdAt), others > 0 ? "\(others) more around you" : nil]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+    }
+
+    private var emptyCard: some View {
+        VStack(spacing: 10) {
+            Label("Nothing sprayed within 300 m", systemImage: "paintbrush.pointed")
+                .font(.subheadline.weight(.semibold))
+            Text("Be the first here — point at a wall and put something on it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button {
+                haptic(.medium)
+                withAnimation(.snappy) { mode = .paint }
+            } label: {
+                Text("Start painting")
+                    .fontWeight(.bold)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 46)
+            }
+            .buttonStyle(.glassProminent)
+            .tint(Color.spray)
+            .foregroundStyle(.black)
+        }
+        .padding(16)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+    }
 
     /// Screen-space confirmation of the exact point ARKit can paint. Keeping
     /// this in SwiftUI means it never gets burned into the captured photo.
@@ -232,6 +407,17 @@ struct ContentView: View {
                 }
                 .buttonStyle(.glass)
                 .accessibilityLabel("How this works")
+
+                Button {
+                    haptic()
+                    withAnimation(.snappy) { mode = .view }
+                } label: {
+                    Image(systemName: "eye")
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.glass)
+                .disabled(pendingPost != nil)
+                .accessibilityLabel("Just look at what's here")
 
                 Spacer(minLength: 0)
 
@@ -569,29 +755,43 @@ struct ContentView: View {
             // marker matters most is the one place nothing ever loads.
             if let loc = LocationService.shared.location, loc.horizontalAccuracy >= 0,
                loc.horizontalAccuracy < (ar.markerLocked ? 300 : 50) {
-                if let pieces = try? await APIClient.listPieces(
-                    lat: loc.coordinate.latitude,
-                    lng: loc.coordinate.longitude,
-                    radiusMeters: 300
-                ) {
+                do {
+                    let pieces = try await APIClient.listPieces(
+                        lat: loc.coordinate.latitude,
+                        lng: loc.coordinate.longitude,
+                        radiusMeters: 300
+                    )
+                    offline = false
+                    scanned = true
                     ar.fetched = pieces.count
-                    let next = pieces
+                    // Closest first, then capped. Every rendered piece is a
+                    // download, a decode and a texture, and a busy corner of a
+                    // city holds far more of them than a viewer can look at.
+                    let visible = pieces
                         .filter { !ownPieceIDs.contains($0.id) }
-                        .map {
-                            RemotePiece(
-                                id: $0.id,
-                                imagePath: $0.finalImagePath ?? $0.rawImagePath,
-                                lat: $0.lat,
-                                lng: $0.lng,
-                                altitudeM: $0.altitudeM,
-                                surfaceType: $0.surfaceType,
-                                placementTransform: $0.placementTransform,
-                                markerTransform: $0.markerTransform
-                            )
+                        .sorted {
+                            loc.distance(from: CLLocation(latitude: $0.lat, longitude: $0.lng))
+                                < loc.distance(from: CLLocation(latitude: $1.lat, longitude: $1.lng))
                         }
+                        .prefix(Self.renderLimit)
+                    if visible.map(\.id) != nearby.map(\.id) { nearby = Array(visible) }
+                    let next = visible.map {
+                        RemotePiece(
+                            id: $0.id,
+                            imagePath: $0.artPath,
+                            lat: $0.lat,
+                            lng: $0.lng,
+                            altitudeM: $0.altitudeM,
+                            surfaceType: $0.surfaceType,
+                            placementTransform: $0.placementTransform,
+                            markerTransform: $0.markerTransform
+                        )
+                    }
                     // Every assignment rebuilds the AR view; only do it when the
                     // set actually changed.
                     if next.map(\.id) != remotePieces.map(\.id) { remotePieces = next }
+                } catch {
+                    offline = true
                 }
             }
             try? await Task.sleep(for: .seconds(3))

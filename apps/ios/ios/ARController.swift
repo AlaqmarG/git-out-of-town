@@ -44,6 +44,9 @@ final class ARController {
     private(set) var rendered = 0
     private(set) var snapped = 0
     private(set) var nearestM: Double?
+    /// The piece currently closest to the camera — what a viewer is most likely
+    /// looking at, and all the view-mode HUD needs to name it.
+    private(set) var nearestId: Int?
 
     func setStatus(_ status: String, ready: Bool) {
         self.status = status
@@ -125,10 +128,11 @@ final class ARController {
         lastPlacementWrapped = wrapped
     }
 
-    func setNearby(rendered: Int, snapped: Int, nearestM: Double?) {
+    func setNearby(rendered: Int, snapped: Int, nearestM: Double?, nearestId: Int?) {
         self.rendered = rendered
         self.snapped = snapped
         self.nearestM = nearestM
+        self.nearestId = nearestId
     }
 
     /// How well the current spot is scanned: "rough" | "good" | "precise".

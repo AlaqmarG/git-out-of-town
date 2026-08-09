@@ -2,14 +2,23 @@ import CoreLocation
 import MapKit
 import SwiftUI
 
-/// The home screen: everything painted around you, live. Tap a piece to see
-/// it and get pointed to the spot; walk over and open Paint to view it in AR.
+enum GallerySort: String, CaseIterable {
+    case nearest = "Nearest"
+    case newest = "Newest"
+}
+
+/// The home screen: everything painted around you, live. The map says where;
+/// the gallery underneath says what, for every piece in view at once; opening
+/// one hands the whole screen to the artwork.
 struct MapTabView: View {
     @Binding var tab: AppTab
+    @Binding var arMode: ARMode
     var onHelp: () -> Void
 
     @State private var pieces: [PieceDTO] = []
     @State private var selected: PieceDTO?
+    @State private var expanded = false
+    @State private var sort: GallerySort = .nearest
     @State private var loaded = false
     @State private var offline = false
     @State private var position: MapCameraPosition = .userLocation(fallback: .automatic)
@@ -19,8 +28,9 @@ struct MapTabView: View {
     private var location = LocationService.shared
     private var permissions = Permissions.shared
 
-    init(tab: Binding<AppTab>, onHelp: @escaping () -> Void) {
+    init(tab: Binding<AppTab>, arMode: Binding<ARMode>, onHelp: @escaping () -> Void) {
         _tab = tab
+        _arMode = arMode
         self.onHelp = onHelp
     }
 
@@ -28,13 +38,11 @@ struct MapTabView: View {
         Map(position: $position) {
             UserAnnotation()
             ForEach(pieces) { piece in
-                Annotation("", coordinate: CLLocationCoordinate2D(latitude: piece.lat, longitude: piece.lng)) {
+                Annotation("", coordinate: piece.coordinate) {
                     PieceMarker(piece: piece, isSelected: selected?.id == piece.id)
                         .onTapGesture {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            withAnimation(.snappy) {
-                                selected = selected?.id == piece.id ? nil : piece
-                            }
+                            selected = piece
                         }
                 }
             }
@@ -47,16 +55,25 @@ struct MapTabView: View {
         .overlay(alignment: .top) { header }
         .overlay { status }
         .safeAreaInset(edge: .bottom) {
-            if let selected {
-                PieceGuideCard(piece: selected, tab: $tab) {
-                    withAnimation(.snappy) { self.selected = nil }
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+            if !pieces.isEmpty {
+                NearbyGallery(pieces: pieces, expanded: $expanded, sort: $sort) { selected = $0 }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.snappy, value: selected?.id)
+        .animation(.snappy, value: pieces.isEmpty)
+        .fullScreenCover(item: $selected) { piece in
+            PieceDetailView(
+                piece: piece,
+                context: pieces,
+                onOpen: { selected = $0 },
+                onViewInAR: {
+                    selected = nil
+                    arMode = .view
+                    tab = .paint
+                },
+                dismiss: { selected = nil }
+            )
+        }
         .onMapCameraChange(frequency: .onEnd) { context in
             visibleRegion = context.region
             Task { await refresh() }
@@ -121,15 +138,15 @@ struct MapTabView: View {
                 title: "Can't reach the wall",
                 message: "The map lives on the server. It'll fill in on its own as soon as you're back online.",
                 actionTitle: "Paint offline anyway",
-                action: { tab = .paint }
+                action: { arMode = .paint; tab = .paint }
             )
-        } else if loaded && pieces.isEmpty && selected == nil {
+        } else if loaded && pieces.isEmpty {
             blocker(
                 symbol: "paintbrush.pointed.fill",
                 title: "Be the first here",
                 message: "Nobody has painted this street yet. Open Paint, point at a wall, and put something on it.",
                 actionTitle: "Start painting",
-                action: { tab = .paint }
+                action: { arMode = .paint; tab = .paint }
             )
         }
     }
@@ -204,8 +221,10 @@ private struct PieceMarker: View {
     let isSelected: Bool
 
     var body: some View {
-        PieceThumbnail(url: APIClient.imageURL(path: piece.finalImagePath ?? piece.rawImagePath), inset: 4)
+        PieceImage(path: piece.artPath)
+            .padding(4)
             .frame(width: isSelected ? 56 : 44, height: isSelected ? 56 : 44)
+            .clipped()
             .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -214,153 +233,164 @@ private struct PieceMarker: View {
             .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
             .animation(.snappy(duration: 0.2), value: isSelected)
             .accessibilityElement()
-            .accessibilityLabel(piece.surfaceType.map { "Piece on a \($0)" } ?? "Piece \(piece.id)")
+            .accessibilityLabel("\(piece.title) \(piece.surfaceLine)")
             .accessibilityAddTraits(.isButton)
     }
 }
 
-/// A remote image that admits when it failed instead of spinning forever.
-private struct PieceThumbnail: View {
-    let url: URL
-    var inset: CGFloat = 0
-
-    var body: some View {
-        AsyncImage(url: url) { phase in
-            switch phase {
-            case .success(let image):
-                image.resizable().scaledToFill().padding(inset)
-            case .failure:
-                Image(systemName: "photo.badge.exclamationmark")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.white.opacity(0.6))
-            default:
-                ProgressView().controlSize(.small).tint(.white)
-            }
-        }
-        .clipped()
-    }
-}
-
-/// Photo of the piece in place + live distance and a compass arrow that
-/// points where to walk.
-private struct PieceGuideCard: View {
-    let piece: PieceDTO
-    @Binding var tab: AppTab
-    var dismiss: () -> Void
+/// Everything in view, not one pin at a time. Collapsed it is a strip of
+/// artwork you can flick through without leaving the map; expanded it is the
+/// full list with distance, direction and age on every row.
+private struct NearbyGallery: View {
+    let pieces: [PieceDTO]
+    @Binding var expanded: Bool
+    @Binding var sort: GallerySort
+    var onOpen: (PieceDTO) -> Void
 
     private var location = LocationService.shared
 
-    init(piece: PieceDTO, tab: Binding<AppTab>, dismiss: @escaping () -> Void) {
-        self.piece = piece
-        _tab = tab
-        self.dismiss = dismiss
+    init(pieces: [PieceDTO], expanded: Binding<Bool>, sort: Binding<GallerySort>, onOpen: @escaping (PieceDTO) -> Void) {
+        self.pieces = pieces
+        _expanded = expanded
+        _sort = sort
+        self.onOpen = onOpen
     }
 
     var body: some View {
-        VStack(spacing: 14) {
-            HStack(alignment: .top, spacing: 14) {
-                PieceThumbnail(url: previewURL)
-                    .frame(width: 96, height: 96)
-                    .background(.black.opacity(0.25))
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(title)
-                        .font(.headline)
-                    if let guidance {
-                        HStack(spacing: 7) {
-                            Image(systemName: "location.north.fill")
-                                .font(.caption.weight(.bold))
-                                .rotationEffect(.degrees(guidance.arrow))
-                                .animation(.snappy(duration: 0.3), value: guidance.arrow)
-                            Text(guidance.text)
+        VStack(spacing: 10) {
+            header
+            if expanded {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(sorted) { piece in
+                            Button { onOpen(piece) } label: { row(piece) }
+                                .buttonStyle(.plain)
                         }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.spray)
-                        .accessibilityLabel("\(guidance.text) of you")
                     }
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
-
-                Spacer(minLength: 0)
-
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.caption.weight(.bold))
-                        .frame(width: 30, height: 30)
-                        .contentShape(Rectangle())
+                .frame(height: 300)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(sorted) { piece in
+                            Button { onOpen(piece) } label: { thumbnail(piece) }
+                                .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 2)
                 }
-                .buttonStyle(.glass)
-                .accessibilityLabel("Close")
+                .frame(height: 88)
             }
-
-            // Every piece renders in AR — web ones simply face you — so this is
-            // never a dead-end card.
-            Button {
-                tab = .paint
-            } label: {
-                Label(arButtonTitle, systemImage: "arkit")
-                    .fontWeight(.bold)
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: 48)
-            }
-            .buttonStyle(.glassProminent)
-            .tint(Color.spray)
-            .foregroundStyle(.black)
         }
-        .padding(16)
+        .padding(14)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+        .animation(.snappy, value: expanded)
     }
 
-    private var previewURL: URL {
-        APIClient.imageURL(path: piece.sceneImagePath ?? piece.finalImagePath ?? piece.rawImagePath)
-    }
+    private var header: some View {
+        HStack(spacing: 10) {
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                expanded.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Text("\(pieces.count) here")
+                        .font(.subheadline.weight(.bold))
+                        .contentTransition(.numericText())
+                    Image(systemName: expanded ? "chevron.down" : "chevron.up")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(expanded ? "Collapse the list of pieces here" : "Show all \(pieces.count) pieces here")
 
-    private var title: String {
-        piece.surfaceType.map { "Piece on a \($0)" } ?? "Piece #\(piece.id)"
-    }
+            Spacer(minLength: 0)
 
-    private var subtitle: String {
-        guard let guidance, guidance.meters < 30 else {
-            return "Walk to the spot, then open Paint and scan around — it appears where it was sprayed."
+            Button {
+                sort = sort == .nearest ? .newest : .nearest
+            } label: {
+                Label(sort.rawValue, systemImage: sort == .nearest ? "location.fill" : "clock")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.spray)
+            .accessibilityLabel("Sorted by \(sort.rawValue). Tap to change.")
         }
-        return "You're close. Open Paint and pan slowly across the wall to see it."
     }
 
-    private var arButtonTitle: String {
-        if let guidance, guidance.meters < 30 { return "You're here — view it in AR" }
-        return "Walk there, then view in AR"
+    /// Nearest needs a fix; without one it would be an arbitrary order dressed
+    /// up as a meaningful one, so fall back to newest.
+    private var sorted: [PieceDTO] {
+        guard sort == .nearest, let loc = location.location else {
+            return pieces.sorted { $0.createdAt > $1.createdAt }
+        }
+        return pieces.sorted {
+            loc.distance(from: CLLocation(latitude: $0.lat, longitude: $0.lng))
+                < loc.distance(from: CLLocation(latitude: $1.lat, longitude: $1.lng))
+        }
     }
 
-    private var guidance: (meters: Double, text: String, arrow: Double)? {
-        guard let loc = location.location else { return nil }
-        let target = CLLocation(latitude: piece.lat, longitude: piece.lng)
-        let meters = loc.distance(from: target)
-        let bearing = bearingDegrees(
-            from: loc.coordinate,
-            to: CLLocationCoordinate2D(latitude: piece.lat, longitude: piece.lng)
-        )
-        let distanceText = meters < 1000 ? "\(Int(meters)) m" : String(format: "%.1f km", meters / 1000)
-        let arrow = bearing - (location.heading ?? 0)
-        return (meters, "\(distanceText) · \(compassWord(bearing))", arrow)
+    private func thumbnail(_ piece: PieceDTO) -> some View {
+        PieceImage(path: piece.previewPath)
+            .frame(width: 116, height: 88)
+            .clipped()
+            .background(.black.opacity(0.35))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(alignment: .bottomLeading) {
+                Text(caption(piece))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(.black.opacity(0.6), in: Capsule())
+                    .padding(6)
+            }
+            .accessibilityElement()
+            .accessibilityLabel("\(piece.title), \(caption(piece))")
     }
 
-    private func bearingDegrees(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D) -> Double {
-        let lat1 = from.latitude * .pi / 180, lat2 = to.latitude * .pi / 180
-        let dLng = (to.longitude - from.longitude) * .pi / 180
-        let y = sin(dLng) * cos(lat2)
-        let x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLng)
-        return (atan2(y, x) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
+    private func row(_ piece: PieceDTO) -> some View {
+        HStack(spacing: 12) {
+            PieceImage(path: piece.previewPath)
+                .frame(width: 72, height: 60)
+                .clipped()
+                .background(.black.opacity(0.35))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(piece.city.map { "\(piece.title) · \($0)" } ?? piece.title)
+                    .font(.subheadline.weight(.semibold))
+                if let relation = PieceGeo.relation(to: piece) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "location.north.fill")
+                            .font(.caption2.weight(.bold))
+                            .rotationEffect(.degrees(relation.arrow))
+                        Text(relation.text)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.spray)
+                }
+                Text("\(PieceGeo.ago(piece.createdAt)) · \(piece.surfaceLine)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 
-    private func compassWord(_ bearing: Double) -> String {
-        let words = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"]
-        return words[Int((bearing + 22.5) / 45) % 8]
+    private func caption(_ piece: PieceDTO) -> String {
+        PieceGeo.relation(to: piece).map { PieceGeo.distanceText($0.meters) }
+            ?? PieceGeo.ago(piece.createdAt)
     }
 }
