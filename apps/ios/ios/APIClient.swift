@@ -112,9 +112,24 @@ enum APIClient {
             throw APIError.badStatus((response as? HTTPURLResponse)?.statusCode ?? -1)
         }
         do {
-            return try JSONDecoder().decode(PieceDTO.self, from: data)
+            let piece = try JSONDecoder().decode(PieceDTO.self, from: data)
+            requestTransform(id: piece.id)
+            return piece
         } catch {
             throw APIError.decoding(error)
+        }
+    }
+
+    /// Kicks off the server-side Replicate restyle. Fire-and-forget: the raw
+    /// art is already saved and shown; the polished version swaps in when the
+    /// map next refreshes. A failure here must never surface to the user.
+    private static func requestTransform(id: Int) {
+        Task {
+            var request = URLRequest(url: baseURL.appendingPathComponent("api/transform"))
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try? JSONEncoder().encode(["id": id])
+            _ = try? await URLSession.shared.data(for: request)
         }
     }
 
