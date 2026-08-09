@@ -121,6 +121,7 @@ enum DepthDecal {
         var sum = SIMD3<Float>.zero
         var normalSum = SIMD3<Float>.zero
         var kept = 0
+        var graze = GrazeMap()
 
         let camPos = simd_make_float3(transform.columns.3)
 
@@ -153,6 +154,9 @@ enum DepthDecal {
 
                 guard let n = unitVector(simd_cross(b - a, c - a)) else { continue }
                 let facing = simd_dot(n, camPos - a) > 0 ? n : -n
+                if let toCan = unitVector(camPos - a) {
+                    graze.add(u: centre.x, v: centre.y, cosine: simd_dot(facing, toCan))
+                }
 
                 let base = UInt32(positions.count)
                 // 3 mm off the surface so the art wins the depth test against
@@ -206,7 +210,8 @@ enum DepthDecal {
             ),
             position: position,
             surfaceNormal: normal,
-            extent: max(extent * 2, 0.05)
+            extent: max(extent * 2, 0.05),
+            graze: graze.image()
         )
     }
 
