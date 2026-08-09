@@ -49,9 +49,9 @@ The public side is a Next.js site with a MapLibre map whose dark style we made o
 tiles. PostgreSQL stores the wall, pushes new pieces to open maps, and powers the live stats page.
 The site runs in Docker on our own server.
 
-We used Reve as a small design studio. One shared style guide and two contact sheets became 18
-stickers that look like a set. We paired them with 18 word stickers built from a graffiti alphabet
-we drew ourselves. Reve also helped us develop the app icon and the rest of the visual direction.
+We used Reve as a small design studio. It generated 18 matching stickers from one shared style guide
+and two contact-sheet prompts. The other 18 came from the project's procedural graffiti renderer.
+Reve also helped us develop the app icon and the rest of the visual direction.
 
 ## Challenges we ran into
 
@@ -72,8 +72,8 @@ We have a real public map that people can open now. Paint something on the phone
 that map a few seconds later. The stats page moves with it.
 
 We are also proud that the AR work responds to the shape and texture of a place. The sticker pack,
-graffiti alphabet, map, and app icon give the project a look that feels like ours. One piece is fun;
-a block full of them starts to feel like people are talking to each other.
+map, and app icon give the project a consistent look. One piece is fun; a block full of them starts
+to feel like people are talking to each other.
 
 ## What we learned
 
@@ -82,8 +82,8 @@ visual landmarks, and the phone's confidence all matter. The app works best when
 clues together and admits when a placement is approximate.
 
 Reve was most useful when we treated it like an art tool instead of a button. The shared rules and
-contact sheets gave us a starting point. Our lettering, map, interactions, and AR treatment gave the
-project its own voice.
+contact sheets gave us a starting point. Combining those assets with the map, interactions, and AR
+treatment gave the project its own voice.
 
 ## What's next for Git Out of Town
 
