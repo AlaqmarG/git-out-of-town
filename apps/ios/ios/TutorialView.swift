@@ -29,10 +29,10 @@ struct TutorialView: View {
             text: "The map shows everything painted near you. Tap a piece and the arrow points you to its spot."
         ),
         Page(
-            symbol: "arkit",
+            symbol: "camera.fill",
             tint: Color(red: 0.00, green: 0.90, blue: 0.35),
-            title: "Spray in AR",
-            text: "Open Paint and pan slowly so it learns the walls. Pick a color or draw your own, then tap any surface."
+            title: "Shoot, then paint",
+            text: "Pan slowly so the phone reads the depth, take a photo of the spot, then stamp stickers or draw straight onto it."
         ),
         Page(
             symbol: "paperplane.fill",

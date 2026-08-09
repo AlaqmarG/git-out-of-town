@@ -17,8 +17,6 @@ struct PlacementSnapshot {
     let usedGeoAnchor: Bool
     let hasLidar: Bool
     let placementTransform: [Double]
-    /// JPEG of the camera frame at placement (with the piece composited). Shown on the web.
-    let sceneData: Data?
 }
 
 /// A piece placed by someone else, to be rendered from its stored transform.
@@ -33,59 +31,26 @@ struct RemotePiece: Identifiable {
 }
 
 struct ARPaintView: UIViewRepresentable {
-    var color: UIColor
-    var clearToken: Int
+    var controller: ARController
     var showDebug: Bool
     var isActive: Bool
-    var locked: Bool
-    var drawingImage: UIImage?
     var remotePieces: [RemotePiece]
-    var previewSize: Float
-    var placeToken: Int
-    var cancelToken: Int
-    var discardToken: Int
-    var onPlace: (String) -> Void
-    var onPiecePlaced: (PlacementSnapshot) -> Void
-    var onStatus: (String) -> Void
-    var onHint: (String) -> Void
-    var onPreviewState: (Bool) -> Void
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(
-            color: color,
-            drawingImage: drawingImage,
-            previewSize: previewSize,
-            onPlace: onPlace,
-            onPiecePlaced: onPiecePlaced,
-            onStatus: onStatus,
-            onHint: onHint,
-            onPreviewState: onPreviewState
-        )
-    }
+    func makeCoordinator() -> Coordinator { Coordinator(controller: controller) }
 
     func makeUIView(context: Context) -> ARSCNView {
         let scnView = ARSCNView(frame: .zero)
         scnView.delegate = context.coordinator
         scnView.debugOptions = context.coordinator.debugOptions(showDebug)
-
-        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
-        scnView.addGestureRecognizer(tap)
-
+        scnView.automaticallyUpdatesLighting = true
         context.coordinator.scnView = scnView
         context.coordinator.setupSession(in: scnView)
         return scnView
     }
 
     func updateUIView(_ scnView: ARSCNView, context: Context) {
-        context.coordinator.color = color
-        context.coordinator.drawingImage = drawingImage
-        context.coordinator.locked = locked
         context.coordinator.setActive(isActive)
-        context.coordinator.clear(clearToken)
         context.coordinator.renderRemotePieces(remotePieces)
-        context.coordinator.previewSize = previewSize
-        context.coordinator.setPreviewSize(previewSize)
-        context.coordinator.handleCommands(placeToken: placeToken, cancelToken: cancelToken, discardToken: discardToken)
         scnView.debugOptions = context.coordinator.debugOptions(showDebug)
     }
 }
@@ -93,15 +58,7 @@ struct ARPaintView: UIViewRepresentable {
 extension ARPaintView {
     final class Coordinator: NSObject, ARSCNViewDelegate {
         var scnView: ARSCNView?
-        var color: UIColor
-        var drawingImage: UIImage?
-        var locked = false
-        var onPlace: (String) -> Void
-        var onPiecePlaced: (PlacementSnapshot) -> Void
-        var onStatus: (String) -> Void
-        var onHint: (String) -> Void
-        var onPreviewState: (Bool) -> Void
-        private var lastClearToken = 0
+        private let controller: ARController
         private var lastStatus = ""
         private var renderedRemoteIDs: Set<Int> = []
         private var remoteNodes: [Int: SCNNode] = [:]
@@ -111,18 +68,9 @@ extension ARPaintView {
         private var usingGeoAnchor = false
         private var checkedGeoTracking = false
         private var sessionActive = true
-        var previewSize: Float = 0.3
-        private var lastPlaceToken = 0
-        private var lastCancelToken = 0
-        private var lastDiscardToken = 0
-        private var isPreviewing = false
-        private var previewNode: SCNNode?
-        private var lastPlacedNode: SCNNode?
         private var placedNodes: [SCNNode] = []
+        private var lastPlacedNode: SCNNode?
         private var snappedIDs: Set<Int> = []
-        private var lastCancelAt = Date.distantPast
-        private var previewInfo: (placement: simd_float4x4, position: SIMD3<Float>, surfaceType: String)?
-        private var lastAppliedPreviewSize: Float = 0
 
         let hasLidar = ARWorldTrackingConfiguration.supportsSceneReconstruction(.meshWithClassification)
 
@@ -133,24 +81,10 @@ extension ARPaintView {
         }
         private var pendingGeoPieces: [String: PendingGeoPiece] = [:]
 
-        init(
-            color: UIColor,
-            drawingImage: UIImage?,
-            previewSize: Float,
-            onPlace: @escaping (String) -> Void,
-            onPiecePlaced: @escaping (PlacementSnapshot) -> Void,
-            onStatus: @escaping (String) -> Void,
-            onHint: @escaping (String) -> Void,
-            onPreviewState: @escaping (Bool) -> Void
-        ) {
-            self.color = color
-            self.drawingImage = drawingImage
-            self.previewSize = previewSize
-            self.onPlace = onPlace
-            self.onPiecePlaced = onPiecePlaced
-            self.onStatus = onStatus
-            self.onHint = onHint
-            self.onPreviewState = onPreviewState
+        init(controller: ARController) {
+            self.controller = controller
+            super.init()
+            controller.coordinator = self
         }
 
         func debugOptions(_ show: Bool) -> SCNDebugOptions {
@@ -159,16 +93,13 @@ extension ARPaintView {
 
         // MARK: - Session
 
-        /// Starts on the GPS-bearing fallback, then upgrades to geo tracking when
-        /// ARKit reports coverage at the current spot. Both clients running geo
-        /// tracking reconstruct pieces at the exact same real-world spot.
         func setupSession(in scnView: ARSCNView) {
             scnView.session.run(makeWorldConfiguration())
         }
 
         /// World tracking with every depth capability the device offers: LiDAR
-        /// scene reconstruction for occlusion + surface classification, and
-        /// person segmentation so people walk in front of pieces.
+        /// scene reconstruction for occlusion, wrapping and surface
+        /// classification, plus person segmentation.
         private func makeWorldConfiguration() -> ARWorldTrackingConfiguration {
             let config = ARWorldTrackingConfiguration()
             config.planeDetection = [.horizontal, .vertical]
@@ -189,11 +120,7 @@ extension ARPaintView {
             guard active != sessionActive, let scnView else { return }
             sessionActive = active
             if active {
-                if usingGeoAnchor {
-                    scnView.session.run(makeGeoConfiguration())
-                } else {
-                    scnView.session.run(makeWorldConfiguration())
-                }
+                scnView.session.run(usingGeoAnchor ? makeGeoConfiguration() : makeWorldConfiguration())
             } else {
                 scnView.session.pause()
             }
@@ -214,31 +141,20 @@ extension ARPaintView {
                 checkedGeoTracking = true
                 return
             }
-            // Wait for a decent fix rather than giving up on the first (bad) one.
             guard let loc = LocationService.shared.location,
-                  loc.horizontalAccuracy >= 0, loc.horizontalAccuracy < 30 else {
-                return
-            }
+                  loc.horizontalAccuracy >= 0, loc.horizontalAccuracy < 30 else { return }
             checkedGeoTracking = true
             ARGeoTrackingConfiguration.checkAvailability(at: loc.coordinate) { [weak self] available, _ in
                 Task { @MainActor in
-                    guard let self, let scnView = self.scnView else { return }
-                    guard available else {
-                        self.onStatus("geo-tracking not available here — using GPS placement")
-                        return
-                    }
+                    guard let self, let scnView = self.scnView, available else { return }
                     scnView.session.run(self.makeGeoConfiguration(), options: [.resetTracking, .removeExistingAnchors])
                     self.usingGeoAnchor = true
-                    // Drop any GPS-fallback nodes; they'll be re-added via geo anchors.
-                    for (_, node) in self.remoteNodes {
-                        node.removeFromParentNode()
-                    }
+                    for (_, node) in self.remoteNodes { node.removeFromParentNode() }
                     self.remoteNodes.removeAll()
                     self.renderedRemoteIDs.removeAll()
                     self.fallbackNodes.removeAll()
                     self.fallbackPieces.removeAll()
                     self.pendingGeoPieces.removeAll()
-                    self.onStatus("geo-tracking active — pieces pin to exact spots")
                 }
             }
         }
@@ -273,64 +189,57 @@ extension ARPaintView {
         // MARK: - Status
 
         private func publishStatus() {
-            let status = sessionStatus()
+            let (status, ready) = sessionStatus()
             guard status != lastStatus else { return }
             lastStatus = status
-            Task { @MainActor [weak self] in
-                self?.onStatus(status)
-            }
+            controller.setStatus(status, ready: ready)
         }
 
-        private func sessionStatus() -> String {
+        private func sessionStatus() -> (String, Bool) {
             guard let frame = scnView?.session.currentFrame else {
-                return "starting camera…"
+                return ("Starting camera…", false)
             }
             switch frame.camera.trackingState {
             case .notAvailable:
-                return "AR not available on this device"
+                return ("AR isn't available on this device", false)
             case .normal:
-                let planeCount = frame.anchors.reduce(into: 0) { count, anchor in
+                if hasLidar {
+                    let meshes = frame.anchors.reduce(into: 0) { count, anchor in
+                        if anchor is ARMeshAnchor { count += 1 }
+                    }
+                    return meshes < 2
+                        ? ("Scanning the room — pan slowly", false)
+                        : ("Depth ready — point at a wall", true)
+                }
+                let planes = frame.anchors.reduce(into: 0) { count, anchor in
                     if anchor is ARPlaneAnchor { count += 1 }
                 }
-                let depth = hasLidar ? "LiDAR ✓ · " : ""
-                if planeCount == 0 {
-                    return "\(depth)tracking ✓ · scanning — slowly pan the camera around"
-                }
-                return "\(depth)tracking ✓ · \(planeCount) surface\(planeCount == 1 ? "" : "s") detected"
+                return planes == 0
+                    ? ("Scanning — pan slowly across a wall", false)
+                    : ("Ready — point at a wall", true)
             case .limited(let reason):
-                return "tracking limited: \(limitedReason(reason))"
+                return (limitedReason(reason), false)
             }
         }
 
         private func limitedReason(_ reason: ARCamera.TrackingState.Reason) -> String {
             switch reason {
-            case .initializing: return "initializing — move the phone around"
-            case .excessiveMotion: return "slow down"
-            case .insufficientFeatures: return "point at a more textured surface"
-            case .relocalizing: return "relocalizing"
-            @unknown default: return "waiting"
+            case .initializing: return "Getting started — move the phone around"
+            case .excessiveMotion: return "Slow down"
+            case .insufficientFeatures: return "Point at a more textured surface"
+            case .relocalizing: return "Finding your spot again"
+            @unknown default: return "Waiting"
             }
         }
 
         /// Removes only our piece nodes. ARKit-managed nodes — the LiDAR
         /// occlusion meshes above all — must survive, or occlusion silently
         /// dies for the rest of the session.
-        func clear(_ token: Int) {
-            guard token != lastClearToken else { return }
-            lastClearToken = token
-            previewNode?.removeFromParentNode()
-            previewNode = nil
-            previewInfo = nil
-            lastPlacedNode = nil
-            isPreviewing = false
-            onPreviewState(false)
-            for node in placedNodes {
-                node.removeFromParentNode()
-            }
+        func clearPieces() {
+            for node in placedNodes { node.removeFromParentNode() }
             placedNodes.removeAll()
-            for (_, node) in remoteNodes {
-                node.removeFromParentNode()
-            }
+            lastPlacedNode = nil
+            for (_, node) in remoteNodes { node.removeFromParentNode() }
             remoteNodes.removeAll()
             renderedRemoteIDs.removeAll()
             pendingGeoPieces.removeAll()
@@ -339,269 +248,233 @@ extension ARPaintView {
             snappedIDs.removeAll()
         }
 
-        // MARK: - Placing a piece
+        // MARK: - Capture
 
-        @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
-            guard let scnView, !isPreviewing, !locked,
-                  Date().timeIntervalSince(lastCancelAt) > 0.25 else { return }
-            let location = recognizer.location(in: scnView)
+        /// Freezes what the user is looking at: the rendered still, the pose it
+        /// was seen from, and a value copy of the depth mesh in front of them.
+        func capture() -> CapturedScene? {
+            guard let scnView, let frame = scnView.session.currentFrame else { return nil }
+            let viewport = scnView.bounds.size
+            guard viewport.width > 0, viewport.height > 0 else { return nil }
 
-            var results = raycast(in: scnView, at: location, target: .existingPlaneGeometry)
+            let photo = scnView.snapshot()
+            let camera = frame.camera
+            let camPos = simd_make_float3(camera.transform.columns.3)
+            let ahead = camPos - simd_make_float3(camera.transform.columns.2) * 2
+
+            let triangles = hasLidar
+                ? ProjectedDecal.triangles(anchors: frame.anchors, around: ahead)
+                : []
+
+            let center = CGPoint(x: viewport.width / 2, y: viewport.height / 2)
+            let fallback = flatPlacement(at: center, in: scnView)
+
+            return CapturedScene(
+                photo: photo,
+                camera: camera,
+                viewport: viewport,
+                triangles: triangles,
+                hasLidar: hasLidar,
+                fallbackPlacement: fallback,
+                surfaceType: surfaceType(at: ahead, frame: frame, fallback: fallback?.surfaceType)
+            )
+        }
+
+        private func surfaceType(at point: SIMD3<Float>, frame: ARFrame, fallback: String?) -> String? {
+            if let fallback, fallback != "unknown" { return fallback }
+            guard hasLidar else { return nil }
+            return MeshOcclusion.classification(at: point, anchors: frame.anchors)?.label
+        }
+
+        /// Raycast-derived flat placement — the no-LiDAR path, and the safety net
+        /// when the mesh has nothing to project onto.
+        private func flatPlacement(at screenPoint: CGPoint, in scnView: ARSCNView) -> (transform: simd_float4x4, position: SIMD3<Float>, surfaceType: String)? {
+            var results = raycast(in: scnView, at: screenPoint, target: .existingPlaneGeometry)
             if results.isEmpty {
-                results = raycast(in: scnView, at: location, target: .estimatedPlane)
+                results = raycast(in: scnView, at: screenPoint, target: .estimatedPlane)
             }
-            guard let result = results.first else {
-                onHint("No surface there — aim at a wall or floor and pan around to build tracking")
-                return
-            }
-            guard let preview = makePlacement(from: result) else { return }
-            enterPreview(preview, scnView: scnView)
-        }
+            guard let result = results.first, let camera = scnView.session.currentFrame?.camera else { return nil }
 
-        /// Computes the surface-aligned placement for a raycast hit.
-        private func makePlacement(from result: ARRaycastResult) -> (placement: simd_float4x4, position: SIMD3<Float>, surfaceType: String)? {
-            guard let scnView else { return nil }
             let hit = result.worldTransform
-            let position = simd_float3(hit.columns.3.x, hit.columns.3.y, hit.columns.3.z)
+            let position = simd_make_float3(hit.columns.3)
+            var normal = (result.anchor as? ARPlaneAnchor).map {
+                simd_normalize(simd_make_float3($0.transform.columns.1))
+            } ?? simd_normalize(simd_make_float3(hit.columns.1))
 
-            var normal = simd_float3(hit.columns.1.x, hit.columns.1.y, hit.columns.1.z)
-            if let plane = result.anchor as? ARPlaneAnchor {
-                normal = simd_float3(plane.transform.columns.1.x, plane.transform.columns.1.y, plane.transform.columns.1.z)
-            }
-            normal = simd_normalize(normal)
+            let camPos = simd_make_float3(camera.transform.columns.3)
+            if simd_dot(normal, simd_normalize(camPos - position)) < 0 { normal = -normal }
 
-            if let camera = scnView.session.currentFrame?.camera {
-                let cameraPosition = simd_float3(camera.transform.columns.3.x, camera.transform.columns.3.y, camera.transform.columns.3.z)
-                let toCamera = simd_normalize(cameraPosition - position)
-                if simd_dot(normal, toCamera) < 0 {
-                    normal = -normal
-                }
-            }
+            let transform = Self.surfaceFrame(
+                position: position + normal * 0.004,
+                normal: normal,
+                upHint: simd_make_float3(camera.transform.columns.1)
+            )
+            let classification = (result.anchor as? ARPlaneAnchor)?.classification.label ?? "unknown"
+            return (transform, position, classification)
+        }
 
-            let camera = scnView.session.currentFrame?.camera
-            let cameraUp = camera.map { c in
-                simd_float3(c.transform.columns.1.x, c.transform.columns.1.y, c.transform.columns.1.z)
-            } ?? SIMD3<Float>(0, 1, 0)
-            let cameraForward = camera.map { c in
-                -simd_float3(c.transform.columns.2.x, c.transform.columns.2.y, c.transform.columns.2.z)
-            } ?? SIMD3<Float>(0, 0, -1)
-
-            var upOnSurface = cameraUp - normal * simd_dot(cameraUp, normal)
-            if simd_length(upOnSurface) < 0.01 {
-                upOnSurface = cameraForward - normal * simd_dot(cameraForward, normal)
-            }
-            if simd_length(upOnSurface) < 0.01 {
-                upOnSurface = simd_cross(normal, SIMD3<Float>(0, 1, 0))
-            }
-            upOnSurface = simd_normalize(upOnSurface)
-
-            let right = simd_cross(upOnSurface, normal)
-            let offset = normal * 0.003
-            var placement = simd_float4x4(columns: (
-                simd_float4(right.x, right.y, right.z, 0),
-                simd_float4(upOnSurface.x, upOnSurface.y, upOnSurface.z, 0),
+        /// Upright, surface-aligned frame — the convention every client uses, with
+        /// the SCNPlane 90° correction already folded in.
+        static func surfaceFrame(position: SIMD3<Float>, normal: SIMD3<Float>, upHint: SIMD3<Float>) -> simd_float4x4 {
+            var up = upHint - normal * simd_dot(upHint, normal)
+            if simd_length(up) < 0.01 { up = simd_cross(normal, SIMD3<Float>(1, 0, 0)) }
+            if simd_length(up) < 0.01 { up = simd_cross(normal, SIMD3<Float>(0, 0, 1)) }
+            up = simd_normalize(up)
+            let right = simd_cross(up, normal)
+            return simd_float4x4(columns: (
+                simd_float4(up.x, up.y, up.z, 0),
+                simd_float4(-right.x, -right.y, -right.z, 0),
                 simd_float4(normal.x, normal.y, normal.z, 0),
-                simd_float4(position.x + offset.x, position.y + offset.y, position.z + offset.z, 1)
+                simd_float4(position.x, position.y, position.z, 1)
             ))
-
-            // SCNPlane maps the image rotated 90° clockwise; cancel that in the plane's local frame.
-            let upright = simd_float4x4(columns: (
-                simd_float4(0, 1, 0, 0),
-                simd_float4(-1, 0, 0, 0),
-                simd_float4(0, 0, 1, 0),
-                simd_float4(0, 0, 0, 1)
-            ))
-            placement = placement * upright
-
-            var classification = (result.anchor as? ARPlaneAnchor)?.classification.label ?? "unknown"
-            if classification == "unknown", hasLidar,
-               let anchors = scnView.session.currentFrame?.anchors,
-               let meshLabel = MeshOcclusion.classification(at: position, anchors: anchors)?.label {
-                classification = meshLabel
-            }
-            return (placement, position, classification)
         }
 
-        // MARK: - Preview / confirm flow
+        // MARK: - Placing painted art
 
-        private func enterPreview(_ preview: (placement: simd_float4x4, position: SIMD3<Float>, surfaceType: String), scnView: ARSCNView) {
-            let node = makePieceNode(size: previewSize, transparent: true)
-            node.simdTransform = preview.placement
-            scnView.scene.rootNode.addChildNode(node)
-            previewNode = node
-            previewInfo = preview
-            isPreviewing = true
-            lastAppliedPreviewSize = previewSize
-            onPreviewState(true)
-        }
+        /// Projects the finished overlay back into the world through the pose it
+        /// was painted from, so it lands exactly where the user drew it and wraps
+        /// whatever geometry was under the brush.
+        func placePainted(overlay: UIImage, scene: CapturedScene) -> PlacementSnapshot? {
+            guard let scnView, let mask = PaintMask(overlay: overlay) else { return nil }
 
-        func setPreviewSize(_ size: Float) {
-            guard isPreviewing, let previewNode, abs(size - lastAppliedPreviewSize) > 0.001 else { return }
-            lastAppliedPreviewSize = size
-            let clamped = max(0.1, min(size, 2.0))
-            previewNode.geometry = SCNPlane(width: CGFloat(clamped), height: CGFloat(clamped))
-            previewNode.geometry?.materials = [makePieceMaterial(transparent: true)]
-        }
+            var node: SCNNode
+            let placement: simd_float4x4
+            let position: SIMD3<Float>
+            let sizeMeters: Float
 
-        private func confirmPlacement() {
-            guard let scnView, let preview = previewInfo else { return }
-            previewNode?.removeFromParentNode()
-            previewNode = nil
-            previewInfo = nil
-            isPreviewing = false
-
-            let frame = scnView.session.currentFrame
-            let basis = basis(fromPlacement: preview.placement)
-            let surfaceTexture = frame.flatMap {
-                SurfaceTexture.luminanceMap(frame: $0, basis: basis, size: previewSize)
-            }
-
-            // LiDAR: drape the art over the scanned mesh so it wraps the real
-            // geometry. Otherwise (or when the mesh is too sparse) a flat quad.
-            let node: SCNNode
-            if hasLidar, let anchors = frame?.anchors,
-               let decal = DecalMesh.geometry(basis: basis, size: previewSize, anchors: anchors) {
-                decal.materials = [makePieceMaterial(transparent: false, surfaceTexture: surfaceTexture)]
-                node = SCNNode(geometry: decal)
-                node.simdTransform = basis
+            if let projected = ProjectedDecal.build(
+                triangles: scene.triangles,
+                camera: scene.camera,
+                viewport: scene.viewport,
+                mask: mask
+            ) {
+                projected.geometry.materials = [material(art: overlay, shade: scene.photo)]
+                node = SCNNode(geometry: projected.geometry)
+                placement = projected.placement
+                position = projected.position
+                sizeMeters = projected.extent
             } else {
-                node = makePieceNode(size: previewSize, transparent: false, surfaceTexture: surfaceTexture)
-                node.simdTransform = preview.placement
+                // No usable mesh: a flat quad on the raycast surface, cropped to
+                // what the user actually painted.
+                guard let fallback = scene.fallbackPlacement,
+                      let bounds = mask.bounds,
+                      let art = crop(overlay, to: bounds) else { return nil }
+                let camPos = simd_make_float3(scene.camera.transform.columns.3)
+                let distance = simd_distance(fallback.position, camPos)
+                // Metres per screen-height at that distance, from the vertical FOV.
+                let projection = scene.camera.projectionMatrix(
+                    for: .portrait,
+                    viewportSize: scene.viewport,
+                    zNear: 0.01,
+                    zFar: 100
+                )
+                let screenHeightM = 2 * distance / projection.columns.1.y
+                let screenWidthM = screenHeightM * Float(scene.viewport.width / scene.viewport.height)
+                let width = Float(bounds.width) * screenWidthM
+                let height = Float(bounds.height) * screenHeightM
+
+                let plane = SCNPlane(width: CGFloat(width), height: CGFloat(height))
+                plane.materials = [material(art: art, shade: nil)]
+                node = SCNNode(geometry: plane)
+
+                // Slide it to where it sat on screen: +x right, +y down in the mask.
+                var t = fallback.transform
+                let right = -simd_make_float3(t.columns.1)
+                let up = simd_make_float3(t.columns.0)
+                let offset = right * Float(bounds.midX - 0.5) * screenWidthM
+                    - up * Float(bounds.midY - 0.5) * screenHeightM
+                t.columns.3 += simd_float4(offset, 0)
+                placement = t
+                position = simd_make_float3(t.columns.3)
+                sizeMeters = max(width, height)
+                node.simdTransform = placement
             }
+
+            node.renderingOrder = 10
             node.opacity = 0
             scnView.scene.rootNode.addChildNode(node)
-            node.runAction(.fadeIn(duration: 0.25))
-            lastPlacedNode = node
+            node.runAction(.fadeIn(duration: 0.3))
             placedNodes.append(node)
+            lastPlacedNode = node
 
-            let camera = frame?.camera
-            onPlace(preview.surfaceType)
-            // Give the stamp-in animation a beat so the snapshot shows the final piece.
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(300))
-                guard let self, let scnView = self.scnView else { return }
-                let sceneData = scnView.snapshot().jpegData(compressionQuality: 0.8)
-                self.emitPlacementSnapshot(
-                    placement: preview.placement,
-                    position: preview.position,
-                    surfaceType: preview.surfaceType,
-                    camera: camera,
-                    sceneData: sceneData
-                )
-            }
-            onPreviewState(false)
+            return snapshot(placement: placement, position: position, size: sizeMeters, scene: scene)
         }
 
-        private func cancelPlacement() {
-            lastCancelAt = Date()
-            previewNode?.removeFromParentNode()
-            previewNode = nil
-            previewInfo = nil
-            isPreviewing = false
-            onPreviewState(false)
-        }
-
-        /// Removes the just-placed piece when the user declines to post it.
-        private func discardLast() {
-            guard let node = lastPlacedNode else { return }
-            lastPlacedNode = nil
-            placedNodes.removeAll { $0 === node }
-            node.runAction(.sequence([
-                .fadeOut(duration: 0.2),
-                .removeFromParentNode(),
-            ]))
-        }
-
-        func handleCommands(placeToken: Int, cancelToken: Int, discardToken: Int) {
-            if placeToken != lastPlaceToken {
-                lastPlaceToken = placeToken
-                confirmPlacement()
-            }
-            if cancelToken != lastCancelToken {
-                lastCancelToken = cancelToken
-                cancelPlacement()
-            }
-            if discardToken != lastDiscardToken {
-                lastDiscardToken = discardToken
-                discardLast()
-            }
-        }
-
-        private func makePieceMaterial(transparent: Bool, surfaceTexture: UIImage? = nil) -> SCNMaterial {
+        /// Art on top, with the surface's own light and grain multiplied through
+        /// it — same UVs, so the grain lines up perfectly with the wall.
+        private func material(art: UIImage, shade: UIImage?) -> SCNMaterial {
             let material = SCNMaterial()
-            material.isDoubleSided = true
-            material.lightingModel = .constant
-            material.diffuse.contents = drawingImage ?? color
-            // Decal UVs can overshoot [0,1] at triangle edges; clamping extends
-            // the artwork's transparent border instead of tiling it.
+            material.diffuse.contents = art
             material.diffuse.wrapS = .clamp
             material.diffuse.wrapT = .clamp
-            if let surfaceTexture {
-                material.multiply.contents = surfaceTexture
+            material.lightingModel = .constant
+            material.isDoubleSided = true
+            material.writesToDepthBuffer = false
+            if let shade, let luminance = SurfaceTexture.luminance(of: shade) {
+                material.multiply.contents = luminance
                 material.multiply.wrapS = .clamp
                 material.multiply.wrapT = .clamp
-            }
-            if transparent {
-                material.transparency = 0.55
             }
             return material
         }
 
-        private func makePieceNode(size: Float, transparent: Bool, surfaceTexture: UIImage? = nil) -> SCNNode {
-            let node = SCNNode()
-            node.geometry = SCNPlane(width: CGFloat(size), height: CGFloat(size))
-            node.geometry?.materials = [makePieceMaterial(transparent: transparent, surfaceTexture: surfaceTexture)]
-            return node
+        private func crop(_ image: UIImage, to unit: CGRect) -> UIImage? {
+            guard let cg = image.cgImage else { return nil }
+            let rect = CGRect(
+                x: unit.minX * CGFloat(cg.width),
+                y: unit.minY * CGFloat(cg.height),
+                width: unit.width * CGFloat(cg.width),
+                height: unit.height * CGFloat(cg.height)
+            ).integral
+            guard let cropped = cg.cropping(to: rect) else { return nil }
+            return UIImage(cgImage: cropped)
         }
 
-        private func emitPlacementSnapshot(
+        private func snapshot(
             placement: simd_float4x4,
             position: SIMD3<Float>,
-            surfaceType: String,
-            camera: ARCamera?,
-            sceneData: Data?
-        ) {
-            guard let location = LocationService.shared.location else {
-                onHint("No GPS fix — piece stays local (not saved)")
-                return
-            }
-            let cameraPos = camera.map {
-                simd_float3($0.transform.columns.3.x, $0.transform.columns.3.y, $0.transform.columns.3.z)
-            } ?? position
+            size: Float,
+            scene: CapturedScene
+        ) -> PlacementSnapshot? {
+            guard let location = LocationService.shared.location else { return nil }
+            let cameraPos = simd_make_float3(scene.camera.transform.columns.3)
 
             // Session frame is ENU (x=east, y=up, z=south) via gravityAndHeading.
             let enu = position - cameraPos
-            let pieceLat = location.coordinate.latitude + Double(-enu.z) / 111320
-            let pieceLng = location.coordinate.longitude + Double(enu.x) / (111320 * cos(location.coordinate.latitude * .pi / 180))
-            let pieceAlt = location.altitude + Double(enu.y)
+            let lat = location.coordinate.latitude + Double(-enu.z) / 111320
+            let lng = location.coordinate.longitude + Double(enu.x) / (111320 * cos(location.coordinate.latitude * .pi / 180))
 
-            // Scale is baked into the rotation columns: viewers apply this to a
-            // 0.3 m quad, so length(col0)/0.3 reconstructs the placed size.
-            let sizeScale = previewSize / 0.3
-            let rotationOnly = simd_float4x4(columns: (
-                placement.columns.0 * sizeScale,
-                placement.columns.1 * sizeScale,
-                placement.columns.2 * sizeScale,
+            // Viewers apply this to a 0.3 m quad, so bake the real size into the
+            // rotation columns' length.
+            let scale = max(size, 0.05) / 0.3
+            let stored = simd_float4x4(columns: (
+                placement.columns.0 * scale,
+                placement.columns.1 * scale,
+                placement.columns.2 * scale,
                 simd_float4(0, 0, 0, 1)
             ))
 
-            let pitch = camera.map { Double($0.eulerAngles.x) * 180 / .pi } ?? 0
-            let distance = simd_length(position - cameraPos)
-
-            onPiecePlaced(PlacementSnapshot(
-                lat: pieceLat,
-                lng: pieceLng,
-                altitudeM: pieceAlt,
+            return PlacementSnapshot(
+                lat: lat,
+                lng: lng,
+                altitudeM: location.altitude + Double(enu.y),
                 heading: LocationService.shared.heading,
                 accuracyM: location.horizontalAccuracy,
-                distanceM: Double(distance),
-                devicePitch: pitch,
-                surfaceType: surfaceType == "unknown" ? nil : surfaceType,
+                distanceM: Double(simd_length(enu)),
+                devicePitch: Double(scene.camera.eulerAngles.x) * 180 / .pi,
+                surfaceType: scene.surfaceType == "unknown" ? nil : scene.surfaceType,
                 usedGeoAnchor: usingGeoAnchor,
                 hasLidar: hasLidar,
-                placementTransform: flatten(rotationOnly),
-                sceneData: sceneData
-            ))
+                placementTransform: flatten(stored)
+            )
+        }
+
+        /// Removes the just-placed piece when the user declines to post it.
+        func discardLast() {
+            guard let node = lastPlacedNode else { return }
+            lastPlacedNode = nil
+            placedNodes.removeAll { $0 === node }
+            node.runAction(.sequence([.fadeOut(duration: 0.2), .removeFromParentNode()]))
         }
 
         // MARK: - Rendering other people's pieces
@@ -633,12 +506,8 @@ extension ARPaintView {
 
                 if self.usingGeoAnchor {
                     let coordinate = CLLocationCoordinate2D(latitude: piece.lat, longitude: piece.lng)
-                    let anchor: ARGeoAnchor
-                    if let altitude = piece.altitudeM {
-                        anchor = ARGeoAnchor(coordinate: coordinate, altitude: altitude)
-                    } else {
-                        anchor = ARGeoAnchor(coordinate: coordinate)
-                    }
+                    let anchor = piece.altitudeM.map { ARGeoAnchor(coordinate: coordinate, altitude: $0) }
+                        ?? ARGeoAnchor(coordinate: coordinate)
                     self.pendingGeoPieces[anchor.identifier.uuidString] = PendingGeoPiece(
                         image: image,
                         transform: piece.placementTransform.flatMap(unflatten) ?? matrix_identity_float4x4,
@@ -649,22 +518,16 @@ extension ARPaintView {
                 }
 
                 guard let frame = scnView.session.currentFrame,
-                      let loc = LocationService.shared.location else {
-                    self.renderedRemoteIDs.remove(piece.id)
-                    return
-                }
-                guard self.isUsableFix(loc) else {
-                    // Bad or stale fix — hold off and retry on a later tick.
+                      let loc = LocationService.shared.location, self.isUsableFix(loc) else {
                     self.renderedRemoteIDs.remove(piece.id)
                     return
                 }
 
-                let camPos = simd_float3(frame.camera.transform.columns.3.x, frame.camera.transform.columns.3.y, frame.camera.transform.columns.3.z)
+                let camPos = simd_make_float3(frame.camera.transform.columns.3)
                 let position = self.worldPosition(for: piece, from: loc, cameraPos: camPos)
-
                 let rotation = piece.placementTransform.flatMap(unflatten) ?? matrix_identity_float4x4
-                let node = SCNNode()
-                node.geometry = SCNPlane(width: 0.3, height: 0.3)
+
+                let node = SCNNode(geometry: SCNPlane(width: 0.3, height: 0.3))
                 let material = SCNMaterial()
                 material.isDoubleSided = true
                 material.lightingModel = .constant
@@ -698,8 +561,7 @@ extension ARPaintView {
         }
 
         /// Where a piece should sit in world space, given our current pose + fix.
-        /// Vertical comes from the surface type, not GPS altitude (which is very
-        /// noisy) — floor near the ground, ceiling overhead, everything else at eye height.
+        /// Vertical comes from the surface type, not GPS altitude (very noisy).
         private func worldPosition(for piece: RemotePiece, from loc: CLLocation, cameraPos: SIMD3<Float>) -> SIMD3<Float> {
             let eastDelta = (piece.lng - loc.coordinate.longitude) * 111320 * cos(loc.coordinate.latitude * .pi / 180)
             let northDelta = (piece.lat - loc.coordinate.latitude) * 111320
@@ -716,23 +578,21 @@ extension ARPaintView {
         }
 
         /// As the GPS fix settles, slide fallback pieces to their corrected
-        /// spots — and glue them to a real detected surface as soon as one
-        /// matching their stored orientation appears. A physical surface beats
-        /// GPS noise, so a snapped piece stays put.
+        /// spots — and glue them to a real surface as soon as one matching their
+        /// stored orientation appears. A physical surface beats GPS noise, so a
+        /// snapped piece stays put.
         private func maybeReanchor() {
             guard Date().timeIntervalSince(lastReanchor) > 2 else { return }
             lastReanchor = Date()
             guard let scnView, !fallbackNodes.isEmpty else { return }
             guard let frame = scnView.session.currentFrame,
                   let loc = LocationService.shared.location, isUsableFix(loc) else { return }
-            let camPos = simd_float3(frame.camera.transform.columns.3.x, frame.camera.transform.columns.3.y, frame.camera.transform.columns.3.z)
+            let camPos = simd_make_float3(frame.camera.transform.columns.3)
             for (id, node) in fallbackNodes {
                 guard let piece = fallbackPieces[id] else { continue }
                 let desired = worldPosition(for: piece, from: loc, cameraPos: camPos)
                 if snappedIDs.contains(id) {
-                    if simd_distance(node.simdPosition, desired) > 4 {
-                        snappedIDs.remove(id)
-                    }
+                    if simd_distance(node.simdPosition, desired) > 4 { snappedIDs.remove(id) }
                     continue
                 }
                 if let snapped = snappedTransform(for: piece, near: desired) {
@@ -750,8 +610,6 @@ extension ARPaintView {
                 }
             }
         }
-
-        // MARK: - Surface snapping
 
         /// Casts along the piece's stored surface normal (LiDAR mesh first,
         /// detected planes otherwise) and, when a surface of the right class is
@@ -791,7 +649,7 @@ extension ARPaintView {
             if simd_dot(n, normal) < 0 { n = -n }
             guard orientationMatches(piece.surfaceType, normal: n) else { return nil }
 
-            var t = pieceTransform(position: point + n * 0.004, normal: n, upHint: upHint)
+            var t = Self.surfaceFrame(position: point + n * 0.004, normal: n, upHint: upHint)
             t.columns.0 *= scale
             t.columns.1 *= scale
             t.columns.2 *= scale
@@ -809,34 +667,8 @@ extension ARPaintView {
             }
         }
 
-        /// Surface-aligned piece transform (upright correction included).
-        private func pieceTransform(position: SIMD3<Float>, normal: SIMD3<Float>, upHint: SIMD3<Float>) -> simd_float4x4 {
-            var up = upHint - normal * simd_dot(upHint, normal)
-            if simd_length(up) < 0.01 { up = simd_cross(normal, SIMD3<Float>(1, 0, 0)) }
-            if simd_length(up) < 0.01 { up = simd_cross(normal, SIMD3<Float>(0, 0, 1)) }
-            up = simd_normalize(up)
-            let right = simd_cross(up, normal)
-            // Same upright fold as makePlacement: col0 = up, col1 = -right.
-            return simd_float4x4(columns: (
-                simd_float4(up.x, up.y, up.z, 0),
-                simd_float4(-right.x, -right.y, -right.z, 0),
-                simd_float4(normal.x, normal.y, normal.z, 0),
-                simd_float4(position.x, position.y, position.z, 1)
-            ))
-        }
-
-        /// Recovers the pre-upright frame (right/up/normal) from a placement.
-        private func basis(fromPlacement placement: simd_float4x4) -> simd_float4x4 {
-            simd_float4x4(columns: (
-                -placement.columns.1,
-                placement.columns.0,
-                placement.columns.2,
-                placement.columns.3
-            ))
-        }
-
-        /// Attaches the piece quad to a resolved `ARGeoAnchor` node, relative to the
-        /// anchor. ARKit keeps refining the anchor transform; the child follows it.
+        /// Attaches the piece quad to a resolved `ARGeoAnchor` node, relative to
+        /// the anchor. ARKit keeps refining the anchor transform; the child follows.
         private func attachPendingPiece(node: SCNNode, anchor: ARAnchor) {
             guard let pending = pendingGeoPieces.removeValue(forKey: anchor.identifier.uuidString) else { return }
             let plane = SCNPlane(width: 0.3, height: 0.3)
@@ -848,15 +680,12 @@ extension ARPaintView {
             let child = SCNNode(geometry: plane)
             child.simdTransform = pending.transform
             node.addChildNode(child)
-            // Track the child, not ARKit's anchor node — clear() must never
-            // remove nodes ARKit manages.
+            // Track the child, not ARKit's anchor node.
             remoteNodes[pending.id] = child
         }
 
         private func raycast(in scnView: ARSCNView, at location: CGPoint, target: ARRaycastQuery.Target) -> [ARRaycastResult] {
-            guard let query = scnView.raycastQuery(from: location, allowing: target, alignment: .any) else {
-                return []
-            }
+            guard let query = scnView.raycastQuery(from: location, allowing: target, alignment: .any) else { return [] }
             return scnView.session.raycast(query)
         }
     }
