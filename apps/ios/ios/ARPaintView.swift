@@ -130,6 +130,14 @@ extension ARPaintView {
             config.worldAlignment = .gravityAndHeading
             if hasLidar {
                 config.sceneReconstruction = .meshWithClassification
+                // The dense per-pixel depth map. The reconstruction mesh is ~5cm
+                // and tears into patches across a can or a keyboard; this is
+                // 256x192 and follows a curved surface smoothly.
+                if ARWorldTrackingConfiguration.supportsFrameSemantics(.smoothedSceneDepth) {
+                    config.frameSemantics.insert(.smoothedSceneDepth)
+                } else if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
+                    config.frameSemantics.insert(.sceneDepth)
+                }
             }
             // Person segmentation competes with scene reconstruction for the same
             // depth pipeline and slows mesh growth. Wrapping art onto real
@@ -324,6 +332,7 @@ extension ARPaintView {
             let triangles = hasLidar
                 ? ProjectedDecal.triangles(anchors: frame.anchors, around: ahead)
                 : []
+            let depth = hasLidar ? DepthDecal.capture(from: frame) : nil
 
             let center = CGPoint(x: viewport.width / 2, y: viewport.height / 2)
             let fallback = flatPlacement(at: center, in: scnView)
@@ -333,6 +342,8 @@ extension ARPaintView {
                 camera: camera,
                 viewport: viewport,
                 triangles: triangles,
+                depth: depth,
+                orientation: captureOrientation,
                 hasLidar: hasLidar,
                 fallbackPlacement: fallback,
                 surfaceType: surfaceType(at: ahead, frame: frame, fallback: fallback?.surfaceType)
@@ -385,7 +396,18 @@ extension ARPaintView {
             let position: SIMD3<Float>
             let sizeMeters: Float
 
-            if let projected = ProjectedDecal.build(
+            // Dense depth first: it follows a can or a keyboard smoothly where
+            // the 5 cm reconstruction mesh tears into disconnected patches.
+            let fromDepth = scene.depth.flatMap {
+                DepthDecal.build(
+                    depth: $0,
+                    camera: scene.camera,
+                    viewport: scene.viewport,
+                    orientation: scene.orientation,
+                    mask: mask
+                )
+            }
+            if let projected = fromDepth ?? ProjectedDecal.build(
                 triangles: scene.triangles,
                 camera: scene.camera,
                 viewport: scene.viewport,
@@ -398,7 +420,9 @@ extension ARPaintView {
                 position = projected.position
                 sizeMeters = projected.extent
                 controller.setLastPlacement(
-                    "Wrapped onto \(projected.triangleCount) surface facets",
+                    fromDepth != nil
+                        ? "Wrapped to dense depth · \(projected.triangleCount) facets"
+                        : "Wrapped onto \(projected.triangleCount) mesh facets",
                     wrapped: true
                 )
             } else {
@@ -588,15 +612,12 @@ extension ARPaintView {
         private func attachAnchoredPiece(node: SCNNode, name: String) {
             let parts = name.split(separator: ":")
             guard parts.count == 3, let id = Int(parts[1]), let mm = Int(parts[2]) else { return }
-            anchoredPieceIDs.insert(id)
-            // The GPS-guessed copy would double-render next to the exact one.
-            if let stale = remoteNodes.removeValue(forKey: id) { stale.removeFromParentNode() }
-            fallbackNodes.removeValue(forKey: id)
-            fallbackPieces.removeValue(forKey: id)
             let size = CGFloat(max(Float(mm) / 1000, 0.05))
             Task { @MainActor [weak self] in
                 // The anchor can resolve before the first pieces fetch lands, so
-                // wait for the poll loop to learn this piece's image path.
+                // wait for the poll loop to learn this piece's image path. A map
+                // outlives its pieces — an anchor for a deleted piece never
+                // resolves a path, and must not suppress anything.
                 var path: String?
                 for _ in 0..<10 {
                     path = self?.knownImagePaths[id]
@@ -604,6 +625,13 @@ extension ARPaintView {
                     try? await Task.sleep(for: .seconds(1))
                 }
                 guard let self, let path, let image = try? await APIClient.loadImage(path: path) else { return }
+                // Claim the piece only now that it can actually be drawn.
+                // Claiming earlier suppressed the GPS copy too, so a piece whose
+                // image failed to load vanished from both paths entirely.
+                self.anchoredPieceIDs.insert(id)
+                if let stale = self.remoteNodes.removeValue(forKey: id) { stale.removeFromParentNode() }
+                self.fallbackNodes.removeValue(forKey: id)
+                self.fallbackPieces.removeValue(forKey: id)
                 let plane = SCNPlane(width: size, height: size)
                 let material = SCNMaterial()
                 material.isDoubleSided = true
@@ -644,8 +672,8 @@ extension ARPaintView {
                 // printed sheet, and thins slightly where the wall is dark.
                 material.shaderModifiers = [.surface: Self.aerosolShader]
                 material.setValue(SCNMaterialProperty(contents: luminance), forKey: "wallTex")
-                material.setValue(Float(0.85), forKey: "wallStrength")
-                material.setValue(Float(0.92), forKey: "paintOpacity")
+                material.setValue(Float(0.7), forKey: "wallStrength")
+                material.setValue(Float(0.99), forKey: "paintOpacity")
             }
             return material
         }
@@ -675,7 +703,7 @@ extension ARPaintView {
         // Aerosol is never fully opaque, and it covers a dark rough patch less
         // well than smooth bright plaster.
         float l = dot(wall, luma);
-        _surface.diffuse.a *= paintOpacity * mix(0.80, 1.0, l);
+        _surface.diffuse.a *= paintOpacity * mix(0.93, 1.0, l);
 
         // Bump the normal along the wall's own brightness gradient. No tangent
         // source needed — any stable basis perpendicular to the face will do.

@@ -9,6 +9,10 @@ struct CapturedScene: Identifiable {
     let camera: ARCamera
     let viewport: CGSize
     let triangles: [ProjectedDecal.Triangle]
+    /// Dense per-pixel depth — the preferred surface source, far finer than the
+    /// reconstruction mesh on curved or detailed objects.
+    let depth: DepthDecal.Depth?
+    let orientation: UIInterfaceOrientation
     let hasLidar: Bool
     /// Screen-space raycast used when there is no mesh to project onto.
     let fallbackPlacement: (transform: simd_float4x4, position: SIMD3<Float>, surfaceType: String)?
