@@ -22,7 +22,14 @@ Always send `client: "ios"` plus the native fields: `surfaceType`, `distanceM`, 
 
 Three tabs (`iosApp.swift`): **Paint** (AR, `ContentView` + `ARPaintView`), **Around You**
 (native MapKit, `MapTabView.swift`) and **Stats** (`WebView.swift` — the live site's `/data`
-rendered in-app; that page is canonical, don't rebuild it natively). Flow: tap → semi-transparent preview + size slider → Place (stamps
+rendered in-app; that page is canonical, don't rebuild it natively).
+
+The AR tab has **two modes** (`ARMode`, owned by `RootView` so the map can set it). **View** is the
+looking mode: every piece in range rendered with the full wall treatment, and no creation UI at all
+— arriving from a piece on the map lands here. **Paint** is the making mode, below. Anything that
+belongs only to painting must sit under `isPainting`, or it leaks into the viewer.
+
+Paint flow: tap → semi-transparent preview + size slider → Place (stamps
 the quad, blends in the surface texture via `SurfaceTexture.swift`) → Post/Discard card — nothing
 uploads without the explicit Post. LiDAR devices get scene reconstruction: mesh occlusion +
 per-face `surface_type` (`MeshOcclusion.swift`); non-LiDAR devices fall back to plane

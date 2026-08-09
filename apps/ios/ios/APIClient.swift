@@ -25,9 +25,13 @@ struct PieceDTO: Decodable {
     let placementTransform: [Double]?
     let markerTransform: [Double]?
     let createdAt: String
+    let city: String?
+    let colors: [RgbDTO]?
+    let strokeCount: Int?
+    let durationMs: Int?
 }
 
-struct RgbDTO: Encodable {
+struct RgbDTO: Codable {
     let r: Int
     let g: Int
     let b: Int

@@ -30,9 +30,20 @@ enum AppTab: Hashable {
     case map, paint, stats
 }
 
+/// What the AR tab is for right now. Looking at other people's work and making
+/// your own want opposite chrome, so they are separate modes rather than one
+/// screen carrying both.
+enum ARMode {
+    case view, paint
+}
+
 extension Color {
     /// The one brand colour. Every accent in the app is this.
     static let spray = Color(red: 1.00, green: 0.84, blue: 0.00)
+    /// The web map's `palette.ink` and `palette.raised` — the backdrop a piece
+    /// is presented against, so the two clients read as one product.
+    static let ink = Color(red: 0.039, green: 0.043, blue: 0.059)
+    static let raised = Color(red: 0.110, green: 0.122, blue: 0.157)
 }
 
 /// Camera and location authorisation, observable so a denial produces an
@@ -125,16 +136,17 @@ struct BlockerView: View {
 
 struct RootView: View {
     @State private var tab: AppTab = .map
+    @State private var arMode: ARMode = .paint
     @State private var showTutorial = false
     @AppStorage("got.sawTutorial") private var sawTutorial = false
 
     var body: some View {
         TabView(selection: $tab) {
             Tab("Around You", systemImage: "map.fill", value: .map) {
-                MapTabView(tab: $tab) { showTutorial = true }
+                MapTabView(tab: $tab, arMode: $arMode) { showTutorial = true }
             }
             Tab("Paint", systemImage: "paintbrush.pointed.fill", value: .paint) {
-                ContentView(isActive: tab == .paint, tab: $tab) { showTutorial = true }
+                ContentView(isActive: tab == .paint, tab: $tab, mode: $arMode) { showTutorial = true }
             }
             Tab("Stats", systemImage: "chart.bar.xaxis", value: .stats) {
                 SiteView(path: "/data")

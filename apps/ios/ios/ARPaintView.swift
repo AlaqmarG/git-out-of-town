@@ -39,6 +39,7 @@ struct ARPaintView: UIViewRepresentable {
     var controller: ARController
     var showDebug: Bool
     var isActive: Bool
+    var isViewing: Bool
     var remotePieces: [RemotePiece]
 
     func makeCoordinator() -> Coordinator { Coordinator(controller: controller) }
@@ -58,6 +59,7 @@ struct ARPaintView: UIViewRepresentable {
         // that can't be answered from a Mac.
         MeshOcclusion.showWireframe = showDebug
         context.coordinator.setActive(isActive)
+        context.coordinator.setViewing(isViewing)
         context.coordinator.renderRemotePieces(remotePieces)
         scnView.debugOptions = context.coordinator.debugOptions(showDebug)
     }
@@ -77,6 +79,8 @@ extension ARPaintView {
         private var fallbackPieces: [Int: RemotePiece] = [:]
         private var lastReanchor = Date.distantPast
         private var sessionActive = true
+        /// View mode: no reticle on screen, so nothing consumes placeability.
+        private var viewing = false
         private var placedNodes: [SCNNode] = []
         private var meshCount = 0
         private var lastPlacedNode: SCNNode?
@@ -224,6 +228,12 @@ extension ARPaintView {
         }
 
         /// Pause AR while another tab is showing; resume (keeping anchors) on return.
+        func setViewing(_ viewing: Bool) {
+            guard self.viewing != viewing else { return }
+            self.viewing = viewing
+            if viewing { controller.setPlaceable(false) }
+        }
+
         func setActive(_ active: Bool) {
             guard active != sessionActive, let scnView else { return }
             sessionActive = active
@@ -360,6 +370,7 @@ extension ARPaintView {
         /// Updates the viewfinder at a modest rate: green means the exact point
         /// under it intersects LiDAR mesh or a fully detected AR plane.
         private func publishPlaceability(at time: TimeInterval) {
+            guard !viewing else { return }
             guard time - lastPlaceabilityUpdate >= 0.1 else { return }
             lastPlaceabilityUpdate = time
             guard sessionActive, let scnView, let frame = scnView.session.currentFrame else {
@@ -1240,14 +1251,17 @@ extension ARPaintView {
                 .map { simd_make_float3($0.camera.transform.columns.3) }
             // World position: anchored pieces live on a child node whose local
             // position is zero.
-            let distances = remoteNodes.values.map { node -> Float in
-                guard let camPos else { return .greatestFiniteMagnitude }
-                return simd_distance(node.simdWorldPosition, camPos)
-            }
+            let nearest = remoteNodes
+                .compactMap { id, node -> (Int, Float)? in
+                    guard let camPos else { return nil }
+                    return (id, simd_distance(node.simdWorldPosition, camPos))
+                }
+                .min { $0.1 < $1.1 }
             controller.setNearby(
                 rendered: remoteNodes.count,
                 snapped: snappedIDs.count,
-                nearestM: distances.min().map { $0 < .greatestFiniteMagnitude ? Double($0) : nil } ?? nil
+                nearestM: nearest.map { Double($0.1) },
+                nearestId: nearest?.0
             )
         }
 
