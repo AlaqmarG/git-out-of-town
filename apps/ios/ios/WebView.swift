@@ -5,36 +5,39 @@ import WebKit
 /// are the canonical views — embedding them keeps all three surfaces in sync.
 struct SiteView: View {
     let path: String
-    @State private var model: WebViewModel
-
-    init(path: String) {
-        self.path = path
-        _model = State(initialValue: WebViewModel(url: APIClient.baseURL.appendingPathComponent(path == "/" ? "" : path)))
-    }
+    /// Built on first appearance, not in `init`: SwiftUI re-inits a view struct
+    /// on every parent update, and each one was allocating a WKWebView and
+    /// kicking off a page load that `State(initialValue:)` then threw away.
+    @State private var model: WebViewModel?
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            WebViewContainer(model: model)
-                .ignoresSafeArea(edges: .bottom)
-                .opacity(model.isLoading || model.failed ? 0 : 1)
-                .animation(.easeOut(duration: 0.35), value: model.isLoading)
+            if let model {
+                WebViewContainer(model: model)
+                    .ignoresSafeArea(edges: .bottom)
+                    .opacity(model.isLoading || model.failed ? 0 : 1)
+                    .animation(.easeOut(duration: 0.35), value: model.isLoading)
 
-            if model.failed {
-                ContentUnavailableView {
-                    Label("Can't reach the wall", systemImage: "wifi.slash")
-                } description: {
-                    Text("Check your connection and try again.")
-                } actions: {
-                    Button("Retry") { model.load() }
-                        .buttonStyle(.borderedProminent)
+                if model.failed {
+                    BlockerView(
+                        symbol: "wifi.slash",
+                        title: "Can't reach the wall",
+                        message: "The live dashboard needs a connection. Check yours and try again.",
+                        actionTitle: "Retry",
+                        action: model.load
+                    )
+                } else if model.isLoading {
+                    ProgressView()
+                        .controlSize(.large)
+                        .tint(.white)
                 }
-            } else if model.isLoading {
-                ProgressView()
-                    .controlSize(.large)
-                    .tint(.white)
             }
+        }
+        .task {
+            guard model == nil else { return }
+            model = WebViewModel(url: APIClient.baseURL.appendingPathComponent(path == "/" ? "" : path))
         }
     }
 }

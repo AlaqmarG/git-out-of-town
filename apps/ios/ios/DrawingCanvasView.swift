@@ -16,7 +16,9 @@ struct DrawingCanvasView: UIViewRepresentable {
         canvas.backgroundColor = .clear
         canvas.isOpaque = false
         canvas.delegate = context.coordinator
-        canvas.tool = PKInkingTool(.marker, color: UIColor(white: 0.1, alpha: 1), width: 18)
+        // Near-black ink disappears against most walls; open on a colour that
+        // always reads, and let the tool picker take it from there.
+        canvas.tool = PKInkingTool(.marker, color: UIColor(red: 1, green: 0, blue: 0.45, alpha: 1), width: 18)
 
         let toolPicker = PKToolPicker()
         context.coordinator.toolPicker = toolPicker
