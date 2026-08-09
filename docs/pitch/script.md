@@ -2,93 +2,87 @@
 
 [Overview](../../README.md) · [Plan](../PLAN.md) · [Devpost](../devpost.md) · **Pitch** · [Deck](index.html)
 
-Open `docs/pitch/index.html` in a browser. Arrow keys move. Format is 1 min setup → **4 min pitch**
-→ 2 min Q&A → 1 min exit.
+Open `docs/pitch/index.html` in a browser. **← →** or **space** move between slides, **home / end**
+jump to the ends. Seven slides, ~34 s each. Format is 1 min setup → **4 min pitch** → 2 min Q&A →
+1 min exit.
+
+Word budget: ~500 spoken words at ~130 wpm. Everything below is inside that. If you are over, cut
+from slide 03, never from slides 01–02.
 
 ## Before you walk in
 
 - [ ] Phone on venue wifi, app open, marker scanned, AR session already relocalized.
 - [ ] Second screen or laptop on `/data`, already loaded, count visible.
 - [ ] Deck open in a third window, slide 01.
-- [ ] Refresh the numbers on **slide 08** — it ships with `__ real AR pieces / __ total rows`.
+- [ ] Refresh the numbers on **slide 05** — it ships with `__ real AR pieces / __ total rows`.
 - [ ] Fill the five screenshot slots (dashed boxes in the deck) with the venue captures.
 
 ---
 
 ## The 4 minutes
 
-**0:00 – 0:20 · Hook (slide 01–02)**
+**0:00 – 1:05 · Hook and paint it live (slide 01)** — *the demo is first, while you have attention*
 
-> "Graffiti works because of *where* it is. You have to go to the wall. That's the whole point, and
-> it's exactly what the internet strips out — post it online and it stops being a place and becomes
-> a picture of one. Git Out of Town is a version where your tag stays put, costs nobody a wall, and
-> someone on the other side of the world can still walk up to it."
+Say the hook, then hold the phone up and paint. Keep talking while you do it.
 
-**0:20 – 1:10 · Paint it live (slide 03)** — *this is the demo, do it first while you have attention*
-
-Hold the phone up, paint, tap to place. Talk while you do it.
-
-> "Point at a wall. Draw with your finger. Tap. That's the whole contribution — under a minute, no
-> login, no install. ARKit raycasts onto the real surface, and LiDAR mesh classification tells us
-> whether that's a wall, a floor or a ceiling. Watch the map."
-
-Point at `/data`. The count ticks up over SSE, no refresh.
-
-> "That piece is on the public map now, for everyone."
-
-**1:10 – 1:30 · The floor shot (slide 04)**
-
-> "This is the one I want you to look at. That piece is *lying on the floor* — correctly
-> foreshortened, wrapped to the depth map, occluded by real geometry. A web app cannot produce this
-> frame. That's the line between a filter and actual placement."
-
-**1:30 – 2:30 · How placement works (slide 05)** — *the technical core, take your time*
-
-> "Placing something is easy. Agreeing on *where* it is turned out to be the hard part, and it's
-> where most of the engineering went.
+> "Graffiti works because of *where* it is. You have to go to the wall — and that's exactly what the
+> internet strips out. Post it online and the place becomes a picture of a place.
 >
-> One — a printed marker gives every device the same origin. We put a `markerTransform` on the
-> wire, so 'here' means the same thing on your phone and mine. That matters because judging happens
-> indoors and GPS is useless in here.
+> Git Out of Town is a version where your tag stays put, costs nobody a wall, and someone across the
+> world can still walk up to it. I'll make one now. Point at the wall. Draw. Tap.
+>
+> ARKit raycasts the real surface, LiDAR tells us that's a wall and not a floor, and it's on the
+> public map before I put the phone down."
+
+Point at `/data`. The count ticks up over SSE, no refresh. *(~105 words + painting)*
+
+**1:05 – 1:25 · The floor shot (slide 02)**
+
+> "Look at this one. That piece is *lying on the floor* — correctly foreshortened, wrapped to the
+> depth map, occluded by real geometry. A web app cannot produce this frame. That's the line between
+> a filter and actual placement." *(~44 words)*
+
+**1:25 – 2:20 · How placement works (slide 03)** — *the technical core, take your time*
+
+> "Placing something is easy. Agreeing on *where* it is is the hard part, and it's where the
+> engineering went.
+>
+> One — a printed marker gives every device the same origin. A `markerTransform` on the wire means
+> 'here' is the same on your phone and mine. Judging is indoors; GPS is useless in here.
 >
 > Two — every visitor's ARWorldMap merges into the venue's map, versioned with lineage. The spot
-> gets *easier* to find the more people scan it, and a ghosted guide shows you where to stand to
-> relocalize. That's the 'gets better with more people' property, built into the coordinate system
-> rather than promised on a roadmap.
+> gets *easier* to find the more people scan it. That's a property of the coordinate system, not a
+> roadmap promise — a community garden, not a personal diary.
 >
-> Three — the decal wraps to the dense depth map instead of sitting on a flat quad, and real
-> geometry occludes it. Walk behind a pillar and the paint goes behind the pillar."
+> Three — the decal wraps to the depth map instead of a flat quad, and real geometry occludes it.
+> Walk behind a pillar, the paint goes behind the pillar." *(~125 words)*
 
-**2:30 – 3:00 · Realism (slide 06)**
+**2:20 – 2:50 · Realism and Reve (slide 04)**
 
-> "Then we spent real time making it behave like aerosol. Feathered noise edges instead of a crisp
-> alpha cut, colour pulled toward the wall so pigment sits *in* the surface, paint thinning at
-> grazing incidence, multi-coat variation, and a Sobel wall-grain normal map so the brick reads
-> through. All of that applies to *other people's* pieces too — so a stranger's tag looks painted on
-> your wall, not pasted over your camera."
+> "Then we made it behave like aerosol. Feathered overspray edges, colour pulled toward the wall so
+> pigment sits *in* the surface, paint thinning at grazing incidence, and a wall-grain normal map so
+> brick reads through. Reve is the design backbone — one hand-tuned house style, not a filter. And it
+> applies to *other people's* pieces, so a stranger's tag looks painted on your wall." *(~66 words)*
 
-**3:00 – 3:25 · The public half (slide 07–08)**
+**2:50 – 3:20 · The public half (slide 05)**
 
-> "The map is the public artifact. Hand-authored basemap, no stock style, no map API key. Three zoom
-> tiers — density glow, pins tinted with each piece's own dominant colour, then the artwork itself.
-> Every piece carries a photo of the surface it was painted on.
->
-> `/data` is the TECHNATION side: surface mix straight off LiDAR, geography, client breakdown,
-> updating live over Postgres `LISTEN/NOTIFY`. It's a page you can drive, not a screenshot. And I'll
-> be straight — most rows in there right now are seeded demo data and the dashboard labels them as
-> seeded. The real number is the AR pieces, which is why I painted one in front of you."
+> "The map is the public artifact. Hand-authored basemap, no stock style, no map API key, and every
+> piece carries a photo of the surface it was painted on. `/data` is the TECHNATION side — surface
+> mix off LiDAR, geography, client breakdown, live over Postgres `LISTEN/NOTIFY`. And I'll be
+> straight: most rows are seeded demo data, labelled as seeded. The real number is the AR pieces,
+> which is why I painted one in front of you." *(~72 words)*
 
-**3:25 – 3:50 · Lasting value + next (slide 09–11)**
+**3:20 – 3:40 · Three tracks (slide 06)**
 
-> "It's a community garden, not a personal diary — the venue's map thickens with every visitor.
-> Next is persistent anchors so a spot survives without the printed marker, walls and crews,
-> time-lapse so you can scrub a wall's history, Android via WebXR, and community moderation,
-> because this is public art pinned to real addresses."
+> "Three tracks, one build. Main: one moment of input, under sixty seconds. Reve: a visual identity,
+> every colour from one file. TECHNATION: real, current, explorable, and honest about what's seeded.
+> 26 hours, two people, two apps, one API contract, self-hosted." *(~43 words)*
 
-**3:50 – 4:00 · Close (slide 12)**
+**3:40 – 4:00 · Close (slide 07)**
 
-> "26 hours, two people, two apps, one API contract, self-hosted. Open the link on your phone —
-> there's a piece in this room waiting for you."
+> "Next is persistent anchors so a spot survives without the marker, walls and crews, time-lapse,
+> Android via WebXR, and community moderation — this is public art pinned to real addresses. Open
+> the link on your phone. There's a piece in this room waiting for you." *(~48 words)*
 
 ---
 
@@ -137,3 +131,5 @@ Refresh the actual numbers before the pitch. Do not quote a total as if it were 
 - **"Why iOS only?"** — LiDAR depth and ARKit mesh classification are what make the floor shot
   possible, and no cross-platform layer exposes them well. The *viewing* half is already
   cross-platform — the map is a link, works on anything. WebXR for contribution on Android is next.
+- **"Where did the cut slides go?"** — Problem framing folded into slide 01, the community-garden
+  property into slide 03, and what's-next into the close. Nothing was dropped, just spoken faster.
