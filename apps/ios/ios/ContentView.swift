@@ -95,7 +95,14 @@ struct ContentView: View {
                 topBar
                 Spacer(minLength: 40)
 
-                if permissions.locationDenied {
+                if let failure = ar.failure {
+                    // Recoverable, not a wall: if this ever fires spuriously the
+                    // user is one tap from a working camera either way.
+                    Toast(message: failure, symbol: "exclamationmark.triangle.fill", tint: .red) {
+                        haptic(.rigid)
+                        if permissions.camera == .authorized { ar.restart() } else { Permissions.openSettings() }
+                    }
+                } else if permissions.locationDenied {
                     Toast(message: "Location is off — pieces can't be pinned", symbol: "location.slash.fill", tint: .red) {
                         Permissions.openSettings()
                     }
@@ -400,7 +407,10 @@ struct ContentView: View {
             devicePitch: snapshot.devicePitch,
             usedGeoAnchor: snapshot.usedGeoAnchor,
             hasLidar: snapshot.hasLidar,
-            altitudeM: snapshot.altitudeM,
+            // Indoors CoreLocation hands back altitudes far outside the server's
+            // accepted range, which 400s the whole upload. It's a nice-to-have
+            // field, so drop it rather than lose the piece.
+            altitudeM: snapshot.altitudeM.flatMap { (-500...9999).contains($0) ? $0 : nil },
             placementTransform: snapshot.placementTransform
         )
         Task {
@@ -424,10 +434,16 @@ struct ContentView: View {
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
                 }
             } catch {
-                // The card stays up, so Post is simply retryable.
+                // The card stays up, so Post is simply retryable. A 4xx is the
+                // one case retrying won't fix — don't send them to check wifi.
+                let rejected = if case APIError.badStatus(let code) = error { (400..<500).contains(code) } else { false }
                 await MainActor.run {
                     posting = false
-                    withAnimation(.snappy) { hint = "Couldn't post — check your connection and try again" }
+                    withAnimation(.snappy) {
+                        hint = rejected
+                            ? "The wall wouldn't take this one — retake and try again"
+                            : "Couldn't post — check your connection and try again"
+                    }
                     UINotificationFeedbackGenerator().notificationOccurred(.error)
                 }
             }

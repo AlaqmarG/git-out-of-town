@@ -101,10 +101,17 @@ struct PhotoPaintView: View {
             }
     }
 
+    /// The one sticker size. The editor is only WYSIWYG if the preview on screen
+    /// and the overlay we render out come from the same number.
+    static func stickerWidth(scale: CGFloat, viewport: CGSize) -> CGFloat {
+        min(viewport.width, viewport.height) * 0.28 * scale
+    }
+
     private var stickerLayer: some View {
         ForEach($placed) { $item in
             StickerLayer(
                 item: $item,
+                width: Self.stickerWidth(scale: item.scale, viewport: scene.viewport),
                 isSelected: selectedID == item.id,
                 canEdit: !isDrawing,
                 onSelect: { selectedID = item.id },
@@ -289,10 +296,9 @@ struct PhotoPaintView: View {
         let overlay = UIGraphicsImageRenderer(size: size, format: format).image { context in
             for item in placed {
                 let image = item.sticker.image
-                let base = min(size.width, size.height) * 0.28 * item.scale
                 let aspect = image.size.height / max(image.size.width, 1)
-                let width = base
-                let height = base * aspect
+                let width = Self.stickerWidth(scale: item.scale, viewport: size)
+                let height = width * aspect
 
                 context.cgContext.saveGState()
                 context.cgContext.translateBy(x: item.center.x, y: item.center.y)
@@ -317,6 +323,7 @@ struct PhotoPaintView: View {
 /// One stamped sticker: drag to move, pinch to size, twist to rotate.
 private struct StickerLayer: View {
     @Binding var item: PhotoPaintView.PlacedSticker
+    let width: CGFloat
     let isSelected: Bool
     let canEdit: Bool
     var onSelect: () -> Void
@@ -330,7 +337,7 @@ private struct StickerLayer: View {
         Image(uiImage: item.sticker.image)
             .resizable()
             .scaledToFit()
-            .frame(width: size, height: size * aspect)
+            .frame(width: width, height: width * aspect)
             .rotationEffect(item.rotation)
             .overlay(alignment: .topTrailing) {
                 if isSelected && canEdit {
@@ -366,7 +373,6 @@ private struct StickerLayer: View {
             .onTapGesture { onSelect() }
     }
 
-    private var size: CGFloat { 120 * item.scale }
     private var aspect: CGFloat {
         item.sticker.image.size.height / max(item.sticker.image.size.width, 1)
     }
