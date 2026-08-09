@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Git Out of Town — SummerHacks 2026</title>
+<style>
+  /* SummerHacks deck palette — a deliberate divergence from the app's dark brand
+     (apps/web/lib/theme.ts). Flat citrus poster: warm paper, near-black ink, two fruit
+     accents. Cream backs the neon-blue / hot-pink artwork so it reads as paint on a page. */
+  :root {
+    --paper: #fff3e0;
+    --paper-2: #ffe7c2;
+    --ink: #1d1218;
+    --ink-soft: #5c4a50;
+    --tangerine: #e8590c;
+    --melon: #d81e5b;
+    --lime: #3f8f2f;
+    --line: rgba(29, 18, 24, 0.16);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: ui-sans-serif, -apple-system, "Segoe UI", Inter, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    scroll-snap-type: y mandatory;
+    overflow-y: scroll;
+    height: 100vh;
+  }
+
+  .slide {
+    scroll-snap-align: start;
+    min-height: 100vh;
+    padding: 6vh 6vw;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1.3rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .slide + .slide { border-top: 2px solid var(--ink); }
+  .slide.warm { background: var(--paper-2); }
+
+  /* Hero slides invert: solid tangerine, paper text. */
+  .slide.hero { background: var(--tangerine); color: var(--paper); }
+  .slide.hero p, .slide.hero li { color: #ffe9d6; }
+  .slide.hero .kicker, .slide.hero em, .slide.hero b { color: #fff; }
+  .slide.hero .num { color: rgba(255, 255, 255, 0.75); }
+  .slide.hero code { color: #fff; }
+
+  .num {
+    position: absolute;
+    top: 3.4vh;
+    right: 6vw;
+    font-size: 0.78rem;
+    letter-spacing: 0.2em;
+    font-weight: 700;
+    color: var(--ink-soft);
+  }
+
+  .kicker {
+    font-size: 0.82rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--melon);
+    font-weight: 800;
+  }
+
+  h1 {
+    font-size: clamp(2.8rem, 7.2vw, 6rem);
+    line-height: 0.92;
+    letter-spacing: -0.035em;
+    margin: 0;
+    font-weight: 900;
+  }
+
+  h2 {
+    font-size: clamp(1.8rem, 3.6vw, 3.1rem);
+    line-height: 1.04;
+    letter-spacing: -0.025em;
+    margin: 0;
+    font-weight: 900;
+  }
+
+  h3 { font-size: clamp(1rem, 1.5vw, 1.25rem); margin: 0 0 0.4rem; }
+
+  p, li { font-size: clamp(0.98rem, 1.45vw, 1.25rem); line-height: 1.45; color: var(--ink-soft); margin: 0; }
+  code { font-size: 0.92em; color: var(--tangerine); }
+
+  .lede { font-size: clamp(1.1rem, 1.9vw, 1.6rem); color: var(--ink); max-width: 34ch; }
+  .small { font-size: clamp(0.84rem, 1.05vw, 0.98rem); }
+  .muted { color: var(--ink-soft); }
+  em { color: var(--melon); font-style: normal; font-weight: 800; }
+  b { color: var(--ink); }
+
+  ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.55rem; }
+  li::marker { color: var(--tangerine); }
+
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 4vw; align-items: center; }
+  .split.narrow-left { grid-template-columns: 0.92fr 1.08fr; }
+  .split.narrow-right { grid-template-columns: 1.08fr 0.92fr; }
+  .stack { display: grid; gap: 1rem; align-content: start; }
+
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2rem; }
+  .card {
+    background: #fff;
+    border: 2px solid var(--ink);
+    border-radius: 4px;
+    padding: 1.2rem 1.3rem;
+  }
+  .card .tag {
+    font-size: 0.7rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--tangerine); font-weight: 800; display: block; margin-bottom: 0.45rem;
+  }
+
+  .shot { width: 100%; border: 2px solid var(--ink); border-radius: 4px; display: block; }
+  /* Both web captures are natively 16:9, so they sit in the grid uncropped. */
+  .shot.wide { aspect-ratio: 16 / 9; object-fit: cover; max-height: 46vh; }
+  .caption { font-size: 0.82rem; color: var(--ink-soft); margin-top: 0.5rem; }
+
+  /* The diagram is drawn on the deck's own paper colour, so it needs no frame. */
+  .diagram { display: block; width: 100%; max-width: 1100px; max-height: 56vh; flex-shrink: 0; margin: 0 auto; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .chip {
+    border: 2px solid var(--ink); border-radius: 999px;
+    padding: 0.35rem 0.9rem; font-size: 0.88rem; font-weight: 600; color: var(--ink);
+  }
+  .chip.hot { background: var(--ink); color: var(--paper); }
+  .hero .chip { border-color: var(--paper); color: var(--paper); }
+  .hero .chip.hot { background: var(--paper); color: var(--tangerine); }
+
+  .rule { height: 2px; background: var(--ink); }
+
+  /* Phone frames are tall portraits; object-fit:cover on one crops away exactly the context
+     that makes it evidence (the floor, the foreshortening). So they are contained at a set
+     height, and the border hugs the frame. */
+  .proof {
+    height: 82vh; width: auto; max-width: 100%; object-fit: contain; margin: 0 auto;
+    border: 2px solid var(--ink); border-radius: 4px; display: block;
+  }
+  .hero .proof { border-color: var(--paper); }
+
+  /* -------- MOTION --------
+     Each slide staggers its content in when it becomes the current slide. Gated on .anim,
+     which the script sets: if the script never runs, the deck is simply all visible. */
+  .anim .slide > *:not(.num), .anim .stack > *,
+  .anim .cards > *, .anim .split > * {
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity 0.5s ease, transform 0.55s cubic-bezier(0.2, 0.75, 0.3, 1);
+  }
+  .slide.in > *:not(.num), .slide.in .stack > *, 
+  .slide.in .cards > *, .slide.in .split > * { opacity: 1; transform: none; }
+
+  .slide.in .stack > *:nth-child(2),
+  .slide.in .cards > *:nth-child(2), .slide.in > *:nth-child(3) { transition-delay: 0.09s; }
+  .slide.in .stack > *:nth-child(3),
+  .slide.in .cards > *:nth-child(3), .slide.in > *:nth-child(4) { transition-delay: 0.18s; }
+  .slide.in .stack > *:nth-child(4), .slide.in > *:nth-child(5) { transition-delay: 0.27s; }
+  .slide.in .stack > *:nth-child(5) { transition-delay: 0.36s; }
+  .slide.in .stack > *:nth-child(6) { transition-delay: 0.45s; }
+
+  .progress {
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: 5px;
+    background: rgba(29, 18, 24, 0.15);
+    z-index: 5;
+  }
+  .progress i {
+    display: block; height: 100%; width: 14.3%;
+    background: var(--ink);
+    transition: width 0.45s cubic-bezier(0.2, 0.75, 0.3, 1);
+  }
+
+  /* The live URL is the one thing we want a stranger to act on. */
+  .chip.hot { animation: breathe 2.8s ease-in-out infinite; }
+  @keyframes breathe { 50% { transform: scale(1.035); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .anim .slide > *:not(.num), .anim .stack > *,
+    .anim .cards > *, .anim .split > * {
+      opacity: 1; transform: none; transition: none;
+    }
+    .chip.hot { animation: none; }
+    .progress i { transition: none; }
+  }
+
+  .hint {
+    position: fixed;
+    bottom: 1rem; right: 1.2rem;
+    font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--paper); font-weight: 700;
+    background: var(--ink);
+    padding: 0.35rem 0.7rem; border-radius: 999px;
+    pointer-events: none;
+  }
+
+  @media print, (max-width: 900px) {
+    .split, .cards { grid-template-columns: 1fr; }
+    .slide { min-height: auto; padding: 8vh 7vw; }
+    body { scroll-snap-type: none; height: auto; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 1 — HOOK + LIVE DEMO -->
+<section class="slide hero">
+  <div class="num">01 / 07</div>
+  <div class="split narrow-left">
+    <div class="stack">
+      <div class="kicker">SummerHacks 2026 · Main · Best Use of Reve · TECHNATION</div>
+      <h1>Git Out<br>of Town</h1>
+      <p class="lede" style="color:#fff">Spray-paint the real world in AR. It pins to that spot, and anyone with a link can walk up to it.</p>
+      <p>Graffiti works because of <em>where</em> it is — and that's exactly what the internet strips out. Post it online and the place becomes a picture of a place.</p>
+      <p class="small">Painting one right now: point at a wall, draw with a finger, tap. ARKit raycasts the real surface, LiDAR mesh classification calls it wall / floor / ceiling, and <code>pg_notify</code> → SSE puts it on the public map before the phone is back down.</p>
+      <div class="chips">
+        <span class="chip hot">gitoutoftown.129-153-49-190.sslip.io</span>
+        <span class="chip">iOS · ARKit · LiDAR</span>
+      </div>
+    </div>
+    <div>
+      <img class="proof" style="height:66vh" src="../assets/deck/venue-paint.jpg" alt="Mid-paint in AR: a green GOT piece and a wifi sticker placed on a café wall, sticker picker open">
+      <p class="caption" style="color:#ffe0c9;text-align:center">Live in the venue. Pick a sticker, place it, spray it on the wall.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 — THE PIECE IS AT AN ADDRESS -->
+<section class="slide">
+  <div class="num">02 / 07</div>
+  <div class="split narrow-right">
+    <div class="stack">
+      <div class="kicker">The thing a web app cannot do</div>
+      <h2>It's on that building.<br>Not floating in an app.</h2>
+      <p class="lede">Painted onto real brick, at a real Toronto address, and it stays there after you close the phone.</p>
+      <p>Open the link from anywhere and you stand where the painter stood — same wall, same bricks, the piece still on it. <em>On a wall</em> is LiDAR classification, not a label anyone typed.</p>
+    </div>
+    <img class="shot" src="../assets/deck/web-stackt.jpg" alt="A yellow STACKT piece painted on the brick facade of a Toronto building, opened from a link and shown on the street view of that address">
+  </div>
+</section>
+
+<!-- 3 — TECHNICAL CORE -->
+<section class="slide">
+  <div class="num">03 / 07</div>
+  <div class="kicker">Technical core — the part that's hard</div>
+  <h2>Placing something is easy. <em>Agreeing on where it is</em> is the hard part.</h2>
+  <img class="diagram" src="../assets/deck/pipeline.svg" alt="How a piece stays put: a printed marker gives two phones one shared frame, the venue map thickens with every visitor, LiDAR depth wraps the paint onto real geometry, and placement degrades down a ladder from marker to geo anchor to surface-aligned to GPS">
+  <p class="small">Relocalized from the shared frame, so a spot is a <em>place</em> rather than one person's session — the second device sees the same paint in the same physical position.</p>
+</section>
+
+<!-- 4 — REALISM / REVE -->
+<section class="slide warm">
+  <div class="num">04 / 07</div>
+  <div class="split">
+    <div class="stack">
+      <div class="kicker">Craft — 20% of the score, and the whole Reve track</div>
+      <h2>We made it behave like <em>aerosol</em>, not like a sticker.</h2>
+      <ul>
+        <li><b>Feathered noise edges</b> — overspray, not a crisp alpha cut</li>
+        <li><b>Colour pulled toward the wall</b> so pigment sits <em>in</em> the surface</li>
+        <li><b>Grazing-incidence thinning</b> — paint thins as the wall turns away</li>
+        <li><b>Multi-coat variation</b> and a <b>Sobel wall-grain normal map</b>, so brick and concrete read through the paint</li>
+      </ul>
+      <p class="small">Reve is the design backbone, not a filter: one hand-tuned house style drives the artwork, the map pins and the charts. Applied to <em>remote</em> pieces too, so a stranger's tag looks painted on your wall rather than pasted over your camera.</p>
+    </div>
+    <div>
+      <img class="shot" src="../assets/deck/art-neon.png" alt="House-style artwork generated for the app" style="max-height:56vh;object-fit:contain;border:none">
+      <p class="caption">One hand-tuned house style drives the artwork, the map pins and the charts.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 5 — PUBLIC MAP + /data -->
+<section class="slide" style="padding:3vh 6vw; gap:0.8rem">
+  <div class="num">05 / 07</div>
+  <div class="kicker">A stranger sees it — no install, just a link</div>
+  <h2>The map is the public half. <code>/data</code> is the half that moves while you watch.</h2>
+  <div class="split">
+    <div class="stack">
+      <img class="shot wide" src="../assets/deck/web-map.png" alt="The live map with clustered pieces" style="max-height:25vh">
+      <p class="caption" style="margin:0">Hand-authored basemap over free OpenFreeMap tiles — no stock style, no map API key.</p>
+      <img class="shot wide" src="../assets/deck/web-data.png" alt="The /data dashboard" style="max-height:25vh">
+      <p class="caption" style="margin:0"><code>/data</code>: surface mix off LiDAR, geography, client breakdown, live over Postgres <code>LISTEN/NOTIFY</code>.</p>
+    </div>
+    <div class="stack">
+      <img class="shot" src="../assets/deck/venue-gallery.jpg" alt="The area gallery: four real pieces at this venue, each with distance, bearing, age and surface type" style="max-height:38vh;object-fit:contain;border:none">
+      <p class="caption" style="margin:0">Four real pieces at one spot, each with a distance <em>and a bearing</em> — 5 m southwest, 7 m west, 13 m east. "On a window / on a wall / on a floor" is LiDAR classification, not a label anyone typed. Every figure on <code>/data</code> is a live query: drive it yourself.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 6 — TRACKS -->
+<section class="slide warm">
+  <div class="num">06 / 07</div>
+  <div class="kicker">Three tracks, one build</div>
+  <h2>What we're claiming, and why.</h2>
+  <div class="cards">
+    <div class="card">
+      <span class="tag">Main</span>
+      <h3>One moment of input</h3>
+      <p class="small">Under 60 seconds, zero explanation. A finger drawing becomes a depth-wrapped, aerosol-shaded decal locked to a shared coordinate frame. Public, live, and genuinely better with more people.</p>
+    </div>
+    <div class="card">
+      <span class="tag">Best Use of Reve</span>
+      <h3>A visual identity, not a filter</h3>
+      <p class="small">Reve is the house style for the artwork. Every colour in both apps comes from one file, hand-tuned, hand-edited output only. Nothing here is a default AI aesthetic.</p>
+    </div>
+    <div class="card">
+      <span class="tag">TECHNATION</span>
+      <h3>Real, current, explorable</h3>
+      <p class="small">Postgres <code>LISTEN/NOTIFY</code> → SSE. Surface classification, geography and client breakdown, updating live. Seeded rows are labelled as seeded.</p>
+    </div>
+  </div>
+  <div class="rule"></div>
+  <p class="small">26 hours, two people, two apps, one API contract. Self-hosted: Docker, TLS, deployed from <code>main</code> on push.</p>
+</section>
+
+<!-- 7 — CLOSE + WHAT'S NEXT -->
+<section class="slide hero">
+  <div class="num">07 / 07</div>
+  <div class="split narrow-right">
+    <div class="stack">
+      <div class="kicker">Thank you</div>
+      <h1 style="max-width:14ch">Go paint<br>something.</h1>
+      <p class="lede" style="color:#fff">Open the link on your phone right now. There's a piece in this room waiting for you.</p>
+      <p class="small"><b>Next:</b> persistent anchors so a spot survives without the printed marker · walls and crews · time-lapse to scrub a wall's history · Android via WebXR · community moderation, because this is public art pinned to real addresses.</p>
+      <div class="chips">
+        <span class="chip hot">gitoutoftown.129-153-49-190.sslip.io</span>
+        <span class="chip">github.com — Git Out of Town</span>
+      </div>
+    </div>
+    <div>
+      <img class="shot" src="../assets/deck/web-lightbox.png" alt="A piece opened in the lightbox with the photo of the surface it was painted on" style="max-height:56vh;object-fit:cover">
+      <p class="caption" style="color:#ffe0c9">Every piece keeps the photo of the surface it was painted on.</p>
+    </div>
+  </div>
+</section>
+
+<div class="progress"><i></i></div>
+<div class="hint">← → · space · home / end</div>
+
+<script>
+  document.documentElement.classList.add('anim');
+  const slides = [...document.querySelectorAll('.slide')];
+  const bar = document.querySelector('.progress i');
+  let idx = 0;
+
+  // Reveal a slide's content once it is mostly on screen; keep it revealed after.
+  const seen = new IntersectionObserver(
+    es => es.forEach(e => e.isIntersecting && e.target.classList.add('in')),
+    { threshold: 0.45 }
+  );
+  slides.forEach(s => seen.observe(s));
+
+  // The observer is throttled while the tab is hidden, so revealing is also driven directly.
+  const mark = () => {
+    slides[idx].classList.add('in');
+    bar.style.width = ((idx + 1) / slides.length * 100) + '%';
+  };
+  const go = i => {
+    idx = Math.max(0, Math.min(i, slides.length - 1));
+    slides[idx].scrollIntoView(); // instant: smooth scrolling fights scroll-snap and lands mid-slide
+    mark();
+  };
+  mark();
+
+  addEventListener('keydown', e => {
+    const next = ['ArrowRight', 'ArrowDown', 'PageDown', ' ', 'Spacebar'].includes(e.key);
+    const prev = ['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key);
+    if (e.repeat) return e.preventDefault();
+    if (!next && !prev && e.key !== 'Home' && e.key !== 'End') return;
+    e.preventDefault();
+    if (e.key === 'Home') return go(0);
+    if (e.key === 'End') return go(slides.length - 1);
+    go(idx + (next ? 1 : -1));
+  });
+
+  // Scrolling by wheel or trackpad stays authoritative for the key handler.
+  let settle;
+  addEventListener('scroll', () => {
+    clearTimeout(settle);
+    settle = setTimeout(() => {
+      idx = slides.reduce((best, s, i) => {
+        const d = Math.abs(s.getBoundingClientRect().top);
+        return d < best.d ? { i, d } : best;
+      }, { i: 0, d: Infinity }).i;
+      mark();
+    }, 120);
+  }, { passive: true });
+</script>
+</body>
+</html>
