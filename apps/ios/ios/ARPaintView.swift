@@ -84,6 +84,9 @@ extension ARPaintView {
         private var relocalizing = false
         private var relocalizeDeadline: Date?
         private var sessionStartedAt: TimeInterval = 0
+        /// Apple's gate for saving a world map: has this session ever reached
+        /// `.mapped`? Sticky, because the live status oscillates.
+        private var everMapped = false
         private var lastPlaceabilityUpdate: TimeInterval = 0
         /// The interface orientation the still was shot in. Everything that maps
         /// between the overlay and the world has to use *that* orientation, not
@@ -209,9 +212,13 @@ extension ARPaintView {
             guard let frame = scnView?.session.currentFrame else { return }
             let quality: String
             switch frame.worldMappingStatus {
-            case .mapped: quality = "precise"
-            case .extending: quality = "good"
-            default: quality = "rough"
+            case .mapped:
+                // Sticky: ARKit drops back to .extending the moment the camera
+                // turns to fresh geometry, but the mapped area stays mapped.
+                everMapped = true
+                quality = "precise"
+            case .extending: quality = everMapped ? "precise" : "good"
+            default: quality = everMapped ? "precise" : "rough"
             }
             controller.setScanQuality(quality)
         }
@@ -465,17 +472,41 @@ extension ARPaintView {
         /// this exact spot instead of trusting GPS. Fire-and-forget.
         func saveScan(pieceId: Int) {
             guard let scnView, let frame = lastPlacedFrame else { return }
-            let mapping = scnView.session.currentFrame?.worldMappingStatus
-            // A bare-minimum scan relocalizes worse than GPS guesses — skip it.
-            guard mapping == .extending || mapping == .mapped else { return }
+            // Apple: save a map only once the session has reached `.mapped`.
+            // `.extending` relocalizes only if the viewer retraces the painter's
+            // path; `.mapped` just needs a similar viewpoint — and a stranger
+            // walking up to a wall will never retrace anything.
+            guard everMapped else { return }
+
             let name = "piece:\(pieceId):\(Int(max(lastPlacedSize, 0.05) * 1000))"
-            scnView.session.add(anchor: ARAnchor(name: name, transform: frame))
+            let pieceAnchor = ARAnchor(name: name, transform: frame)
+            scnView.session.add(anchor: pieceAnchor)
             anchoredPieceIDs.insert(pieceId)
+
             scnView.session.getCurrentWorldMap { map, _ in
                 guard let map else { return }
+                // `add(anchor:)` only takes effect on the NEXT captured frame, so
+                // the map we just asked for may not contain the piece at all —
+                // and a map that relocalizes perfectly but carries no anchor is
+                // indistinguishable from relocalization failing. Append it.
+                if !map.anchors.contains(where: { $0.identifier == pieceAnchor.identifier }) {
+                    map.anchors.append(pieceAnchor)
+                }
+                let points = map.rawFeaturePoints.points.count
+                let extent = map.extent
                 Task { @MainActor in
                     guard let location = LocationService.shared.location else { return }
-                    _ = try? await WorldMapStore.upload(map, pieceId: pieceId, location: location)
+                    // Archiving and compressing a multi-MB map on the main actor
+                    // stalls the render loop; Apple says to move it off.
+                    _ = try? await Task.detached(priority: .utility) {
+                        try await WorldMapStore.upload(
+                            map,
+                            pieceId: pieceId,
+                            location: location,
+                            featurePoints: points,
+                            extentM: max(extent.x, extent.z)
+                        )
+                    }.value
                 }
             }
         }
@@ -495,20 +526,45 @@ extension ARPaintView {
                   frame.timestamp - sessionStartedAt < 6,
                   let location = LocationService.shared.location,
                   location.horizontalAccuracy >= 0, location.horizontalAccuracy < 80 else { return }
-            relocalizeAttempted = true
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                guard let record = (try? await WorldMapStore.nearby(location: location, radiusM: 80))?.first,
-                      let map = try? await WorldMapStore.download(record),
-                      let scnView = self.scnView, self.sessionActive,
-                      // The download took time; if a mesh grew meanwhile, it is
-                      // worth more than the relocalization.
-                      self.meshCount == 0 else { return }
-                let config = self.makeWorldConfiguration()
-                config.initialWorldMap = map
-                self.relocalizeDeadline = Date().addingTimeInterval(25)
-                self.relocalizing = true
-                scnView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
+                // Indoors at ±20 m GPS the nearest map is often the wrong room,
+                // so walk the candidates rather than betting on one.
+                guard let records = try? await WorldMapStore.nearby(location: location, radiusM: 80),
+                      !records.isEmpty else { return }
+                // Only now: a network blip shouldn't disable relocalization for
+                // the whole session.
+                self.relocalizeAttempted = true
+
+                for record in records.prefix(3) {
+                    guard let map = try? await WorldMapStore.download(record),
+                          let scnView = self.scnView, self.sessionActive,
+                          // The download took time; a mesh that grew meanwhile is
+                          // worth more than the relocalization.
+                          self.meshCount == 0 else { return }
+                    let config = self.makeWorldConfiguration()
+                    config.initialWorldMap = map
+                    self.relocalizing = true
+                    scnView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
+
+                    // Apple gives no failure callback: `.normal` is the only
+                    // signal a match landed, and a miss stays "relocalizing"
+                    // forever. So poll, then move to the next candidate.
+                    var matched = false
+                    for _ in 0..<20 {
+                        try? await Task.sleep(for: .milliseconds(500))
+                        if case .normal = scnView.session.currentFrame?.camera.trackingState {
+                            matched = true
+                            break
+                        }
+                    }
+                    self.relocalizing = false
+                    if matched { return }
+                }
+                // Nothing matched: drop back to a clean session + GPS fallback.
+                if let scnView = self.scnView, self.sessionActive {
+                    scnView.session.run(self.makeWorldConfiguration(), options: [.resetTracking, .removeExistingAnchors])
+                }
             }
         }
 
@@ -578,13 +634,58 @@ extension ARPaintView {
             material.shininess = 0.3
             material.isDoubleSided = true
             material.writesToDepthBuffer = false
+
             if let shade, let luminance = SurfaceTexture.luminance(of: shade) {
-                material.multiply.contents = luminance
-                material.multiply.wrapS = .clamp
-                material.multiply.wrapT = .clamp
+                // Soft-light through the wall rather than plain multiply, so the
+                // surface can lighten the paint as well as darken it — a bare
+                // multiply can only ever darken, which caps how integrated the
+                // paint can look. The same map perturbs the normal, so the paint
+                // catches light along mortar lines instead of reading as a
+                // printed sheet, and thins slightly where the wall is dark.
+                material.shaderModifiers = [.surface: Self.aerosolShader]
+                material.setValue(SCNMaterialProperty(contents: luminance), forKey: "wallTex")
+                material.setValue(Float(0.85), forKey: "wallStrength")
+                material.setValue(Float(0.92), forKey: "paintOpacity")
             }
             return material
         }
+
+        /// Blends the art into the wall it is projected onto. Runs per fragment
+        /// with the decal's own projected UVs, so the wall sample under any
+        /// point of the art is exactly the wall behind it.
+        private static let aerosolShader = """
+        #pragma arguments
+        texture2d<float, access::sample> wallTex;
+        float wallStrength;
+        float paintOpacity;
+
+        #pragma transparent
+        #pragma body
+
+        constexpr sampler wallSampler(coord::normalized, filter::linear, address::clamp_to_edge);
+        float2 uv = _surface.diffuseTexcoord;
+        float3 wall = wallTex.sample(wallSampler, uv).rgb;
+        float3 art = _surface.diffuse.rgb;
+        const float3 luma = float3(0.299, 0.587, 0.114);
+
+        // Pegtop soft light.
+        float3 blended = (1.0 - 2.0 * wall) * art * art + 2.0 * wall * art;
+        _surface.diffuse.rgb = mix(art, blended, wallStrength);
+
+        // Aerosol is never fully opaque, and it covers a dark rough patch less
+        // well than smooth bright plaster.
+        float l = dot(wall, luma);
+        _surface.diffuse.a *= paintOpacity * mix(0.80, 1.0, l);
+
+        // Bump the normal along the wall's own brightness gradient. No tangent
+        // source needed — any stable basis perpendicular to the face will do.
+        float3 n = normalize(_surface.normal);
+        float3 t = normalize(cross(n, abs(n.y) < 0.9 ? float3(0.0, 1.0, 0.0) : float3(1.0, 0.0, 0.0)));
+        float3 b = cross(n, t);
+        float lx = dot(wallTex.sample(wallSampler, uv + float2(0.0015, 0.0)).rgb, luma);
+        float ly = dot(wallTex.sample(wallSampler, uv + float2(0.0, 0.0015)).rgb, luma);
+        _surface.normal = normalize(n + t * (l - lx) * 6.0 + b * (l - ly) * 6.0);
+        """
 
         private func crop(_ image: UIImage, to unit: CGRect) -> UIImage? {
             guard let cg = image.cgImage else { return nil }

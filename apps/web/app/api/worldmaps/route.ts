@@ -30,7 +30,13 @@ function ensureTable() {
       map_path text NOT NULL,
       size_bytes bigint NOT NULL,
       created_at timestamptz NOT NULL DEFAULT now()
-    )`);
+    )`)
+    // Scan quality, so a thin glance at one wall can be told from a real scan
+    // without downloading the map. Added separately: the table predates them.
+    .then(() => pool.query(`
+      ALTER TABLE world_maps
+        ADD COLUMN IF NOT EXISTS feature_points integer NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS extent_m double precision NOT NULL DEFAULT 0`));
   return ensured;
 }
 
@@ -56,10 +62,13 @@ export async function GET(req: Request) {
     const latDelta = r / 111320;
     const lngDelta = r / (111320 * Math.cos((lat * Math.PI) / 180) || 1);
     const { rows } = await pool.query(
-      `SELECT id, piece_id, lat, lng, map_path, size_bytes, created_at
+      `SELECT id, piece_id, lat, lng, map_path, size_bytes, feature_points, extent_m, created_at
        FROM world_maps
        WHERE lat BETWEEN $1 AND $2 AND lng BETWEEN $3 AND $4
-       ORDER BY (lat - $5) * (lat - $5) + (lng - $6) * (lng - $6) ASC
+       -- Nearest first, but a richer scan beats a marginally closer thin one:
+       -- relocalization succeeds on feature density, not on proximity.
+       ORDER BY (feature_points < 150),
+                (lat - $5) * (lat - $5) + (lng - $6) * (lng - $6) ASC
        LIMIT 5`,
       [lat - latDelta, lat + latDelta, lng - lngDelta, lng + lngDelta, lat, lng],
     );
@@ -72,6 +81,8 @@ export async function GET(req: Request) {
           lng: row.lng,
           mapPath: row.map_path,
           sizeBytes: Number(row.size_bytes),
+          featurePoints: Number(row.feature_points),
+          extentM: Number(row.extent_m),
           createdAt: (row.created_at as Date).toISOString(),
         })),
       },
@@ -105,7 +116,13 @@ export async function POST(req: Request) {
     return bad(413, `map must be 1..${MAX_MAP_BYTES} bytes`);
   }
 
-  let meta: { pieceId?: unknown; lat?: unknown; lng?: unknown };
+  let meta: {
+    pieceId?: unknown;
+    lat?: unknown;
+    lng?: unknown;
+    featurePoints?: unknown;
+    extentM?: unknown;
+  };
   try {
     meta = JSON.parse(String(form.get("meta") ?? ""));
   } catch {
@@ -121,11 +138,15 @@ export async function POST(req: Request) {
   try {
     await ensureTable();
     const rel = await saveBlob(Buffer.from(await map.arrayBuffer()), "armap");
+    const featurePoints = Number.isFinite(Number(meta.featurePoints))
+      ? Math.max(0, Math.trunc(Number(meta.featurePoints)))
+      : 0;
+    const extentM = Number.isFinite(Number(meta.extentM)) ? Number(meta.extentM) : 0;
     const { rows } = await pool.query(
-      `INSERT INTO world_maps (piece_id, lat, lng, map_path, size_bytes)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO world_maps (piece_id, lat, lng, map_path, size_bytes, feature_points, extent_m)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id, created_at`,
-      [pieceId, lat, lng, rel, map.size],
+      [pieceId, lat, lng, rel, map.size, featurePoints, extentM],
     );
     return Response.json(
       {
@@ -135,6 +156,8 @@ export async function POST(req: Request) {
         lng,
         mapPath: rel,
         sizeBytes: map.size,
+        featurePoints,
+        extentM,
         createdAt: (rows[0].created_at as Date).toISOString(),
       },
       { status: 201 },

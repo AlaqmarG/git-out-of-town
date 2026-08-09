@@ -314,7 +314,9 @@ struct PhotoPaintView: View {
         }
         // Failing here keeps the editor open — the art is the expensive part, so
         // it is never thrown away just because the wall or the fix wasn't ready.
-        if let why = onPlace(overlay, placed.map(\.sticker.id), paintStats()) {
+        // Soften and speckle the edges before it becomes a texture: a crisp
+        // vector edge is the loudest "sticker, not spray paint" cue there is.
+        if let why = onPlace(SprayPaint.aerosolize(overlay), placed.map(\.sticker.id), paintStats()) {
             failure = why
             UINotificationFeedbackGenerator().notificationOccurred(.error)
         }

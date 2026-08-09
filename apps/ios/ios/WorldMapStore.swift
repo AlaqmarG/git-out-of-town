@@ -18,6 +18,8 @@ enum WorldMapStore {
         let lng: Double
         let mapPath: String
         let sizeBytes: Int
+        let featurePoints: Int?
+        let extentM: Double?
         let createdAt: String
     }
 
@@ -45,7 +47,13 @@ enum WorldMapStore {
 
     // MARK: - Network
 
-    static func upload(_ map: ARWorldMap, pieceId: Int?, location: CLLocation) async throws -> Record {
+    static func upload(
+        _ map: ARWorldMap,
+        pieceId: Int?,
+        location: CLLocation,
+        featurePoints: Int = 0,
+        extentM: Float = 0
+    ) async throws -> Record {
         let blob = try serialize(map)
 
         var request = URLRequest(url: APIClient.baseURL.appendingPathComponent("api/worldmaps"))
@@ -53,9 +61,13 @@ enum WorldMapStore {
         let boundary = "Boundary-\(UUID().uuidString)"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
+        // Feature count and extent are how we tell a substantive scan from a
+        // glance at one wall, without downloading the map to find out.
         var meta: [String: Any] = [
             "lat": location.coordinate.latitude,
             "lng": location.coordinate.longitude,
+            "featurePoints": featurePoints,
+            "extentM": Double(extentM),
         ]
         if let pieceId { meta["pieceId"] = pieceId }
 
