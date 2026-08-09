@@ -5,24 +5,39 @@ import SceneKit
 /// occlude graffiti behind them, and per-face classification for `surface_type`.
 enum MeshOcclusion {
     /// Invisible geometry that writes depth only — anything behind it is hidden.
+    ///
+    /// Every buffer is copied. ARKit recycles an `ARMeshAnchor`'s Metal buffers
+    /// on the next anchor update, so a zero-copy `SCNGeometrySource(buffer:)`
+    /// leaves SceneKit rendering whatever ARKit wrote after we let go — garbage
+    /// occluders at best, an out-of-bounds GPU read once a chunk shrinks.
     static func geometry(from mesh: ARMeshGeometry) -> SCNGeometry {
-        let vertices = SCNGeometrySource(
-            buffer: mesh.vertices.buffer,
-            vertexFormat: mesh.vertices.format,
+        let vertices = mesh.vertices
+        let vertexCount = min(vertices.count, (vertices.buffer.length - vertices.offset) / vertices.stride)
+        let source = SCNGeometrySource(
+            data: Data(
+                bytes: vertices.buffer.contents().advanced(by: vertices.offset),
+                count: vertexCount * vertices.stride
+            ),
             semantic: .vertex,
-            vertexCount: mesh.vertices.count,
-            dataOffset: mesh.vertices.offset,
-            dataStride: mesh.vertices.stride
+            vectorCount: vertexCount,
+            usesFloatComponents: true,
+            componentsPerVector: 3,
+            bytesPerComponent: MemoryLayout<Float>.size,
+            dataOffset: 0,
+            dataStride: vertices.stride
         )
+
         let faces = mesh.faces
-        let data = Data(bytes: faces.buffer.contents(), count: faces.buffer.length)
+        let indexBytes = 3 * faces.bytesPerIndex
+        let faceCount = min(faces.count, faces.buffer.length / indexBytes)
         let element = SCNGeometryElement(
-            data: data,
+            data: Data(bytes: faces.buffer.contents(), count: faceCount * indexBytes),
             primitiveType: .triangles,
-            primitiveCount: faces.count,
+            primitiveCount: faceCount,
             bytesPerIndex: faces.bytesPerIndex
         )
-        let geometry = SCNGeometry(sources: [vertices], elements: [element])
+
+        let geometry = SCNGeometry(sources: [source], elements: [element])
         let material = SCNMaterial()
         material.colorBufferWriteMask = []
         material.isDoubleSided = true
