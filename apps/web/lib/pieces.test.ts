@@ -43,11 +43,7 @@ describe("validateMeta", () => {
     ["unknown kind", { ...valid, kind: "laser" }],
     ["sessionId too short", { ...valid, sessionId: "abc" }],
     ["sessionId too long", { ...valid, sessionId: "x".repeat(65) }],
-    ["heading negative", { ...valid, heading: -1 }],
-    ["heading 360", { ...valid, heading: 360 }],
-    ["unknown surfaceType", { ...valid, surfaceType: "lava" }],
-    ["unknown client", { ...valid, client: "android" }],
-    ["stickerId too long", { ...valid, stickerId: "x".repeat(65) }],
+    ["placementTransform of the wrong length", { ...valid, placementTransform: [1, 2, 3] }],
   ])("rejects %s", (_label, input) => {
     expect(validateMeta(input).ok).toBe(false);
   });
@@ -62,7 +58,48 @@ describe("validateMeta", () => {
   it("names the offending field so clients can act on it", () => {
     expect(reason({ ...valid, lat: 999 })).toMatch(/lat/);
     expect(reason({ ...valid, kind: "laser" })).toMatch(/kind/);
-    expect(reason({ ...valid, surfaceType: "lava" })).toMatch(/surfaceType/);
+    expect(reason({ ...valid, sessionId: "abc" })).toMatch(/sessionId/);
+  });
+
+  /**
+   * The painting already exists by the time this runs. Refusing it over a field
+   * nothing depends on loses it for good — the client cannot fix an altimeter
+   * and retry. So decorative fields degrade instead of failing.
+   */
+  describe("decorative fields degrade instead of failing", () => {
+    it.each([
+      ["altitudeM far too high", "altitudeM", 99999, 10000],
+      ["altitudeM far too low", "altitudeM", -9999, -500],
+      ["a negative accuracyM", "accuracyM", -5, 0],
+      ["an absurd distanceM", "distanceM", 1e9, 10000],
+      ["devicePitch past vertical", "devicePitch", -400, -180],
+    ])("clamps %s", (_label, field, value, expected) => {
+      const r = validateMeta({ ...valid, [field]: value });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.meta[field as keyof typeof r.meta]).toBe(expected);
+    });
+
+    it.each([
+      ["365 degrees", 365, 5],
+      ["exactly 360", 360, 0],
+      ["a negative bearing", -90, 270],
+    ])("wraps a heading of %s", (_label, value, expected) => {
+      const r = validateMeta({ ...valid, heading: value });
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.meta.heading).toBe(expected);
+    });
+
+    it.each([
+      ["an unknown surfaceType", "surfaceType", "lava"],
+      ["an unknown client", "client", "android"],
+      ["an oversized stickerId", "stickerId", "x".repeat(65)],
+      ["a non-numeric heading", "heading", "north"],
+    ])("drops %s", (_label, field, value) => {
+      const r = validateMeta({ ...valid, [field]: value });
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.meta[field as keyof typeof r.meta]).toBeUndefined();
+    });
   });
 
   describe("colors", () => {
@@ -121,6 +158,59 @@ describe("validateMeta", () => {
       for (const s of ["wall", "floor", "ceiling", "table", "seat", "door", "window", "none"]) {
         expect(validateMeta({ ...valid, surfaceType: s }).ok).toBe(true);
       }
+    });
+
+    it("takes the placement transform as 16 finite numbers", () => {
+      const m = Array.from({ length: 16 }, (_, i) => i / 3);
+      const r = validateMeta({ ...valid, placementTransform: m });
+      expect(r.ok).toBe(true);
+      expect(validateMeta({ ...valid, placementTransform: m.slice(1) }).ok).toBe(false);
+      expect(reason({ ...valid, placementTransform: m.slice(1) })).toContain("column-major");
+    });
+  });
+
+  // Swift omits nil, but nothing in the contract says a client must. Spelling an
+  // optional out as null used to be a 400.
+  describe("explicit null", () => {
+    it.each([
+      "heading", "accuracyM", "stickerId", "surfaceType", "client", "hasLidar",
+      "usedGeoAnchor", "distanceM", "devicePitch", "altitudeM", "colors",
+      "strokeCount", "durationMs", "placementTransform",
+    ])("treats a null %s as absent", (field) => {
+      const r = validateMeta({ ...valid, [field]: null });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.meta[field as keyof typeof r.meta]).toBeUndefined();
+    });
+  });
+
+  // These land in INTEGER columns. Reaching Postgres as a float or an overflow
+  // came back as an opaque 500 the client could do nothing with.
+  describe("integer columns", () => {
+    it.each([
+      ["a float durationMs", "durationMs", 12345.67, 12346],
+      ["a float strokeCount", "strokeCount", 3.5, 4],
+      ["a durationMs past int4", "durationMs", 9e12, 2147483647],
+      ["a negative strokeCount", "strokeCount", -3, 0],
+    ])("rounds and clamps %s", (_label, field, value, expected) => {
+      const r = validateMeta({ ...valid, [field]: value });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.meta[field as keyof typeof r.meta]).toBe(expected);
+    });
+
+    it("keeps whole numbers exactly", () => {
+      const r = validateMeta({ ...valid, strokeCount: 12, durationMs: 45_000 });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.meta.strokeCount).toBe(12);
+      expect(r.meta.durationMs).toBe(45_000);
+    });
+
+    it("drops a NaN rather than storing one", () => {
+      const r = validateMeta({ ...valid, strokeCount: Number.NaN });
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.meta.strokeCount).toBeUndefined();
     });
   });
 });

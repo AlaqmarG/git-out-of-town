@@ -74,7 +74,7 @@ export default function DataLive({ initial }: { initial: Stats }) {
         />
         <StatTile
           label="Countries"
-          value={totals.cities.toLocaleString()}
+          value={totals.countries.toLocaleString()}
           sub="reverse-geocoded from GPS"
         />
       </section>

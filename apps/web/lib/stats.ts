@@ -9,7 +9,8 @@ import { pool } from "@/lib/db";
 export interface Totals {
   pieces: number;
   contributors: number;
-  cities: number;
+  /** Distinct countries. Named for what it counts — the tile says "Countries". */
+  countries: number;
   /** Total seconds people have spent painting. */
   paintSeconds: number;
   /** Pieces added in the last hour — the "is this alive" number. */
@@ -62,13 +63,13 @@ export async function getStats(): Promise<Stats> {
     pool.query<{
       pieces: string;
       contributors: string;
-      cities: string;
+      countries: string;
       paint_seconds: string;
       last_hour: string;
     }>(`
       SELECT count(*)::text                                        AS pieces,
              count(DISTINCT session_id)::text                      AS contributors,
-             count(DISTINCT country)::text                         AS cities,
+             count(DISTINCT country)::text                         AS countries,
              COALESCE(sum(duration_ms), 0)::bigint / 1000          AS paint_seconds,
              count(*) FILTER (WHERE created_at > now() - interval '1 hour')::text AS last_hour
       FROM pieces WHERE ${LIVE}
@@ -148,7 +149,7 @@ export async function getStats(): Promise<Stats> {
     totals: {
       pieces: Number(t.pieces),
       contributors: Number(t.contributors),
-      cities: Number(t.cities),
+      countries: Number(t.countries),
       paintSeconds: Number(t.paint_seconds),
       lastHour: Number(t.last_hour),
     },

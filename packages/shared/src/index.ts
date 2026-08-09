@@ -72,9 +72,15 @@ export interface Piece {
   /** Metres above mean sea level — the ARGeoAnchor altitude. Null when unknown. */
   altitudeM: number | null;
   /**
-   * The piece's placement, as a 4x4 transform (row-major, 16 floats) expressed in
-   * a north-up (ENU) frame with its origin at the piece's lat/lng/altitude. Lets a
+   * The piece's placement, as a 4x4 transform (16 floats) expressed in a
+   * north-up (ENU) frame with its origin at the piece's lat/lng/altitude. Lets a
    * viewer reconstruct the exact orientation/surface-relative placement.
+   *
+   * ⚠️ COLUMN-major — `[m00,m01,m02,m03, m10,…]` is column 0 then column 1, which
+   * is simd/`simd_float4x4` order, not the row-major order a textbook implies.
+   * That is what `flatten()`/`unflatten()` in `apps/ios/ios/ARPaintView.swift`
+   * write and read, and they are the only code that has ever produced or consumed
+   * this field. Transposing it in a new client would silently mirror every piece.
    */
   placementTransform: number[] | null;
 }
