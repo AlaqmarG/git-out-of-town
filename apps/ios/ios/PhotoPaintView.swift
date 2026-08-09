@@ -6,16 +6,18 @@ import SwiftUI
 struct PhotoPaintView: View {
     let scene: CapturedScene
     var stickers: [Sticker]
-    /// Returns the overlay (transparent, viewport-sized) and the sticker ids used.
-    var onPlace: (UIImage, [String]) -> Void
+    /// Takes the overlay (transparent, viewport-sized) and the sticker ids used.
+    /// Returns why it could not be sprayed, or nil on success.
+    var onPlace: (UIImage, [String]) -> String?
     var onCancel: () -> Void
 
     @State private var placed: [PlacedSticker] = []
     @State private var selectedID: UUID?
     @State private var trayID: String?
     @State private var drawing = PKDrawing()
+    @State private var clearToken = 0
     @State private var isDrawing = false
-    @State private var showHint = true
+    @State private var failure: String?
 
     struct PlacedSticker: Identifiable {
         let id = UUID()
@@ -39,7 +41,11 @@ struct PhotoPaintView: View {
             VStack(spacing: 0) {
                 topBar
                 Spacer()
-                if showHint && placed.isEmpty && drawing.strokes.isEmpty && !isDrawing {
+                if let failure {
+                    Toast(message: failure, symbol: "exclamationmark.triangle.fill", tint: .red)
+                        .padding(.bottom, 12)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else if isEmpty && !isDrawing {
                     hintCard.transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
                 if !isDrawing {
@@ -54,9 +60,12 @@ struct PhotoPaintView: View {
         .frame(width: scene.viewport.width, height: scene.viewport.height)
         .ignoresSafeArea()
         .animation(.snappy, value: isDrawing)
+        .animation(.snappy, value: failure)
         .onAppear { trayID = stickers.first?.id }
         .preferredColorScheme(.dark)
     }
+
+    private var isEmpty: Bool { placed.isEmpty && drawing.strokes.isEmpty }
 
     private static var deviceInsets: EdgeInsets {
         let window = UIApplication.shared.connectedScenes
@@ -78,7 +87,7 @@ struct PhotoPaintView: View {
                 // Mounted only while drawing: PencilKit's floating tool picker
                 // would otherwise sit on top of the sticker tray.
                 if isDrawing {
-                    DrawingCanvasView(drawing: $drawing, clearToken: 0)
+                    DrawingCanvasView(drawing: $drawing, clearToken: clearToken)
                 }
             }
             .contentShape(Rectangle())
@@ -92,10 +101,17 @@ struct PhotoPaintView: View {
             }
     }
 
+    /// The one sticker size. The editor is only WYSIWYG if the preview on screen
+    /// and the overlay we render out come from the same number.
+    static func stickerWidth(scale: CGFloat, viewport: CGSize) -> CGFloat {
+        min(viewport.width, viewport.height) * 0.28 * scale
+    }
+
     private var stickerLayer: some View {
         ForEach($placed) { $item in
             StickerLayer(
                 item: $item,
+                width: Self.stickerWidth(scale: item.scale, viewport: scene.viewport),
                 isSelected: selectedID == item.id,
                 canEdit: !isDrawing,
                 onSelect: { selectedID = item.id },
@@ -121,13 +137,17 @@ struct PhotoPaintView: View {
 
             Spacer()
 
-            if !placed.isEmpty || !drawing.strokes.isEmpty {
+            if !isEmpty {
                 Button(role: .destructive) {
                     haptic()
                     withAnimation(.snappy) {
                         placed.removeAll()
                         drawing = PKDrawing()
+                        // PencilKit owns its own copy of the strokes; only a
+                        // token change makes the live canvas let go of them.
+                        clearToken += 1
                         selectedID = nil
+                        failure = nil
                     }
                 } label: {
                     Image(systemName: "trash")
@@ -149,7 +169,7 @@ struct PhotoPaintView: View {
                         .frame(height: 44)
                 }
                 .buttonStyle(.glassProminent)
-                .tint(Color(red: 1.00, green: 0.84, blue: 0.00))
+                .tint(Color.spray)
                 .foregroundStyle(.black)
             }
         }
@@ -193,9 +213,10 @@ struct PhotoPaintView: View {
                         .frame(height: 54)
                 }
                 .buttonStyle(.glassProminent)
-                .tint(Color(red: 1.00, green: 0.84, blue: 0.00))
+                .tint(Color.spray)
                 .foregroundStyle(.black)
-                .disabled(placed.isEmpty && drawing.strokes.isEmpty)
+                .disabled(isEmpty)
+                .accessibilityHint(isEmpty ? "Stamp a sticker or draw on the photo first" : "")
             }
         }
     }
@@ -222,10 +243,7 @@ struct PhotoPaintView: View {
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 15, style: .continuous)
-                                    .strokeBorder(
-                                        trayID == sticker.id ? Color(red: 1.00, green: 0.84, blue: 0.00) : .clear,
-                                        lineWidth: 2
-                                    )
+                                    .strokeBorder(trayID == sticker.id ? Color.spray : .clear, lineWidth: 2)
                             )
                     }
                     .buttonStyle(.plain)
@@ -252,7 +270,7 @@ struct PhotoPaintView: View {
             let item = PlacedSticker(sticker: sticker, center: point)
             placed.append(item)
             selectedID = item.id
-            showHint = false
+            failure = nil
         }
     }
 
@@ -278,10 +296,9 @@ struct PhotoPaintView: View {
         let overlay = UIGraphicsImageRenderer(size: size, format: format).image { context in
             for item in placed {
                 let image = item.sticker.image
-                let base = min(size.width, size.height) * 0.28 * item.scale
                 let aspect = image.size.height / max(image.size.width, 1)
-                let width = base
-                let height = base * aspect
+                let width = Self.stickerWidth(scale: item.scale, viewport: size)
+                let height = width * aspect
 
                 context.cgContext.saveGState()
                 context.cgContext.translateBy(x: item.center.x, y: item.center.y)
@@ -294,13 +311,19 @@ struct PhotoPaintView: View {
                     .draw(in: CGRect(origin: .zero, size: size))
             }
         }
-        onPlace(overlay, placed.map(\.sticker.id))
+        // Failing here keeps the editor open — the art is the expensive part, so
+        // it is never thrown away just because the wall or the fix wasn't ready.
+        if let why = onPlace(overlay, placed.map(\.sticker.id)) {
+            failure = why
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+        }
     }
 }
 
 /// One stamped sticker: drag to move, pinch to size, twist to rotate.
 private struct StickerLayer: View {
     @Binding var item: PhotoPaintView.PlacedSticker
+    let width: CGFloat
     let isSelected: Bool
     let canEdit: Bool
     var onSelect: () -> Void
@@ -314,7 +337,7 @@ private struct StickerLayer: View {
         Image(uiImage: item.sticker.image)
             .resizable()
             .scaledToFit()
-            .frame(width: size, height: size * aspect)
+            .frame(width: width, height: width * aspect)
             .rotationEffect(item.rotation)
             .overlay(alignment: .topTrailing) {
                 if isSelected && canEdit {
@@ -324,9 +347,13 @@ private struct StickerLayer: View {
                             .foregroundStyle(.black)
                             .frame(width: 26, height: 26)
                             .background(.white, in: Circle())
+                            // Stays visually small, but stops being a 26pt target.
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .offset(x: 10, y: -10)
+                    .offset(x: 19, y: -19)
+                    .accessibilityLabel("Remove sticker")
                     .transition(.scale.combined(with: .opacity))
                 }
             }
@@ -346,7 +373,6 @@ private struct StickerLayer: View {
             .onTapGesture { onSelect() }
     }
 
-    private var size: CGFloat { 120 * item.scale }
     private var aspect: CGFloat {
         item.sticker.image.size.height / max(item.sticker.image.size.width, 1)
     }

@@ -1,14 +1,15 @@
+import ARKit
 import CoreLocation
 import SwiftUI
 
 /// The camera screen: point, shoot, paint, post. One decision at a time.
 struct ContentView: View {
     var isActive: Bool = true
+    @Binding var tab: AppTab
     var onHelp: () -> Void = {}
 
     @State private var ar = ARController()
     @State private var stickers: [Sticker] = []
-    @State private var sessionId: String
     @State private var remotePieces: [RemotePiece] = []
     @State private var ownPieceIDs: Set<Int> = []
 
@@ -21,6 +22,10 @@ struct ContentView: View {
     @State private var showDebug = false
     @State private var shutterFlash = false
 
+    /// Computed, not stored: a stored private property would make the
+    /// memberwise initializer private too.
+    private var permissions: Permissions { .shared }
+
     struct PendingPost {
         let snapshot: PlacementSnapshot
         let artPNG: Data
@@ -29,22 +34,48 @@ struct ContentView: View {
         let stickerIDs: [String]
     }
 
-    private static let accent = Color(red: 1.00, green: 0.84, blue: 0.00)
-
-    init(isActive: Bool = true, onHelp: @escaping () -> Void = {}) {
-        self.isActive = isActive
-        self.onHelp = onHelp
+    /// Stable per-install id. Resolved once, not on every view rebuild — this
+    /// used to hit UserDefaults on the main thread for each re-render.
+    private static let sessionId: String = {
         let key = "got.sessionId"
-        if let existing = UserDefaults.standard.string(forKey: key), existing.count >= 8 {
-            _sessionId = State(initialValue: existing)
-        } else {
-            let id = "ios-" + UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(24).description
-            UserDefaults.standard.set(id, forKey: key)
-            _sessionId = State(initialValue: id)
+        if let existing = UserDefaults.standard.string(forKey: key), existing.count >= 8 { return existing }
+        let id = "ios-" + UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(24)
+        UserDefaults.standard.set(id, forKey: key)
+        return id
+    }()
+
+    var body: some View {
+        Group {
+            if !ARWorldTrackingConfiguration.isSupported {
+                BlockerView(
+                    symbol: "arkit",
+                    title: "AR isn't available here",
+                    message: "This device can't run AR. Use Around You to see what everyone else has painted."
+                )
+            } else if permissions.camera == .authorized {
+                camera
+            } else {
+                cameraBlocker
+            }
+        }
+        .task {
+            // We ask, rather than letting ARKit ask when it starts the session,
+            // so a denial lands somewhere we can explain and recover from.
+            if permissions.camera == .notDetermined { await permissions.requestCamera() }
         }
     }
 
-    var body: some View {
+    private var cameraBlocker: some View {
+        BlockerView(
+            symbol: "camera.fill",
+            title: "Camera access is off",
+            message: "Painting means looking at a real wall through the camera. Nothing is recorded — only the photo you choose to paint on.",
+            actionTitle: permissions.camera == .notDetermined ? nil : "Open Settings",
+            action: Permissions.openSettings
+        )
+    }
+
+    private var camera: some View {
         ZStack {
             ARPaintView(
                 controller: ar,
@@ -64,13 +95,27 @@ struct ContentView: View {
                 topBar
                 Spacer(minLength: 40)
 
+                if let failure = ar.failure {
+                    // Recoverable, not a wall: if this ever fires spuriously the
+                    // user is one tap from a working camera either way.
+                    Toast(message: failure, symbol: "exclamationmark.triangle.fill", tint: .red) {
+                        haptic(.rigid)
+                        if permissions.camera == .authorized { ar.restart() } else { Permissions.openSettings() }
+                    }
+                } else if permissions.locationDenied {
+                    Toast(message: "Location is off — pieces can't be pinned", symbol: "location.slash.fill", tint: .red) {
+                        Permissions.openSettings()
+                    }
+                }
                 if let hint {
                     Toast(message: hint, symbol: "exclamationmark.triangle.fill", tint: .red)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 if let successToast {
-                    Toast(message: successToast, symbol: "checkmark.seal.fill", tint: .green)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    Toast(message: successToast, symbol: "checkmark.seal.fill", tint: .green) {
+                        tab = .map
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
                 if let pendingPost {
@@ -84,6 +129,9 @@ struct ContentView: View {
             .safeAreaPadding(.horizontal, 16)
             .safeAreaPadding(.top, 8)
             .safeAreaPadding(.bottom, 12)
+            // A camera HUD has nowhere to reflow to; past this the controls eat
+            // the viewfinder. The tutorial and the map carry no such cap.
+            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         }
         .animation(.snappy, value: pendingPost == nil)
         .fullScreenCover(item: $captured) { scene in
@@ -94,11 +142,8 @@ struct ContentView: View {
                 onCancel: { captured = nil }
             )
         }
-        .task {
-            stickers = StickerCatalog.load()
-            LocationService.shared.start()
-            await loadLoop()
-        }
+        .task { stickers = StickerCatalog.load() }
+        .task(id: isActive) { if isActive { await loadLoop() } }
         .onChange(of: hint) { _, value in autoDismiss(value) { hint = nil } }
         .onChange(of: successToast) { _, value in autoDismiss(value) { successToast = nil } }
     }
@@ -135,30 +180,27 @@ struct ContentView: View {
                         .font(.subheadline.weight(.semibold))
                         .contentTransition(.numericText())
                         .padding(.horizontal, 14)
-                        .frame(height: 44)
+                        .frame(minHeight: 44)
                         .glassEffect(.regular, in: Capsule())
                         .accessibilityLabel("\(piecesPosted) piece\(piecesPosted == 1 ? "" : "s") posted")
                 }
-
-                Button {
-                    haptic()
-                    showDebug.toggle()
-                } label: {
-                    Image(systemName: showDebug ? "viewfinder.circle.fill" : "viewfinder.circle")
-                        .frame(width: 44, height: 44)
-                }
-                .buttonStyle(.glass)
-                .accessibilityLabel(showDebug ? "Hide tracking points" : "Show tracking points")
             }
 
+            // Long-press, not a button: the tracking readout is for us, and a
+            // stranger tapping it by accident just sees jargon.
             Label(ar.status, systemImage: ar.isReady ? "checkmark.circle.fill" : "camera.metering.center.weighted")
                 .font(.caption.weight(.medium))
                 .lineLimit(2)
                 .padding(.horizontal, 13)
                 .padding(.vertical, 8)
                 .glassEffect(.regular, in: Capsule())
-                .foregroundStyle(ar.isReady ? Self.accent : .primary)
+                .foregroundStyle(ar.isReady ? Color.spray : .primary)
                 .animation(.easeInOut, value: ar.isReady)
+                .onLongPressGesture {
+                    haptic(.rigid)
+                    showDebug.toggle()
+                }
+                .accessibilityHint("Long press to show tracking diagnostics")
 
             if showDebug {
                 Text(debugLine)
@@ -196,7 +238,7 @@ struct ContentView: View {
             } label: {
                 ZStack {
                     Circle().stroke(.white.opacity(0.9), lineWidth: 4).frame(width: 78, height: 78)
-                    Circle().fill(Self.accent).frame(width: 62, height: 62)
+                    Circle().fill(Color.spray).frame(width: 62, height: 62)
                     Image(systemName: "paintbrush.pointed.fill")
                         .font(.title3.weight(.bold))
                         .foregroundStyle(.black)
@@ -219,6 +261,7 @@ struct ContentView: View {
                     .scaledToFill()
                     .frame(width: 88, height: 88)
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .accessibilityLabel("Preview of what you painted")
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Add it to the collage?")
@@ -240,7 +283,7 @@ struct ContentView: View {
                     Label("Discard", systemImage: "trash")
                         .fontWeight(.semibold)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 48)
+                        .frame(minHeight: 48)
                 }
                 .buttonStyle(.glass)
                 .disabled(posting)
@@ -257,12 +300,13 @@ struct ContentView: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 48)
+                    .frame(minHeight: 48)
                 }
                 .buttonStyle(.glassProminent)
-                .tint(Self.accent)
+                .tint(Color.spray)
                 .foregroundStyle(.black)
                 .disabled(posting)
+                .accessibilityLabel(posting ? "Posting" : "Post it")
             }
         }
         .padding(18)
@@ -277,6 +321,9 @@ struct ContentView: View {
     // MARK: - Flow
 
     private func shoot() {
+        // A second tap while the editor is animating in would swap the item out
+        // from under an already-presenting cover, which SwiftUI drops silently.
+        guard captured == nil, pendingPost == nil else { return }
         guard let scene = ar.capture() else {
             withAnimation(.snappy) { hint = "Hold steady a moment longer" }
             return
@@ -290,16 +337,20 @@ struct ContentView: View {
         captured = scene
     }
 
-    private func place(overlay: UIImage, ids: [String], scene: CapturedScene) {
-        captured = nil
-        guard let snapshot = ar.place(overlay: overlay, scene: scene) else {
-            withAnimation(.snappy) {
-                hint = LocationService.shared.location == nil
-                    ? "No GPS fix yet — can't pin it here"
-                    : "Couldn't find a surface — get closer and retake"
-            }
-            return
+    /// Returns a message if the art could not be pinned — the editor stays open
+    /// on failure so half a minute of painting is never thrown away.
+    private func place(overlay: UIImage, ids: [String], scene: CapturedScene) -> String? {
+        // Checked before placing, not after: the placer drops the art into the
+        // world first and only then discovers it has no fix to pin it with.
+        guard LocationService.shared.location != nil else {
+            return permissions.locationDenied
+                ? "Location is off — turn it on in Settings to pin this"
+                : "Waiting for a GPS fix — hold on a moment and spray again"
         }
+        guard let snapshot = ar.place(overlay: overlay, scene: scene) else {
+            return "Couldn't find the wall — tap Retake and get a little closer"
+        }
+        captured = nil
         let preview = composite(photo: scene.photo, overlay: overlay)
         withAnimation(.snappy) {
             pendingPost = PendingPost(
@@ -310,6 +361,7 @@ struct ContentView: View {
                 stickerIDs: ids
             )
         }
+        return nil
     }
 
     /// What the world sees on the map: the photo with the paint burned in.
@@ -348,14 +400,17 @@ struct ContentView: View {
             accuracyM: snapshot.accuracyM,
             kind: pending.stickerIDs.isEmpty ? "spray" : "sticker",
             stickerId: pending.stickerIDs.first,
-            sessionId: sessionId,
+            sessionId: Self.sessionId,
             client: "ios",
             surfaceType: snapshot.surfaceType,
             distanceM: snapshot.distanceM,
             devicePitch: snapshot.devicePitch,
             usedGeoAnchor: snapshot.usedGeoAnchor,
             hasLidar: snapshot.hasLidar,
-            altitudeM: snapshot.altitudeM,
+            // Indoors CoreLocation hands back altitudes far outside the server's
+            // accepted range, which 400s the whole upload. It's a nice-to-have
+            // field, so drop it rather than lose the piece.
+            altitudeM: snapshot.altitudeM.flatMap { (-500...9999).contains($0) ? $0 : nil },
             placementTransform: snapshot.placementTransform
         )
         Task {
@@ -366,19 +421,29 @@ struct ContentView: View {
                     meta: meta
                 )
                 await MainActor.run {
+                    // Ours is already on the wall as a local node; re-rendering
+                    // the server's copy from a GPS estimate would double it up.
                     _ = ownPieceIDs.insert(piece.id)
+                    remotePieces.removeAll { $0.id == piece.id }
                     posting = false
                     withAnimation(.snappy) {
                         pendingPost = nil
                         piecesPosted += 1
-                        successToast = "On the map — the world can see it"
+                        successToast = "On the map — tap to see it"
                     }
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
                 }
             } catch {
+                // The card stays up, so Post is simply retryable. A 4xx is the
+                // one case retrying won't fix — don't send them to check wifi.
+                let rejected = if case APIError.badStatus(let code) = error { (400..<500).contains(code) } else { false }
                 await MainActor.run {
                     posting = false
-                    withAnimation(.snappy) { hint = "Couldn't post — check connection" }
+                    withAnimation(.snappy) {
+                        hint = rejected
+                            ? "The wall wouldn't take this one — retake and try again"
+                            : "Couldn't post — check your connection and try again"
+                    }
                     UINotificationFeedbackGenerator().notificationOccurred(.error)
                 }
             }
@@ -397,7 +462,7 @@ struct ContentView: View {
                     radiusMeters: 300
                 ) {
                     ar.fetched = pieces.count
-                    remotePieces = pieces
+                    let next = pieces
                         .filter { !ownPieceIDs.contains($0.id) }
                         .map {
                             RemotePiece(
@@ -410,6 +475,9 @@ struct ContentView: View {
                                 placementTransform: $0.placementTransform
                             )
                         }
+                    // Every assignment rebuilds the AR view; only do it when the
+                    // set actually changed.
+                    if next.map(\.id) != remotePieces.map(\.id) { remotePieces = next }
                 }
             }
             try? await Task.sleep(for: .seconds(3))
@@ -419,7 +487,7 @@ struct ContentView: View {
     private func autoDismiss(_ value: String?, clear: @escaping () -> Void) {
         guard value != nil else { return }
         Task {
-            try? await Task.sleep(for: .seconds(2.5))
+            try? await Task.sleep(for: .seconds(3))
             withAnimation(.easeOut) { clear() }
         }
     }
@@ -429,18 +497,30 @@ struct ContentView: View {
     }
 }
 
-private struct Toast: View {
+struct Toast: View {
     let message: String
     let symbol: String
     let tint: Color
+    var action: (() -> Void)?
 
     var body: some View {
+        Group {
+            if let action {
+                Button(action: action) { content }.buttonStyle(.plain)
+            } else {
+                content
+            }
+        }
+    }
+
+    private var content: some View {
         Label(message, systemImage: symbol)
             .font(.subheadline.weight(.medium))
             .foregroundStyle(.white)
+            .multilineTextAlignment(.leading)
             .padding(.horizontal, 15)
             .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .glassEffect(
                 .regular.tint(tint.opacity(0.7)),
                 in: RoundedRectangle(cornerRadius: 22, style: .continuous)

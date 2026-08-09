@@ -10,9 +10,12 @@ struct MapTabView: View {
 
     @State private var pieces: [PieceDTO] = []
     @State private var selected: PieceDTO?
+    @State private var loaded = false
+    @State private var offline = false
     @State private var position: MapCameraPosition = .userLocation(fallback: .automatic)
 
     private var location = LocationService.shared
+    private var permissions = Permissions.shared
 
     init(tab: Binding<AppTab>, onHelp: @escaping () -> Void) {
         _tab = tab
@@ -40,6 +43,7 @@ struct MapTabView: View {
             MapCompass()
         }
         .overlay(alignment: .top) { header }
+        .overlay { status }
         .safeAreaInset(edge: .bottom) {
             if let selected {
                 PieceGuideCard(piece: selected, tab: $tab) {
@@ -57,18 +61,19 @@ struct MapTabView: View {
     private var header: some View {
         HStack(spacing: 10) {
             Label {
-                Text(pieces.isEmpty ? "Nothing painted nearby yet" : "\(pieces.count) piece\(pieces.count == 1 ? "" : "s") around you")
+                Text(headline)
                     .contentTransition(.numericText())
             } icon: {
                 Image(systemName: "paintbrush.pointed.fill")
-                    .foregroundStyle(Color(red: 1.00, green: 0.84, blue: 0.00))
+                    .foregroundStyle(Color.spray)
             }
             .font(.subheadline.weight(.semibold))
+            .lineLimit(2)
             .padding(.horizontal, 14)
-            .frame(height: 44)
+            .frame(minHeight: 44)
             .glassEffect(.regular, in: Capsule())
 
-            Spacer()
+            Spacer(minLength: 0)
 
             Button {
                 onHelp()
@@ -83,18 +88,77 @@ struct MapTabView: View {
         .padding(.top, 8)
     }
 
+    private var headline: String {
+        if permissions.locationDenied { return "Location is off" }
+        if offline { return "Can't reach the wall" }
+        if !loaded { return "Looking around you…" }
+        return pieces.isEmpty
+            ? "Nothing painted nearby yet"
+            : "\(pieces.count) piece\(pieces.count == 1 ? "" : "s") around you"
+    }
+
+    /// A map with no pins looks broken. Say which of the three reasons it is,
+    /// and give the way out of each.
+    @ViewBuilder
+    private var status: some View {
+        if permissions.locationDenied {
+            blocker(
+                symbol: "location.slash.fill",
+                title: "Turn on location",
+                message: "The map shows what has been painted around you — it needs to know where you are.",
+                actionTitle: "Open Settings",
+                action: Permissions.openSettings
+            )
+        } else if offline && pieces.isEmpty {
+            blocker(
+                symbol: "wifi.slash",
+                title: "Can't reach the wall",
+                message: "The map lives on the server. It'll fill in on its own as soon as you're back online.",
+                actionTitle: "Paint offline anyway",
+                action: { tab = .paint }
+            )
+        } else if loaded && pieces.isEmpty && selected == nil {
+            blocker(
+                symbol: "paintbrush.pointed.fill",
+                title: "Be the first here",
+                message: "Nobody has painted this street yet. Open Paint, point at a wall, and put something on it.",
+                actionTitle: "Start painting",
+                action: { tab = .paint }
+            )
+        }
+    }
+
+    private func blocker(
+        symbol: String,
+        title: String,
+        message: String,
+        actionTitle: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        BlockerView(symbol: symbol, title: title, message: message, actionTitle: actionTitle, action: action)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+            .padding(24)
+    }
+
     private func refreshLoop() async {
         while !Task.isCancelled {
             if let loc = location.location {
-                if let fetched = try? await APIClient.listPieces(
-                    lat: loc.coordinate.latitude,
-                    lng: loc.coordinate.longitude,
-                    radiusMeters: 2000
-                ) {
-                    pieces = fetched
+                do {
+                    let fetched = try await APIClient.listPieces(
+                        lat: loc.coordinate.latitude,
+                        lng: loc.coordinate.longitude,
+                        radiusMeters: 2000
+                    )
+                    // Reassigning identical pieces re-creates every annotation and
+                    // makes the markers blink on each poll.
+                    if fetched.map(\.id) != pieces.map(\.id) { pieces = fetched }
                     if let sel = selected {
                         selected = fetched.first { $0.id == sel.id } ?? sel
                     }
+                    loaded = true
+                    offline = false
+                } catch {
+                    offline = true
                 }
             }
             try? await Task.sleep(for: .seconds(5))
@@ -107,21 +171,40 @@ private struct PieceMarker: View {
     let isSelected: Bool
 
     var body: some View {
-        AsyncImage(url: APIClient.imageURL(path: piece.finalImagePath ?? piece.rawImagePath)) { image in
-            image.resizable().scaledToFit().padding(4)
-        } placeholder: {
-            Image(systemName: "paintbrush.pointed.fill")
-                .font(.system(size: 14))
-                .foregroundStyle(.white)
+        PieceThumbnail(url: APIClient.imageURL(path: piece.finalImagePath ?? piece.rawImagePath), inset: 4)
+            .frame(width: isSelected ? 56 : 44, height: isSelected ? 56 : 44)
+            .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(isSelected ? Color.spray : .white.opacity(0.5), lineWidth: isSelected ? 2.5 : 1)
+            )
+            .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
+            .animation(.snappy(duration: 0.2), value: isSelected)
+            .accessibilityElement()
+            .accessibilityLabel(piece.surfaceType.map { "Piece on a \($0)" } ?? "Piece \(piece.id)")
+            .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// A remote image that admits when it failed instead of spinning forever.
+private struct PieceThumbnail: View {
+    let url: URL
+    var inset: CGFloat = 0
+
+    var body: some View {
+        AsyncImage(url: url) { phase in
+            switch phase {
+            case .success(let image):
+                image.resizable().scaledToFill().padding(inset)
+            case .failure:
+                Image(systemName: "photo.badge.exclamationmark")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.white.opacity(0.6))
+            default:
+                ProgressView().controlSize(.small).tint(.white)
+            }
         }
-        .frame(width: isSelected ? 52 : 38, height: isSelected ? 52 : 38)
-        .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(isSelected ? Color(red: 1.00, green: 0.84, blue: 0.00) : .white.opacity(0.5), lineWidth: isSelected ? 2.5 : 1)
-        )
-        .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
-        .animation(.snappy(duration: 0.2), value: isSelected)
+        .clipped()
     }
 }
 
@@ -143,16 +226,11 @@ private struct PieceGuideCard: View {
     var body: some View {
         VStack(spacing: 14) {
             HStack(alignment: .top, spacing: 14) {
-                AsyncImage(url: previewURL) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    ZStack {
-                        Color.black.opacity(0.25)
-                        ProgressView()
-                    }
-                }
-                .frame(width: 96, height: 96)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                PieceThumbnail(url: previewURL)
+                    .frame(width: 96, height: 96)
+                    .background(.black.opacity(0.25))
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title)
@@ -166,7 +244,8 @@ private struct PieceGuideCard: View {
                             Text(guidance.text)
                         }
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color(red: 1.00, green: 0.84, blue: 0.00))
+                        .foregroundStyle(Color.spray)
+                        .accessibilityLabel("\(guidance.text) of you")
                     }
                     Text(subtitle)
                         .font(.caption)
@@ -182,24 +261,25 @@ private struct PieceGuideCard: View {
                     Image(systemName: "xmark")
                         .font(.caption.weight(.bold))
                         .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.glass)
                 .accessibilityLabel("Close")
             }
 
-            if piece.client == "ios" {
-                Button {
-                    tab = .paint
-                } label: {
-                    Label(arButtonTitle, systemImage: "arkit")
-                        .fontWeight(.bold)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                }
-                .buttonStyle(.glassProminent)
-                .tint(Color(red: 1.00, green: 0.84, blue: 0.00))
-                .foregroundStyle(.black)
+            // Every piece renders in AR — web ones simply face you — so this is
+            // never a dead-end card.
+            Button {
+                tab = .paint
+            } label: {
+                Label(arButtonTitle, systemImage: "arkit")
+                    .fontWeight(.bold)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 48)
             }
+            .buttonStyle(.glassProminent)
+            .tint(Color.spray)
+            .foregroundStyle(.black)
         }
         .padding(16)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
@@ -214,9 +294,10 @@ private struct PieceGuideCard: View {
     }
 
     private var subtitle: String {
-        piece.client == "ios"
-            ? "Walk to the spot, then open Paint and scan around — it appears where it was sprayed."
-            : "Painted from the web — see it on the map."
+        guard let guidance, guidance.meters < 30 else {
+            return "Walk to the spot, then open Paint and scan around — it appears where it was sprayed."
+        }
+        return "You're close. Open Paint and pan slowly across the wall to see it."
     }
 
     private var arButtonTitle: String {
