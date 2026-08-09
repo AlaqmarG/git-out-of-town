@@ -140,7 +140,7 @@ await check("GET /api/stats returns a well-formed payload", async () => {
   for (const key of ["totals", "perHour", "surfaces", "cities", "colours", "clients", "generatedAt"]) {
     assert(key in s, `stats missing '${key}'`);
   }
-  for (const key of ["pieces", "contributors", "cities", "paintSeconds", "lastHour"]) {
+  for (const key of ["pieces", "contributors", "countries", "paintSeconds", "lastHour"]) {
     assert(typeof s.totals[key] === "number", `totals.${key} is not a number`);
   }
   // 24 hourly buckets, gaps filled — a missing hour must read as zero, not absent.
