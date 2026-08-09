@@ -17,6 +17,8 @@ enum ProjectedDecal {
 
     struct Result {
         let geometry: SCNGeometry
+        /// Mesh triangles the art was draped over — 0 means it never wrapped.
+        let triangleCount: Int
         /// Surface-aligned frame at the painted centroid, for persistence.
         let placement: simd_float4x4
         let position: SIMD3<Float>
@@ -110,19 +112,27 @@ enum ProjectedDecal {
         var kept = 0
 
         for candidate in candidates where candidate.depth < nearest[candidate.cell] + 0.35 {
+            let faceNormal = simd_normalize(simd_cross(
+                candidate.tri.b - candidate.tri.a,
+                candidate.tri.c - candidate.tri.a
+            ))
+            // The decal sits on the very triangles the occlusion mesh renders, so
+            // without a lift it z-fights with them and vanishes. 12 mm is enough
+            // to win the depth test and still read as painted on.
+            let lift = faceNormal * 0.012
             let base = UInt32(positions.count)
             for vertex in [candidate.tri.a, candidate.tri.b, candidate.tri.c] {
-                positions.append(SCNVector3(vertex))
+                positions.append(SCNVector3(vertex + lift))
             }
             texcoords.append(contentsOf: [candidate.uv.0, candidate.uv.1, candidate.uv.2])
             indices.append(contentsOf: [base, base + 1, base + 2])
             sum += candidate.tri.centroid
-            normalSum += simd_normalize(simd_cross(candidate.tri.b - candidate.tri.a, candidate.tri.c - candidate.tri.a))
+            normalSum += faceNormal
             kept += 1
             if kept > 20000 { break }
         }
 
-        guard kept >= 2 else { return nil }
+        guard kept >= 1 else { return nil }
 
         let geometry = SCNGeometry(
             sources: [
@@ -143,6 +153,7 @@ enum ProjectedDecal {
 
         return Result(
             geometry: geometry,
+            triangleCount: kept,
             placement: placement(at: position, normal: normal, camera: camera),
             position: position,
             surfaceNormal: normal,
@@ -178,21 +189,31 @@ struct PaintMask {
 
     init?(overlay: UIImage, side: Int = 96) {
         guard let cg = overlay.cgImage else { return nil }
-        var buffer = [UInt8](repeating: 0, count: side * side)
+        // RGBA rather than alpha-only: Swift's CGContext can't take the null
+        // colour space that an alpha-only context requires.
+        var rgba = [UInt8](repeating: 0, count: side * side * 4)
         guard let context = CGContext(
-            data: &buffer,
+            data: &rgba,
             width: side,
             height: side,
             bitsPerComponent: 8,
-            bytesPerRow: side,
-            space: CGColorSpaceCreateDeviceGray(),
-            bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue
+            bytesPerRow: side * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
+        // CoreGraphics draws bottom-left origin; flip so row 0 is the top of the
+        // screen, matching the projected UVs this mask is tested against.
+        context.translateBy(x: 0, y: CGFloat(side))
+        context.scaleBy(x: 1, y: -1)
         context.draw(cg, in: CGRect(x: 0, y: 0, width: side, height: side))
 
+        var buffer = [UInt8](repeating: 0, count: side * side)
         var minX = side, minY = side, maxX = -1, maxY = -1
         for y in 0..<side {
-            for x in 0..<side where buffer[y * side + x] > 12 {
+            for x in 0..<side {
+                let a = rgba[(y * side + x) * 4 + 3]
+                buffer[y * side + x] = a
+                guard a > 12 else { continue }
                 minX = min(minX, x); maxX = max(maxX, x)
                 minY = min(minY, y); maxY = max(maxY, y)
             }

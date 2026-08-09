@@ -173,7 +173,10 @@ struct ContentView: View {
     private var debugLine: String {
         let accuracy = LocationService.shared.location?.horizontalAccuracy ?? -1
         let nearest = ar.nearestM.map { String(format: "%.0fm", $0) } ?? "—"
-        return "fetched \(ar.fetched) · in world \(ar.rendered) · snapped \(ar.snapped) · nearest \(nearest) · gps ±\(accuracy < 0 ? "?" : String(format: "%.0f", accuracy))m"
+        return """
+        fetched \(ar.fetched) · in world \(ar.rendered) · snapped \(ar.snapped) · nearest \(nearest)
+        gps ±\(accuracy < 0 ? "?" : String(format: "%.0f", accuracy))m · last: \(ar.lastPlacement)
+        """
     }
 
     private var shutterBar: some View {

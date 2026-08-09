@@ -353,6 +353,7 @@ extension ARPaintView {
                 placement = projected.placement
                 position = projected.position
                 sizeMeters = projected.extent
+                controller.setLastPlacement("wrapped · \(projected.triangleCount) tris")
             } else {
                 // No usable mesh: a flat quad on the raycast surface, cropped to
                 // what the user actually painted.
@@ -388,6 +389,7 @@ extension ARPaintView {
                 position = simd_make_float3(t.columns.3)
                 sizeMeters = max(width, height)
                 node.simdTransform = placement
+                controller.setLastPlacement(scene.triangles.isEmpty ? "flat · no mesh" : "flat · mesh missed")
             }
 
             node.renderingOrder = 10
