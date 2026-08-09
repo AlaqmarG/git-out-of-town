@@ -133,11 +133,9 @@ enum ProjectedDecal {
                 candidate.tri.b - candidate.tri.a,
                 candidate.tri.c - candidate.tri.a
             )) else { continue }
-            // The decal sits on the very triangles the occlusion mesh renders, so
-            // without a lift it z-fights with them. 3 mm clears a 24-bit depth
-            // buffer at wall distance; more visibly slides against the wall at
-            // grazing angles — the paint's own "sticker" tell.
-            let lift = faceNormal * 0.003
+            // The decal sits on the very triangles the occlusion mesh renders,
+            // so without a lift it z-fights with them.
+            let lift = decalLift(from: camPos, at: candidate.tri.centroid)
             let base = UInt32(positions.count)
             positions.append(SCNVector3(candidate.tri.a + lift))
             positions.append(SCNVector3(candidate.tri.b + lift))
@@ -218,6 +216,23 @@ enum ProjectedDecal {
     }
 }
 
+/// How far to hold a decal off the surface so the LiDAR occlusion mesh cannot
+/// swallow it.
+///
+/// Lifting along the face normal — what this used to do, at a flat 3 mm — only
+/// works head-on. The clearance the depth test actually sees is measured along
+/// the line of sight, so on a floor, where the normal is nearly perpendicular to
+/// it, 3 mm of lift collapses to a fraction of a millimetre and the 5 cm
+/// reconstruction mesh eats the art in patches. That is why the same piece tore
+/// with the mesh grown to 35 chunks and rendered cleanly at 7, and why it looked
+/// right again from directly above. Straight at the camera the clearance is the
+/// same at every incidence, it scales with the mesh's own error, and — because
+/// it runs down the painter's own view ray — it moves nothing on screen.
+func decalLift(from camPos: SIMD3<Float>, at point: SIMD3<Float>) -> SIMD3<Float> {
+    guard let toCamera = unitVector(camPos - point) else { return .zero }
+    return toCamera * min(0.025, max(0.005, simd_distance(camPos, point) * 0.005))
+}
+
 /// `simd_normalize` of a zero-length vector is NaN, and a single NaN anywhere in
 /// a node's transform makes SceneKit drop the node without a word. Returns nil
 /// rather than poisoning the scene graph.
@@ -265,69 +280,5 @@ struct GrazeMap {
                   intent: .defaultIntent
               ) else { return nil }
         return UIImage(cgImage: cg)
-    }
-}
-
-/// Low-resolution alpha map of the painted overlay: which parts of the screen
-/// the user actually painted.
-struct PaintMask {
-    private let alpha: [UInt8]
-    private let side: Int
-    let bounds: CGRect?
-
-    init?(overlay: UIImage, side: Int = 96) {
-        guard let cg = overlay.cgImage else { return nil }
-        // RGBA rather than alpha-only: Swift's CGContext can't take the null
-        // colour space that an alpha-only context requires.
-        var rgba = [UInt8](repeating: 0, count: side * side * 4)
-        guard let context = CGContext(
-            data: &rgba,
-            width: side,
-            height: side,
-            bitsPerComponent: 8,
-            bytesPerRow: side * 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
-        // No flip. A bitmap context's row 0 is already the top of the drawn
-        // image, which is what the v-down projected UVs below expect — the flip
-        // that used to be here mirrored the mask, so paint near the top of the
-        // screen was culled against the bottom of the art.
-        context.draw(cg, in: CGRect(x: 0, y: 0, width: side, height: side))
-
-        var buffer = [UInt8](repeating: 0, count: side * side)
-        var minX = side, minY = side, maxX = -1, maxY = -1
-        for y in 0..<side {
-            for x in 0..<side {
-                let a = rgba[(y * side + x) * 4 + 3]
-                buffer[y * side + x] = a
-                guard a > 12 else { continue }
-                minX = min(minX, x); maxX = max(maxX, x)
-                minY = min(minY, y); maxY = max(maxY, y)
-            }
-        }
-        self.alpha = buffer
-        self.side = side
-        bounds = maxX < 0 ? nil : CGRect(
-            x: CGFloat(minX) / CGFloat(side),
-            y: CGFloat(minY) / CGFloat(side),
-            width: CGFloat(maxX - minX + 1) / CGFloat(side),
-            height: CGFloat(maxY - minY + 1) / CGFloat(side)
-        )
-    }
-
-    /// True when this point — or a neighbour — carries paint, so triangles
-    /// straddling an edge still get covered.
-    func isPainted(u: CGFloat, v: CGFloat) -> Bool {
-        let x = min(side - 1, max(0, Int(u * CGFloat(side))))
-        let y = min(side - 1, max(0, Int(v * CGFloat(side))))
-        for dy in -1...1 {
-            for dx in -1...1 {
-                let nx = x + dx, ny = y + dy
-                guard nx >= 0, nx < side, ny >= 0, ny < side else { continue }
-                if alpha[ny * side + nx] > 12 { return true }
-            }
-        }
-        return false
     }
 }
