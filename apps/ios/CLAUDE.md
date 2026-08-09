@@ -32,9 +32,12 @@ classification, and everything still works.
 
 - **Draw in 2D with PencilKit, place as a textured quad** at a raycast hit. `ModelEntity` plane mesh
   + `UnlitMaterial` carrying the PNG. Do **not** paint in 3D space.
-- **Build the GPS-bearing fallback first.** `ARGeoAnchor` is an upgrade switched on only if
-  `ARGeoTrackingConfiguration.checkAvailability` passes *at the venue*. The demo must never depend
-  on it. Harness: `GeoCheck.swift`.
+- **Never run `ARGeoTrackingConfiguration`.** It has no `sceneReconstruction` property, so switching
+  to it silently destroys the LiDAR mesh — and with it occlusion, decal wrapping, and surface
+  classification. We shipped that swap once: in a covered city (Toronto) it fired a few seconds
+  after launch with `.removeExistingAnchors` and quietly disabled every depth feature. Geo precision
+  is worth less than depth, and indoors it never localises anyway. `GeoCheck.swift` is a harness
+  only; do not wire it into the session.
 - **Do not relocalize with `ARWorldMap`.** Large, device-specific, unreliable across sessions.
 - **Get a signed build on a real device before writing features.** Provisioning is what kills iOS
   hackathon projects.
