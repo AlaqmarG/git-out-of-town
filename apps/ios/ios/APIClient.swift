@@ -15,6 +15,7 @@ struct PieceDTO: Decodable {
     let accuracyM: Double?
     let rawImagePath: String
     let finalImagePath: String?
+    let sceneImagePath: String?
     let kind: String
     let stickerId: String?
     let client: String
@@ -43,6 +44,8 @@ struct MetaDTO: Encodable {
     let altitudeM: Double?
     let placementTransform: [Double]?
 }
+
+extension PieceDTO: Identifiable {}
 
 enum APIClient {
     static let baseURL = URL(string: "https://gitoutoftown.129-153-49-190.sslip.io")!

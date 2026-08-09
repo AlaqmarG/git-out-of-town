@@ -1,17 +1,18 @@
 import CoreLocation
+import Observation
 
-/// Live GPS + compass heading + altitude for the AR client.
-///
-/// Single shared instance; the AR views read `location`/`heading` synchronously
-/// (both are main-actor) at placement and at remote-render time.
+/// Live GPS + compass heading + altitude, observable so the map and guidance
+/// UI update as the user moves. The AR views read it synchronously at
+/// placement and at remote-render time.
 @MainActor
+@Observable
 final class LocationService: NSObject, CLLocationManagerDelegate {
     static let shared = LocationService()
 
     private(set) var location: CLLocation?
     private(set) var heading: Double?
 
-    private let manager = CLLocationManager()
+    @ObservationIgnored private let manager = CLLocationManager()
 
     private override init() {
         super.init()
