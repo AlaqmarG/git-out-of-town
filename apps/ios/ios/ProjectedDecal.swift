@@ -25,6 +25,8 @@ enum ProjectedDecal {
         let surfaceNormal: SIMD3<Float>
         /// Width of the painted area in metres.
         let extent: Float
+        /// Incidence of the spray on the surface, in the decal's own UVs.
+        let graze: UIImage?
     }
 
     /// Snapshots mesh triangles as plain values — the anchors' Metal buffers are
@@ -118,6 +120,7 @@ enum ProjectedDecal {
         var sum = SIMD3<Float>.zero
         var normalSum = SIMD3<Float>.zero
         var kept = 0
+        var graze = GrazeMap()
 
         positions.reserveCapacity(candidates.count * 3)
         texcoords.reserveCapacity(candidates.count * 3)
@@ -145,6 +148,13 @@ enum ProjectedDecal {
             normals.append(contentsOf: [faceVector, faceVector, faceVector])
             texcoords.append(contentsOf: [candidate.uv.0, candidate.uv.1, candidate.uv.2])
             indices.append(contentsOf: [base, base + 1, base + 2])
+            if let toCan = unitVector(camPos - candidate.tri.centroid) {
+                graze.add(
+                    u: (candidate.uv.0.x + candidate.uv.1.x + candidate.uv.2.x) / 3,
+                    v: (candidate.uv.0.y + candidate.uv.1.y + candidate.uv.2.y) / 3,
+                    cosine: simd_dot(faceNormal, toCan)
+                )
+            }
             sum += candidate.tri.centroid
             normalSum += faceNormal
             kept += 1
@@ -181,7 +191,8 @@ enum ProjectedDecal {
             ),
             position: position,
             surfaceNormal: normal,
-            extent: max(extent * 2, 0.05)
+            extent: max(extent * 2, 0.05),
+            graze: graze.image()
         )
     }
 
@@ -216,6 +227,47 @@ func unitVector(_ v: SIMD3<Float>, min minLength: Float = 1e-6) -> SIMD3<Float>?
     return v / length
 }
 
+/// Cosine of the spray's incidence angle, rasterized into the same screen-space
+/// UVs the decal is textured with. Baked from the pose the art was sprayed
+/// through, so it does not breathe as the viewer walks around.
+///
+/// Coarse on purpose: curvature is low-frequency, and the mesh path writes only
+/// where a triangle survived, so a fine grid would come out speckled.
+struct GrazeMap {
+    private var cosines: [UInt8]
+    private let side = 48
+
+    init() {
+        cosines = [UInt8](repeating: .max, count: side * side)
+    }
+
+    /// Unwritten cells stay at 1 — full coat — so a gap never thins the art.
+    mutating func add(u: CGFloat, v: CGFloat, cosine: Float) {
+        guard u.isFinite, v.isFinite, cosine.isFinite else { return }
+        let x = min(side - 1, Int(min(1, max(0, u)) * CGFloat(side)))
+        let y = min(side - 1, Int(min(1, max(0, v)) * CGFloat(side)))
+        cosines[y * side + x] = UInt8(min(1, max(0, cosine)) * 255)
+    }
+
+    func image() -> UIImage? {
+        guard let provider = CGDataProvider(data: Data(cosines) as CFData),
+              let cg = CGImage(
+                  width: side,
+                  height: side,
+                  bitsPerComponent: 8,
+                  bitsPerPixel: 8,
+                  bytesPerRow: side,
+                  space: CGColorSpaceCreateDeviceGray(),
+                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+                  provider: provider,
+                  decode: nil,
+                  shouldInterpolate: true,
+                  intent: .defaultIntent
+              ) else { return nil }
+        return UIImage(cgImage: cg)
+    }
+}
+
 /// Low-resolution alpha map of the painted overlay: which parts of the screen
 /// the user actually painted.
 struct PaintMask {
@@ -237,10 +289,10 @@ struct PaintMask {
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
-        // CoreGraphics draws bottom-left origin; flip so row 0 is the top of the
-        // screen, matching the projected UVs this mask is tested against.
-        context.translateBy(x: 0, y: CGFloat(side))
-        context.scaleBy(x: 1, y: -1)
+        // No flip. A bitmap context's row 0 is already the top of the drawn
+        // image, which is what the v-down projected UVs below expect — the flip
+        // that used to be here mirrored the mask, so paint near the top of the
+        // screen was culled against the bottom of the art.
         context.draw(cg, in: CGRect(x: 0, y: 0, width: side, height: side))
 
         var buffer = [UInt8](repeating: 0, count: side * side)

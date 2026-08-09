@@ -77,6 +77,11 @@ extension ARPaintView {
         private var meshCount = 0
         private var lastPlacedNode: SCNNode?
         private var snappedIDs: Set<Int> = []
+        /// Remote pieces already given the wall treatment, and how many times we
+        /// have tried — a piece seen only edge-on must not retry forever.
+        private var dressedIDs: Set<Int> = []
+        private var dressAttempts: [Int: Int] = [:]
+        private var lastDress = Date.distantPast
         private var lastPlacedFrame: simd_float4x4?
         private var lastPlacedSize: Float = 0.3
         private var anchoredPieceIDs: Set<Int> = []
@@ -110,6 +115,9 @@ extension ARPaintView {
             self.controller = controller
             super.init()
             controller.coordinator = self
+            // Resolve the shader probe now: it compiles Metal from source, and
+            // the only other time it would run is the first tap that places art.
+            Task.detached(priority: .utility) { _ = Self.aerosolShaderCompiles }
         }
 
         func debugOptions(_ show: Bool) -> SCNDebugOptions {
@@ -174,6 +182,7 @@ extension ARPaintView {
                 self?.maybeRelocalize()
                 self?.maybeExtendMap(at: time)
                 self?.maybeReanchor()
+                self?.maybeDressRemotePieces()
             }
         }
 
@@ -322,6 +331,8 @@ extension ARPaintView {
             snappedIDs.removeAll()
             loadFailures.removeAll()
             snapAttempts.removeAll()
+            dressedIDs.removeAll()
+            dressAttempts.removeAll()
         }
 
         // MARK: - Capture
@@ -424,7 +435,9 @@ extension ARPaintView {
                 orientation: captureOrientation,
                 mask: mask
             ) {
-                projected.geometry.materials = [material(art: overlay, shade: scene.photo)]
+                projected.geometry.materials = [
+                    material(art: overlay, shade: scene.photo, graze: projected.graze),
+                ]
                 node = SCNNode(geometry: projected.geometry)
                 placement = projected.placement
                 position = projected.position
@@ -459,7 +472,11 @@ extension ARPaintView {
                 // The wall behind the art, cropped to the same screen region, so
                 // the flat path picks up surface grain too. Without this, every
                 // fallback placement rendered as flat colour on flat colour.
-                plane.materials = [material(art: art, shade: crop(scene.photo, to: bounds))]
+                // A flat quad has one normal, so every point of it faces the can
+                // equally — no graze map to build.
+                plane.materials = [
+                    material(art: art, shade: crop(scene.photo, to: bounds), graze: nil),
+                ]
                 node = SCNNode(geometry: plane)
 
                 // Slide it to where it sat on screen: +x right, +y down in the mask.
@@ -732,7 +749,7 @@ extension ARPaintView {
 
         /// Art on top, with the surface's own light and grain multiplied through
         /// it — same UVs, so the grain lines up perfectly with the wall.
-        private func material(art: UIImage, shade: UIImage?) -> SCNMaterial {
+        private func material(art: UIImage, shade: UIImage?, graze: UIImage?) -> SCNMaterial {
             let material = SCNMaterial()
             material.diffuse.contents = art
             material.diffuse.wrapS = .clamp
@@ -753,35 +770,71 @@ extension ARPaintView {
                 // Soft-light through the wall rather than plain multiply, so the
                 // surface can lighten the paint as well as darken it — a bare
                 // multiply can only ever darken, which caps how integrated the
-                // paint can look. The same map perturbs the normal, so the paint
-                // catches light along mortar lines instead of reading as a
-                // printed sheet, and thins slightly where the wall is dark.
+                // paint can look. The same map also thins the coat slightly
+                // where the wall is dark; relief comes from the normal map below.
                 if Self.aerosolShaderCompiles {
                     material.shaderModifiers = [.surface: Self.aerosolShader]
                     material.setValue(SCNMaterialProperty(contents: luminance), forKey: "wallTex")
-                    material.setValue(Float(0.7), forKey: "wallStrength")
-                    material.setValue(Float(0.99), forKey: "paintOpacity")
+                    // A colour binds as a 1x1 texture: every surface square to the
+                    // can, which is what a flat quad gets and what a missing map
+                    // falls back to.
+                    material.setValue(
+                        SCNMaterialProperty(contents: graze ?? UIColor.white),
+                        forKey: "grazeTex"
+                    )
+                    material.setValue(Float(1), forKey: "wallCap")
                 } else {
                     material.multiply.contents = luminance
                 }
+                Self.bakeSurface(shade, into: material)
             }
             return material
+        }
+
+        /// Reads the wall once — its grain and how much light reaches it — and
+        /// hands both to the material. Both are the expensive kind of CoreImage
+        /// work, so they land a beat late rather than stalling the tap that
+        /// placed the piece; the 0.3 s fade-in covers the gap. Until then the
+        /// paint renders uncapped and flat, which is exactly the old look.
+        private static func bakeSurface(_ shade: UIImage, into material: SCNMaterial) {
+            Task.detached(priority: .userInitiated) {
+                let grain = SurfaceTexture.normalMap(of: shade)
+                // Paint cannot out-shine the light falling on the wall. A dark or
+                // unreadable wall dulls the art down to the floor, never to black.
+                let cap = SurfaceTexture.averageLuminance(of: shade).map {
+                    min(1, max(Float($0), Aerosol.wallLumaFloor) * Aerosol.capHeadroom)
+                }
+                await MainActor.run {
+                    if let grain {
+                        material.normal.contents = grain
+                        material.normal.intensity = Aerosol.bump
+                    }
+                    if let cap { material.setValue(cap, forKey: "wallCap") }
+                }
+            }
         }
 
         /// SceneKit gives no callback when a shader modifier fails to compile —
         /// it just logs and renders the material wrong, mid-demo. Prove the body
         /// compiles on this device once; otherwise use the plain multiply blend.
         private static let aerosolShaderCompiles: Bool = {
+            let split = aerosolShader.components(separatedBy: "#pragma body")
+            let declared = split.first?.components(separatedBy: "#pragma declaration") ?? []
             guard let device = MTLCreateSystemDefaultDevice(),
-                  let body = aerosolShader.components(separatedBy: "#pragma body").last else { return false }
+                  split.count == 2, declared.count == 2 else { return false }
+            // SceneKit emits the declaration block at global scope, so the probe
+            // has to as well — otherwise `gotNoise` is undefined here, the probe
+            // fails, and every device silently drops to the plain multiply.
             let harness = """
             #include <metal_stdlib>
             using namespace metal;
+            \(declared[1].replacingOccurrences(of: "#pragma transparent", with: ""))
             struct GotSurface { float4 diffuse; float2 diffuseTexcoord; float3 normal; };
             static void gotBody(thread GotSurface &_surface,
                                 texture2d<float, access::sample> wallTex,
-                                float wallStrength, float paintOpacity) {
-            \(body)
+                                texture2d<float, access::sample> grazeTex,
+                                float wallCap) {
+            \(split[1])
             }
             """
             return (try? device.makeLibrary(source: harness, options: nil)) != nil
@@ -790,14 +843,34 @@ extension ARPaintView {
         /// Blends the art into the wall it is projected onto. Runs per fragment
         /// with the decal's own projected UVs, so the wall sample under any
         /// point of the art is exactly the wall behind it.
+        /// Relief is deliberately absent: `material.normal` carries a Sobel map of
+        /// the same wall, which SceneKit has already folded into `_surface.normal`
+        /// on a tangent frame it derives itself. The two-tap luminance gradient
+        /// this pass used to run was the same idea done worse, and would stack.
         private static let aerosolShader = """
         #pragma arguments
         texture2d<float, access::sample> wallTex;
-        float wallStrength;
-        float paintOpacity;
+        texture2d<float, access::sample> grazeTex;
+        float wallCap;
+
+        #pragma declaration
+        static float gotNoise(float2 p) {
+            const float2 seed = float2(127.1, 311.7);
+            float2 i = floor(p);
+            float2 f = smoothstep(float2(0.0), float2(1.0), fract(p));
+            float4 h = fract(sin(float4(
+                dot(i, seed), dot(i + float2(1.0, 0.0), seed),
+                dot(i + float2(0.0, 1.0), seed), dot(i + float2(1.0, 1.0), seed)
+            )) * 43758.5453);
+            return mix(mix(h.x, h.y, f.x), mix(h.z, h.w, f.x), f.y);
+        }
 
         #pragma transparent
         #pragma body
+
+        // Most of a decal's area is unpainted mask; none of the below can make it
+        // visible, and depth writes are already off so there is no early-Z to lose.
+        if (_surface.diffuse.a < 0.002) { discard_fragment(); }
 
         constexpr sampler wallSampler(coord::normalized, filter::linear, address::clamp_to_edge);
         float2 uv = _surface.diffuseTexcoord;
@@ -807,21 +880,30 @@ extension ARPaintView {
 
         // Pegtop soft light.
         float3 blended = (1.0 - 2.0 * wall) * art * art + 2.0 * wall * art;
-        _surface.diffuse.rgb = mix(art, blended, wallStrength);
+        float3 paint = mix(art, blended, \(Aerosol.wallStrength));
 
-        // Aerosol is never fully opaque, and it covers a dark rough patch less
-        // well than smooth bright plaster.
+        // Desaturating toward grey is luma-preserving, so `grey` is also the peak
+        // to cap: paint cannot out-shine the light falling on the wall.
+        float grey = dot(paint, luma);
+        paint = mix(float3(grey), paint, 1.0 - \(Aerosol.desaturate));
+        _surface.diffuse.rgb = saturate(paint * min(1.0, wallCap / max(grey, 1e-3)));
+
+        // Never fully opaque, and it covers a dark rough patch less well than
+        // smooth bright plaster.
         float l = dot(wall, luma);
-        _surface.diffuse.a *= paintOpacity * mix(0.93, 1.0, l);
+        float alpha = _surface.diffuse.a * \(Aerosol.paintOpacity) * mix(0.93, 1.0, l);
 
-        // Bump the normal along the wall's own brightness gradient. No tangent
-        // source needed — any stable basis perpendicular to the face will do.
-        float3 n = normalize(_surface.normal);
-        float3 t = normalize(cross(n, abs(n.y) < 0.9 ? float3(0.0, 1.0, 0.0) : float3(1.0, 0.0, 0.0)));
-        float3 b = cross(n, t);
-        float lx = dot(wallTex.sample(wallSampler, uv + float2(0.0015, 0.0)).rgb, luma);
-        float ly = dot(wallTex.sample(wallSampler, uv + float2(0.0, 0.0015)).rgb, luma);
-        _surface.normal = normalize(n + t * (l - lx) * 6.0 + b * (l - ly) * 6.0);
+        // Dissolve the softened boundary, so the outline reads as droplets rather
+        // than a cut line. Multiplied, never replaced: a solid interior sits above
+        // edgeHigh and comes through untouched.
+        float bite = (gotNoise(uv * \(Aerosol.edgeNoiseScale)) - 0.5) * \(Aerosol.edgeBite);
+        alpha *= smoothstep(\(Aerosol.edgeLow) + bite, \(Aerosol.edgeHigh) + bite, _surface.diffuse.a);
+
+        // Thinner where the wall turned away from the can, and a slow wander so
+        // coverage reads hand-sprayed.
+        alpha *= mix(1.0 - \(Aerosol.graze), 1.0, grazeTex.sample(wallSampler, uv).r);
+        alpha *= mix(1.0 - \(Aerosol.coats), 1.0, gotNoise(uv * \(Aerosol.coatNoiseScale)));
+        _surface.diffuse.a = saturate(alpha);
         """
 
         private func crop(_ image: UIImage, to unit: CGRect) -> UIImage? {
@@ -900,6 +982,8 @@ extension ARPaintView {
                 snappedIDs.remove(id)
                 loadFailures.removeValue(forKey: id)
                 snapAttempts.removeValue(forKey: id)
+                dressedIDs.remove(id)
+                dressAttempts.removeValue(forKey: id)
             }
             renderedRemoteIDs.formIntersection(wanted.union(anchoredPieceIDs))
             // Anchored pieces ride their world-map anchors at the exact painted
@@ -1100,6 +1184,120 @@ extension ARPaintView {
                 applyVisibility(to: node, id: id, snapped: false, camPos: camPos)
             }
             publishNearby()
+        }
+
+        /// A remote piece arrives as bare artwork — the painter's wall sample was
+        /// never uploaded — so a visitor used to get a flat quad where the
+        /// painter got wall-integrated paint. But the visitor is standing at that
+        /// wall. Sample it from here and run the identical treatment.
+        ///
+        /// Only pieces glued to a real surface qualify: an unsnapped piece is
+        /// deliberately a floating map marker, and wall grain on something
+        /// hovering in mid-air reads worse than leaving it flat.
+        private func maybeDressRemotePieces() {
+            guard Date().timeIntervalSince(lastDress) > 2, let scnView,
+                  let frame = scnView.session.currentFrame else { return }
+            let viewport = scnView.bounds.size
+            guard viewport.width > 0, viewport.height > 0 else { return }
+            let orientation = scnView.window?.windowScene?.effectiveGeometry
+                .interfaceOrientation ?? .portrait
+
+            var jobs: [(id: Int, corners: SurfaceTexture.Corners)] = []
+            for (id, node) in remoteNodes
+            where !dressedIDs.contains(id) && dressAttempts[id, default: 0] < 6 {
+                guard snappedIDs.contains(id) || anchoredPieceIDs.contains(id),
+                      let corners = screenQuad(
+                          of: node, camera: frame.camera,
+                          viewport: viewport, orientation: orientation
+                      ) else { continue }
+                dressAttempts[id, default: 0] += 1
+                jobs.append((id, corners))
+                if jobs.count == 3 { break }
+            }
+            guard !jobs.isEmpty else { return }
+            lastDress = Date()
+
+            // One snapshot serves the whole pass. Painted content is hidden for
+            // it, or a piece samples its own art as the wall behind itself.
+            let painted = placedNodes + Array(remoteNodes.values)
+            for node in painted { node.isHidden = true }
+            let photo = scnView.snapshot()
+            for node in painted { node.isHidden = false }
+
+            for job in jobs { dress(id: job.id, photo: photo, corners: job.corners) }
+        }
+
+        /// Warps the wall out of the snapshot and rebuilds the piece's material
+        /// with it. Off the main actor, because it is the same CoreImage work the
+        /// placement path defers; the piece stays flat until it lands.
+        private func dress(id: Int, photo: UIImage, corners: SurfaceTexture.Corners) {
+            guard let art = remoteNodes[id]?.geometry?.firstMaterial?.diffuse.contents as? UIImage
+            else { return }
+            // Claim it up front so the next pass, two seconds from now, does not
+            // start a second warp for the same piece while this one is in flight.
+            dressedIDs.insert(id)
+            Task.detached(priority: .utility) { [weak self] in
+                guard let wall = SurfaceTexture.rectified(photo, to: corners) else {
+                    await MainActor.run { self?.dressedIDs.remove(id) }
+                    return
+                }
+                await MainActor.run {
+                    guard let self, let node = self.remoteNodes[id],
+                          let old = node.geometry?.firstMaterial else { return }
+                    let dressed = self.material(art: art, shade: wall, graze: nil)
+                    // The remote paths own depth behaviour — a marker renders
+                    // through geometry, a snapped piece occludes — so carry the
+                    // current settings across rather than taking the painter's.
+                    dressed.readsFromDepthBuffer = old.readsFromDepthBuffer
+                    dressed.writesToDepthBuffer = old.writesToDepthBuffer
+                    node.geometry?.materials = [dressed]
+                    self.dressedIDs.insert(id)
+                }
+            }
+        }
+
+        /// The piece's quad in unit viewport coordinates, or nil when it is not
+        /// squarely enough in view for the wall behind it to be worth sampling.
+        private func screenQuad(
+            of node: SCNNode,
+            camera: ARCamera,
+            viewport: CGSize,
+            orientation: UIInterfaceOrientation
+        ) -> SurfaceTexture.Corners? {
+            // Read the half-extents off the geometry: the GPS path uses a 0.3 m
+            // quad scaled by the node, the anchored path a pre-sized one.
+            guard let plane = node.geometry as? SCNPlane else { return nil }
+            let hw = plane.width / 2, hh = plane.height / 2
+            // SCNPlane's texture origin is its local top-left, verified.
+            let local = [
+                SCNVector3(-hw, hh, 0), SCNVector3(hw, hh, 0),
+                SCNVector3(-hw, -hh, 0), SCNVector3(hw, -hh, 0),
+            ]
+            let camPos = simd_make_float3(camera.transform.columns.3)
+            let forward = -simd_make_float3(camera.transform.columns.2)
+
+            var unit: [CGPoint] = []
+            for corner in local {
+                let world = simd_float3(node.convertPosition(corner, to: nil))
+                // A point behind the lens projects to a mirrored point, not a miss.
+                guard simd_dot(world - camPos, forward) > 0.2 else { return nil }
+                let p = camera.projectPoint(world, orientation: orientation, viewportSize: viewport)
+                guard p.x.isFinite, p.y.isFinite else { return nil }
+                let u = p.x / viewport.width, v = p.y / viewport.height
+                // Slightly off-screen is fine; mostly off-screen has no wall in
+                // the snapshot to sample.
+                guard u > -0.15, u < 1.15, v > -0.15, v < 1.15 else { return nil }
+                unit.append(CGPoint(x: u, y: v))
+            }
+            // Too small on screen and there is no grain left to resolve.
+            let width = hypot(unit[1].x - unit[0].x, unit[1].y - unit[0].y)
+            let height = hypot(unit[2].x - unit[0].x, unit[2].y - unit[0].y)
+            guard min(width, height) > 0.12 else { return nil }
+
+            return SurfaceTexture.Corners(
+                topLeft: unit[0], topRight: unit[1],
+                bottomLeft: unit[2], bottomRight: unit[3]
+            )
         }
 
         /// Casts along the piece's stored surface normal (LiDAR mesh first,
