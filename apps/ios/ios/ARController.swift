@@ -37,6 +37,11 @@ final class ARController {
         isReady = ready
     }
 
+    /// How the last piece landed: draped over N mesh triangles, or flat.
+    private(set) var lastPlacement = "—"
+
+    func setLastPlacement(_ text: String) { lastPlacement = text }
+
     func setNearby(rendered: Int, snapped: Int, nearestM: Double?) {
         self.rendered = rendered
         self.snapped = snapped

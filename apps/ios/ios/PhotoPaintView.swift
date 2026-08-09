@@ -208,17 +208,20 @@ struct PhotoPaintView: View {
                         haptic()
                         trayID = sticker.id
                     } label: {
+                        // The pack's lettering pieces are wider than they are tall,
+                        // so the art gets a fixed box inside the tile — the tile
+                        // never resizes and nothing spills past the tray's clip.
                         Image(uiImage: sticker.image)
                             .resizable()
                             .scaledToFit()
-                            .padding(7)
-                            .frame(width: 58, height: 58)
+                            .frame(width: 44, height: 44)
+                            .frame(width: Self.tileSide, height: Self.tileSide)
                             .background(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                RoundedRectangle(cornerRadius: 15, style: .continuous)
                                     .fill(trayID == sticker.id ? Color.white.opacity(0.18) : .clear)
                             )
                             .overlay(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                RoundedRectangle(cornerRadius: 15, style: .continuous)
                                     .strokeBorder(
                                         trayID == sticker.id ? Color(red: 1.00, green: 0.84, blue: 0.00) : .clear,
                                         lineWidth: 2
@@ -231,11 +234,15 @@ struct PhotoPaintView: View {
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .frame(height: Self.trayHeight)
             .animation(.snappy(duration: 0.2), value: trayID)
         }
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .frame(height: Self.trayHeight)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
+
+    private static let tileSide: CGFloat = 56
+    private static let trayHeight: CGFloat = 72
 
     // MARK: - Editing
 

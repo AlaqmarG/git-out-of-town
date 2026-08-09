@@ -65,21 +65,13 @@ extension ARPaintView {
         private var fallbackNodes: [Int: SCNNode] = [:]
         private var fallbackPieces: [Int: RemotePiece] = [:]
         private var lastReanchor = Date.distantPast
-        private var usingGeoAnchor = false
-        private var checkedGeoTracking = false
         private var sessionActive = true
         private var placedNodes: [SCNNode] = []
+        private var meshCount = 0
         private var lastPlacedNode: SCNNode?
         private var snappedIDs: Set<Int> = []
 
         let hasLidar = ARWorldTrackingConfiguration.supportsSceneReconstruction(.meshWithClassification)
-
-        private struct PendingGeoPiece {
-            let image: UIImage
-            let transform: simd_float4x4
-            let id: Int
-        }
-        private var pendingGeoPieces: [String: PendingGeoPiece] = [:]
 
         init(controller: ARController) {
             self.controller = controller
@@ -120,49 +112,15 @@ extension ARPaintView {
             guard active != sessionActive, let scnView else { return }
             sessionActive = active
             if active {
-                scnView.session.run(usingGeoAnchor ? makeGeoConfiguration() : makeWorldConfiguration())
+                scnView.session.run(makeWorldConfiguration())
             } else {
                 scnView.session.pause()
-            }
-        }
-
-        private func makeGeoConfiguration() -> ARGeoTrackingConfiguration {
-            let geo = ARGeoTrackingConfiguration()
-            geo.planeDetection = [.horizontal, .vertical]
-            if ARGeoTrackingConfiguration.supportsFrameSemantics(.personSegmentationWithDepth) {
-                geo.frameSemantics.insert(.personSegmentationWithDepth)
-            }
-            return geo
-        }
-
-        private func maybeEnableGeoTracking() {
-            guard !checkedGeoTracking, !usingGeoAnchor, sessionActive, let scnView else { return }
-            guard ARGeoTrackingConfiguration.isSupported else {
-                checkedGeoTracking = true
-                return
-            }
-            guard let loc = LocationService.shared.location,
-                  loc.horizontalAccuracy >= 0, loc.horizontalAccuracy < 30 else { return }
-            checkedGeoTracking = true
-            ARGeoTrackingConfiguration.checkAvailability(at: loc.coordinate) { [weak self] available, _ in
-                Task { @MainActor in
-                    guard let self, let scnView = self.scnView, available else { return }
-                    scnView.session.run(self.makeGeoConfiguration(), options: [.resetTracking, .removeExistingAnchors])
-                    self.usingGeoAnchor = true
-                    for (_, node) in self.remoteNodes { node.removeFromParentNode() }
-                    self.remoteNodes.removeAll()
-                    self.renderedRemoteIDs.removeAll()
-                    self.fallbackNodes.removeAll()
-                    self.fallbackPieces.removeAll()
-                    self.pendingGeoPieces.removeAll()
-                }
             }
         }
 
         nonisolated func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
             Task { @MainActor [weak self] in
                 self?.publishStatus()
-                self?.maybeEnableGeoTracking()
                 self?.maybeReanchor()
             }
         }
@@ -170,15 +128,10 @@ extension ARPaintView {
         // MARK: - Occlusion mesh
 
         nonisolated func renderer(_ renderer: SCNSceneRenderer, didAdd node: SCNNode, for anchor: ARAnchor) {
-            if let mesh = anchor as? ARMeshAnchor {
-                node.geometry = MeshOcclusion.geometry(from: mesh.geometry)
-                node.renderingOrder = -1
-                node.name = "occlusion"
-                return
-            }
-            Task { @MainActor [weak self] in
-                self?.attachPendingPiece(node: node, anchor: anchor)
-            }
+            guard let mesh = anchor as? ARMeshAnchor else { return }
+            node.geometry = MeshOcclusion.geometry(from: mesh.geometry)
+            node.renderingOrder = -1
+            node.name = "occlusion"
         }
 
         nonisolated func renderer(_ renderer: SCNSceneRenderer, didUpdate node: SCNNode, for anchor: ARAnchor) {
@@ -207,9 +160,10 @@ extension ARPaintView {
                     let meshes = frame.anchors.reduce(into: 0) { count, anchor in
                         if anchor is ARMeshAnchor { count += 1 }
                     }
+                    meshCount = meshes
                     return meshes < 2
-                        ? ("Scanning the room — pan slowly", false)
-                        : ("Depth ready — point at a wall", true)
+                        ? ("Scanning the surface — pan slowly (\(meshes))", false)
+                        : ("Depth ready · \(meshes) chunks — point at a wall", true)
                 }
                 let planes = frame.anchors.reduce(into: 0) { count, anchor in
                     if anchor is ARPlaneAnchor { count += 1 }
@@ -242,7 +196,6 @@ extension ARPaintView {
             for (_, node) in remoteNodes { node.removeFromParentNode() }
             remoteNodes.removeAll()
             renderedRemoteIDs.removeAll()
-            pendingGeoPieces.removeAll()
             fallbackNodes.removeAll()
             fallbackPieces.removeAll()
             snappedIDs.removeAll()
@@ -353,6 +306,7 @@ extension ARPaintView {
                 placement = projected.placement
                 position = projected.position
                 sizeMeters = projected.extent
+                controller.setLastPlacement("wrapped · \(projected.triangleCount) tris")
             } else {
                 // No usable mesh: a flat quad on the raycast surface, cropped to
                 // what the user actually painted.
@@ -388,6 +342,7 @@ extension ARPaintView {
                 position = simd_make_float3(t.columns.3)
                 sizeMeters = max(width, height)
                 node.simdTransform = placement
+                controller.setLastPlacement(scene.triangles.isEmpty ? "flat · no mesh" : "flat · mesh missed")
             }
 
             node.renderingOrder = 10
@@ -463,7 +418,7 @@ extension ARPaintView {
                 distanceM: Double(simd_length(enu)),
                 devicePitch: Double(scene.camera.eulerAngles.x) * 180 / .pi,
                 surfaceType: scene.surfaceType == "unknown" ? nil : scene.surfaceType,
-                usedGeoAnchor: usingGeoAnchor,
+                usedGeoAnchor: false,
                 hasLidar: hasLidar,
                 placementTransform: flatten(stored)
             )
@@ -501,19 +456,6 @@ extension ARPaintView {
                     image = try await APIClient.loadImage(path: piece.imagePath)
                 } catch {
                     self.renderedRemoteIDs.remove(piece.id)
-                    return
-                }
-
-                if self.usingGeoAnchor {
-                    let coordinate = CLLocationCoordinate2D(latitude: piece.lat, longitude: piece.lng)
-                    let anchor = piece.altitudeM.map { ARGeoAnchor(coordinate: coordinate, altitude: $0) }
-                        ?? ARGeoAnchor(coordinate: coordinate)
-                    self.pendingGeoPieces[anchor.identifier.uuidString] = PendingGeoPiece(
-                        image: image,
-                        transform: piece.placementTransform.flatMap(unflatten) ?? matrix_identity_float4x4,
-                        id: piece.id
-                    )
-                    scnView.session.add(anchor: anchor)
                     return
                 }
 
@@ -712,23 +654,6 @@ extension ARPaintView {
             case "table", "seat": return normal.y > 0.5
             default: return true
             }
-        }
-
-        /// Attaches the piece quad to a resolved `ARGeoAnchor` node, relative to
-        /// the anchor. ARKit keeps refining the anchor transform; the child follows.
-        private func attachPendingPiece(node: SCNNode, anchor: ARAnchor) {
-            guard let pending = pendingGeoPieces.removeValue(forKey: anchor.identifier.uuidString) else { return }
-            let plane = SCNPlane(width: 0.3, height: 0.3)
-            let material = SCNMaterial()
-            material.isDoubleSided = true
-            material.lightingModel = .constant
-            material.diffuse.contents = pending.image
-            plane.materials = [material]
-            let child = SCNNode(geometry: plane)
-            child.simdTransform = pending.transform
-            node.addChildNode(child)
-            // Track the child, not ARKit's anchor node.
-            remoteNodes[pending.id] = child
         }
 
         private func raycast(in scnView: ARSCNView, at location: CGPoint, target: ARRaycastQuery.Target) -> [ARRaycastResult] {
