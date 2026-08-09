@@ -39,11 +39,12 @@ Say the hook, then hold the phone up and paint. Keep talking while you do it.
 
 Point at `/data`. The count ticks up over SSE, no refresh. *(~105 words + painting)*
 
-**1:05 – 1:25 · The floor shot (slide 02)**
+**1:05 – 1:25 · The piece is at an address (slide 02)**
 
-> "Look at this one. That piece is *lying on the floor* — correctly foreshortened, wrapped to the
-> depth map, occluded by real geometry. A web app cannot produce this frame. That's the line between
-> a filter and actual placement." *(~44 words)*
+> "This one is on a building in Toronto. Not a picture of a wall — that wall, at that address, and
+> it's been there eighteen hours. Open the link from anywhere and you stand where the painter stood.
+> A web app cannot give you that. That's the line between a filter and actual placement."
+> *(~48 words)*
 
 **1:25 – 2:20 · How placement works (slide 03)** — *the technical core; walk the diagram*
 
