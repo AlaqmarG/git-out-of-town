@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Git Out of Town — SummerHacks 2026</title>
+  <style>
+    :root {
+      --ink:#090a0e; --surface:#13161d; --panel:#1b1f28; --line:#2d3340;
+      --white:#eef1f7; --muted:#8b93a3; --red:#ff5230; --cyan:#d8dde7;
+      --amber:#d9a441; --violet:#bbbfc9; --lime:#c9ced8; --pink:#ff7a5f;
+      --sans:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      --mono:"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+    }
+    *{box-sizing:border-box} html,body{margin:0;background:var(--ink);color:var(--white)}
+    body{overflow:hidden;font-family:var(--sans);-webkit-font-smoothing:antialiased}
+    button{font:inherit}
+    .deck{position:relative;width:100vw;height:100vh;isolation:isolate}
+    .deck:before{content:"";position:fixed;inset:0;z-index:30;pointer-events:none;opacity:.06;mix-blend-mode:overlay;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+    .slide{position:absolute;inset:0;display:grid;align-items:center;padding:clamp(35px,7vw,100px) clamp(30px,8vw,130px);overflow:hidden;opacity:0;pointer-events:none;transform:translateX(5vw) scale(.98);transition:opacity .45s ease,transform .65s cubic-bezier(.2,.8,.2,1)}
+    .slide.active{z-index:2;opacity:1;pointer-events:auto;transform:none}.slide.leaving{z-index:1;opacity:0;transform:translateX(-5vw) scale(.98)}.slide.prev-enter{transform:translateX(-5vw) scale(.98)}
+    .slide>*{position:relative;z-index:1}
+    .brand{position:fixed;top:28px;left:clamp(30px,5vw,76px);z-index:40;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:750;letter-spacing:-.02em}.brand-icon{width:18px;height:22px;overflow:visible}.brand-icon .offset{display:none}.brand-icon .main{fill:var(--red)}
+    .svg-defs{position:absolute;width:0;height:0;overflow:hidden}.icon{display:block;width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.solid-pin{display:block;overflow:visible}.solid-pin .offset{display:none}.solid-pin .main{fill:var(--red)}
+    .count{position:fixed;top:31px;right:clamp(30px,5vw,76px);z-index:40;color:var(--muted);font:11px var(--mono);letter-spacing:.12em}.count strong{color:var(--white)}
+    .footer{position:fixed;bottom:26px;left:clamp(30px,5vw,76px);z-index:40;color:#697181;font:10px var(--mono);letter-spacing:.05em}.footer b{color:var(--red);font-weight:500}
+    .glow{position:absolute;width:42vw;height:42vw;border-radius:50%;filter:blur(75px);opacity:.11;pointer-events:none}.glow.red{left:-17vw;bottom:-27vw;background:var(--red)}.glow.cyan{right:-17vw;top:-25vw;background:#fff;opacity:.035}.glow.violet{right:24vw;bottom:-32vw;background:var(--red);opacity:.045}
+    .eyebrow{display:flex;align-items:center;gap:9px;color:var(--muted);font:600 10px var(--mono);letter-spacing:.17em;text-transform:uppercase}.eyebrow:before{content:"";width:35px;height:2px;background:var(--red)}
+    h1,h2,h3,p{margin:0} h1{font-size:clamp(70px,12vw,175px);line-height:.8;letter-spacing:-.085em;font-weight:850}h2{font-size:clamp(54px,9vw,135px);line-height:.83;letter-spacing:-.08em;font-weight:850}h3{font-size:clamp(18px,2vw,28px);letter-spacing:-.04em}.red{color:var(--red)}.cyan{color:var(--cyan)}.amber{color:var(--amber)}.violet{color:var(--violet)}.pink{color:var(--pink)}
+    .reveal{opacity:0;transform:translateY(17px)}.active .reveal{animation:reveal .65s cubic-bezier(.2,.8,.2,1) forwards}.active .d1{animation-delay:.07s}.active .d2{animation-delay:.15s}.active .d3{animation-delay:.23s}.active .d4{animation-delay:.31s}.active .d5{animation-delay:.39s}
+    @keyframes reveal{to{opacity:1;transform:none}}@keyframes float{0%,100%{transform:rotate(8deg) translateY(0)}50%{transform:rotate(5deg) translateY(-13px)}}@keyframes drift{0%,100%{transform:translate(0,0)}50%{transform:translate(12px,-9px)}}@keyframes pulse{0%,100%{opacity:.35;transform:scale(.8)}50%{opacity:1;transform:scale(1.12)}}
+
+    /* shared visual map */
+    .map{position:absolute;inset:-15%;width:130%;height:130%;opacity:.38;transform:rotate(-11deg)}.map line{stroke:#323844;stroke-width:2}.map .major{stroke:#555c6a;stroke-width:5}.map .water{fill:#05060c;stroke:#1b2030;stroke-width:2}.map .park{fill:#101a17}.map .building{fill:#20242d}
+    .pin{position:absolute;width:15px;height:15px;border-radius:50%;border:1.5px solid var(--ink);box-shadow:0 0 0 1px #ffffff24,0 3px 10px #000;animation:drift 5s ease-in-out infinite}.pin:after{content:"";position:absolute;inset:-8px;border:1px solid currentColor;border-radius:50%;opacity:.22;animation:pulse 2.8s ease-in-out infinite}
+
+    /* title */
+    .title{align-self:center}.title h1{margin-top:25px}.title h1 span{color:var(--red)}.stroke{width:min(430px,55vw);height:9px;margin-top:28px;border-radius:99px;background:var(--red);transform:rotate(-1.5deg);box-shadow:0 0 25px #ff523055}.tagline{margin-top:26px;color:#c0c6d1;font-size:clamp(18px,2.2vw,30px);letter-spacing:-.04em}.title-meta{display:flex;gap:14px;margin-top:28px;color:var(--muted);font:11px var(--mono)}
+    .pin-card{position:absolute;right:11vw;top:24%;width:235px;height:305px;padding:21px;border:1px solid #ffffff22;border-radius:22px;background:linear-gradient(145deg,#252a35,#101218);box-shadow:0 30px 70px #0009;transform:rotate(8deg);animation:float 6s ease-in-out infinite}.pin-card .solid-pin{position:absolute;left:53px;top:48px;width:132px;height:178px;filter:drop-shadow(0 0 18px #ff523066)}.pin-card small{position:absolute;left:0;right:0;bottom:27px;color:var(--muted);text-align:center;font:700 9px var(--mono);letter-spacing:.13em}
+
+    /* idea */
+    .idea{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:7vw;align-items:center}.idea h2{margin-top:24px}.idea-side{position:relative;min-height:380px;border:1px solid var(--line);border-radius:25px;background:#11141b;overflow:hidden}.idea-side .map{inset:-30%;width:160%;height:160%;opacity:.5}.idea-side .solid-pin{position:absolute;left:50%;top:48%;width:155px;height:205px;transform:translate(-50%,-50%);filter:drop-shadow(0 0 22px #ff523066)}.idea-words{position:absolute;left:23px;right:23px;bottom:20px;display:flex;justify-content:space-between;color:var(--muted);font:10px var(--mono);letter-spacing:.1em;text-transform:uppercase}
+
+    /* loop */
+    .loop{width:100%}.loop h2{margin-top:23px}.loop-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:48px}.loop-card{position:relative;min-height:280px;padding:25px;border:1px solid var(--line);border-radius:24px;background:#151820;overflow:hidden}.loop-card:after{content:"";position:absolute;right:-35px;bottom:-35px;width:140px;height:140px;border-radius:50%;background:var(--c);opacity:.13;filter:blur(5px)}.loop-card .num{color:var(--c);font:11px var(--mono);letter-spacing:.12em}.loop-card h3{position:absolute;left:25px;bottom:49px;font-size:clamp(26px,3vw,48px);line-height:.9}.loop-card p{position:absolute;left:25px;bottom:23px;color:var(--muted);font-size:12px}.loop-icon{position:absolute;right:30px;top:66px;width:72px;height:72px;color:var(--c);opacity:.95}
+
+    /* transformation */
+    .transform{width:100%}.transform h2{margin-top:22px}.transform-visual{display:grid;grid-template-columns:1fr 100px 1fr 100px 1fr;align-items:center;gap:13px;margin-top:52px}.v-card{height:235px;border:1px solid var(--line);border-radius:24px;background:#14171e;display:grid;place-items:center;position:relative;overflow:hidden}.v-card label{position:absolute;top:20px;left:22px;color:var(--muted);font:10px var(--mono);letter-spacing:.13em;text-transform:uppercase}.flow-arrow{width:44px;height:44px;margin:auto;color:var(--red)}.scribble{width:150px;height:100px}.scribble path{fill:none;stroke:var(--cyan);stroke-width:9;stroke-linecap:round;stroke-linejoin:round}.scribble path:nth-child(2){stroke:var(--pink);stroke-width:5}.ar-frame{position:relative;width:130px;height:130px;border:2px solid var(--red);border-radius:50%;display:grid;place-items:center;box-shadow:0 0 30px #ff523033}.ar-frame:before,.ar-frame:after{content:"";position:absolute;width:22px;height:22px;border-color:var(--white);border-style:solid}.ar-frame:before{border-width:2px 0 0 2px;top:-2px;left:-2px}.ar-frame:after{border-width:0 2px 2px 0;right:-2px;bottom:-2px}.ar-frame .icon{width:64px;height:64px;color:var(--amber);stroke-width:1.6}.v-card>.solid-pin{width:104px;height:138px;filter:drop-shadow(0 0 15px #ff523066)}
+
+    /* tracks */
+    .tracks{width:100%}.tracks h2{margin-top:22px}.track-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-top:48px}.track{min-height:250px;padding:24px;border:1px solid var(--line);border-top:4px solid var(--c);border-radius:23px;background:#15181f}.track .orb{width:58px;height:58px;margin-bottom:35px;border-radius:50%;background:var(--c);box-shadow:0 0 28px color-mix(in srgb,var(--c) 35%,transparent)}.track h3{font-size:clamp(22px,2.4vw,34px);line-height:.95}.track p{margin-top:13px;color:var(--muted);font:12px/1.35 var(--mono)}
+
+    /* demo */
+    .demo{width:100%;display:grid;grid-template-columns:.9fr 1.1fr;gap:8vw;align-items:center}.demo h2{margin-top:23px}.demo h2 span{color:var(--red)}.demo-rail{position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.demo-rail:before{content:"";position:absolute;top:40px;left:38px;right:38px;height:2px;background:var(--line)}.demo-step{position:relative;text-align:center}.demo-step b{position:relative;z-index:1;display:grid;place-items:center;width:80px;height:80px;margin:0 auto 21px;border:1px solid var(--c);border-radius:50%;color:var(--c);background:var(--ink);box-shadow:0 0 30px color-mix(in srgb,var(--c) 18%,transparent)}.demo-step b .icon{width:31px;height:31px;stroke-width:1.7}.demo-step strong{display:block;font-size:16px;letter-spacing:-.03em}.demo-step small{display:block;margin-top:7px;color:var(--muted);font:10px var(--mono);text-transform:uppercase;letter-spacing:.08em}.demo-foot{margin-top:31px;color:var(--muted);font:11px var(--mono)}
+
+    /* close */
+    .close{width:100%;text-align:center;justify-items:center}.close h2{margin-top:25px}.close h2 span{color:var(--red)}.url{margin-top:37px;padding:13px 18px;border:1px solid #ff523066;border-radius:99px;color:#ffb4a3;background:#ff523012;font:12px var(--mono)}.prizes{margin-top:39px;color:var(--muted);font:10px var(--mono);letter-spacing:.13em;text-transform:uppercase}.prizes b{margin:0 7px;color:var(--red);font-weight:400}
+
+    .controls{position:fixed;right:28px;bottom:24px;z-index:50;display:flex;align-items:center;gap:10px;opacity:.22;transition:opacity .2s}.controls:hover,.controls:focus-within{opacity:1}.control{display:grid;place-items:center;width:37px;height:32px;border:1px solid var(--line);border-radius:9px;color:var(--muted);background:#15171ed9;cursor:pointer}.control .icon{width:16px;height:16px;stroke-width:1.8}.control:hover{color:var(--white);border-color:#515968}.progress{width:100px;height:2px;background:var(--line)}.progress i{display:block;width:14%;height:100%;background:var(--red);transition:width .35s ease}.hint{position:fixed;right:28px;bottom:67px;z-index:50;color:#626b7a;font:10px var(--mono);opacity:.45}
+    @media(max-width:800px){.slide{padding:70px 28px 60px;align-items:start;overflow-y:auto}.pin-card{display:none}.idea,.demo{grid-template-columns:1fr;gap:28px}.idea-side{min-height:230px}.loop-grid,.track-grid{grid-template-columns:1fr;gap:10px;margin-top:28px}.loop-card{min-height:145px}.loop-card h3{bottom:38px}.loop-card p{bottom:18px}.loop-icon{top:39px;right:26px;width:52px;height:52px}.transform-visual{grid-template-columns:1fr;gap:8px;margin-top:28px}.v-card{height:150px}.flow-arrow{transform:rotate(90deg);width:30px;height:30px}.track{min-height:165px}.track .orb{width:40px;height:40px;margin-bottom:19px}.demo-rail{gap:5px}.demo-rail:before{left:20px;right:20px;top:31px}.demo-step b{width:62px;height:62px}.demo-step b .icon{width:25px;height:25px}.demo-step strong{font-size:13px}.footer{display:none}}
+    @media(max-height:700px) and (min-width:801px){.slide{padding-top:65px;padding-bottom:52px}.loop-card{min-height:220px}.track{min-height:220px}.v-card{height:195px}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+  </style>
+</head>
+<body>
+  <svg class="svg-defs" aria-hidden="true">
+    <defs>
+      <symbol id="pin-solid" viewBox="0 0 128 160">
+        <path d="M64 5C34.2 5 10 29.2 10 59c0 39.8 54 94 54 94s54-54.2 54-94C118 29.2 93.8 5 64 5Z"/>
+        <circle cx="64" cy="59" r="21" fill="var(--ink)"/>
+      </symbol>
+      <symbol id="icon-scan" viewBox="0 0 32 32">
+        <path d="M4 11V6a2 2 0 0 1 2-2h5M21 4h5a2 2 0 0 1 2 2v5M28 21v5a2 2 0 0 1-2 2h-5M11 28H6a2 2 0 0 1-2-2v-5"/>
+        <circle cx="16" cy="16" r="5"/><circle cx="16" cy="16" r="1.5"/>
+      </symbol>
+      <symbol id="icon-draw" viewBox="0 0 32 32">
+        <path d="M4 23c5-12 8-13 11-3s7 7 13-5"/>
+        <path d="M20 9l3-3 3 3-3 3zM20 9 9 20l-1 4 4-1 11-11"/>
+      </symbol>
+      <symbol id="icon-place" viewBox="0 0 32 32">
+        <path d="M16 29S25 20.6 25 13A9 9 0 1 0 7 13c0 7.6 9 16 9 16Z"/>
+        <circle cx="16" cy="13" r="3"/>
+      </symbol>
+      <symbol id="icon-map" viewBox="0 0 32 32">
+        <path d="m3 7 8-3 10 3 8-3v21l-8 3-10-3-8 3Z"/>
+        <path d="M11 4v21M21 7v21"/>
+        <path d="m14 15 4-4 3 3"/>
+      </symbol>
+      <symbol id="icon-arrow-right" viewBox="0 0 32 32">
+        <path d="M5 16h21M19 9l7 7-7 7"/>
+      </symbol>
+      <symbol id="icon-chevron-left" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></symbol>
+      <symbol id="icon-chevron-right" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+      <symbol id="icon-fullscreen" viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></symbol>
+    </defs>
+  </svg>
+  <main class="deck">
+    <!-- 01 -->
+    <section class="slide active" data-title="Git Out of Town">
+      <svg class="map" viewBox="0 0 1400 900" aria-hidden="true"><path class="water" d="M-40 700C360 630 720 750 1440 580v420H-40z"/><g class="park"><rect x="210" y="170" width="170" height="130"/><rect x="1000" y="360" width="185" height="150"/></g><g class="building"><rect x="80" y="80" width="95" height="75"/><rect x="470" y="110" width="130" height="70"/><rect x="760" y="55" width="96" height="90"/><rect x="1100" y="130" width="150" height="70"/><rect x="160" y="420" width="140" height="90"/><rect x="530" y="390" width="110" height="110"/><rect x="820" y="570" width="150" height="85"/></g><g><line x1="0" y1="280" x2="1400" y2="280"/><line x1="0" y1="520" x2="1400" y2="520"/><line x1="210" y1="0" x2="210" y2="900"/><line x1="610" y1="0" x2="610" y2="900"/><line x1="1000" y1="0" x2="1000" y2="900"/><line class="major" x1="0" y1="390" x2="1400" y2="390"/><line class="major" x1="390" y1="0" x2="390" y2="900"/></g></svg>
+      <div class="glow red"></div><div class="glow cyan"></div><span class="pin" style="left:58%;top:20%;background:var(--amber);color:var(--amber)"></span><span class="pin" style="left:76%;top:74%;background:var(--cyan);color:var(--cyan);animation-delay:1s"></span>
+      <div class="pin-card" aria-hidden="true"><svg class="solid-pin" viewBox="0 0 128 160"><use class="offset" href="#pin-solid"/><use class="main" href="#pin-solid"/></svg><small>AR / MAP / FOREVER</small></div>
+      <div class="title"><div class="eyebrow reveal d1">SummerHacks 2026 · live pitch</div><h1 class="reveal d2">GIT OUT<br><span>OF TOWN</span></h1><div class="stroke reveal d3"></div><p class="tagline reveal d4">Paint the real world.</p><div class="title-meta reveal d5"><span>AR graffiti</span><span>·</span><span>living map</span></div></div>
+    </section>
+
+    <!-- 02 -->
+    <section class="slide" data-title="A mark that stays"><div class="glow violet"></div><div class="idea"><div><div class="eyebrow reveal d1">The idea</div><h2 class="reveal d2">A mark<br>that <span class="red">stays.</span></h2></div><div class="idea-side reveal d3"><svg class="map" viewBox="0 0 1400 900" aria-hidden="true"><path class="water" d="M-40 700C360 630 720 750 1440 580v420H-40z"/><g><line x1="0" y1="280" x2="1400" y2="280"/><line x1="0" y1="520" x2="1400" y2="520"/><line x1="210" y1="0" x2="210" y2="900"/><line x1="610" y1="0" x2="610" y2="900"/><line x1="1000" y1="0" x2="1000" y2="900"/></g></svg><svg class="solid-pin" viewBox="0 0 128 160"><use class="offset" href="#pin-solid"/><use class="main" href="#pin-solid"/></svg><div class="idea-words"><span>real place</span><span>real people</span><span>forever</span></div></div></div></section>
+
+    <!-- 03 -->
+    <section class="slide" data-title="Point paint place"><div class="glow red"></div><div class="loop"><div class="eyebrow reveal d1">The product</div><h2 class="reveal d2">Point.<br><span class="cyan">Paint.</span><br>Place.</h2><div class="loop-grid reveal d3"><article class="loop-card" style="--c:var(--white)"><span class="num">01</span><svg class="icon loop-icon"><use href="#icon-scan"/></svg><h3>Point</h3><p>Find a surface.</p></article><article class="loop-card" style="--c:var(--red)"><span class="num">02</span><svg class="icon loop-icon"><use href="#icon-draw"/></svg><h3>Paint</h3><p>Make a mark.</p></article><article class="loop-card" style="--c:var(--amber)"><span class="num">03</span><svg class="icon loop-icon"><use href="#icon-place"/></svg><h3>Place</h3><p>Leave it there.</p></article></div></div></section>
+
+    <!-- 04 -->
+    <section class="slide" data-title="From mark to map"><div class="glow cyan"></div><div class="transform"><div class="eyebrow reveal d1">The transformation</div><h2 class="reveal d2">From mark<br>to <span class="red">map.</span></h2><div class="transform-visual reveal d3"><div class="v-card"><label>draw</label><svg class="scribble" viewBox="0 0 160 110"><path d="M14 79C27 18 55 18 64 57s33 38 82-35"/><path d="M24 94c24-20 47-10 69-27"/></svg></div><svg class="icon flow-arrow"><use href="#icon-arrow-right"/></svg><div class="v-card"><label>anchor</label><div class="ar-frame"><svg class="icon"><use href="#icon-place"/></svg></div></div><svg class="icon flow-arrow"><use href="#icon-arrow-right"/></svg><div class="v-card"><label>remember</label><svg class="solid-pin" viewBox="0 0 128 160"><use class="offset" href="#pin-solid"/><use class="main" href="#pin-solid"/></svg></div></div></div></section>
+
+    <!-- 05 -->
+    <section class="slide" data-title="Prize tracks"><div class="glow red"></div><div class="tracks"><div class="eyebrow reveal d1">Three tracks</div><h2 class="reveal d2">One action.<br><span class="red">Three wins.</span></h2><div class="track-grid"><article class="track reveal d3" style="--c:var(--red)"><div class="orb"></div><h3>Main track</h3><p>60 sec · public · collective</p></article><article class="track reveal d4" style="--c:var(--amber)"><div class="orb"></div><h3>Best Use of Reve</h3><p>art-directed visual language</p></article><article class="track reveal d5" style="--c:var(--white)"><div class="orb"></div><h3>TECHNATION</h3><p>every mark becomes data</p></article></div></div></section>
+
+    <!-- 06 -->
+    <section class="slide" data-title="Live demo"><div class="glow cyan"></div><div class="demo"><div><div class="eyebrow reveal d1">Now, live</div><h2 class="reveal d2">LET'S<br><span>PAINT.</span></h2><div class="demo-foot reveal d3">No examples. The next mark is ours.</div></div><div class="demo-rail reveal d4"><div class="demo-step" style="--c:var(--white)"><b><svg class="icon"><use href="#icon-scan"/></svg></b><strong>Camera</strong><small>find a surface</small></div><div class="demo-step" style="--c:var(--amber)"><b><svg class="icon"><use href="#icon-place"/></svg></b><strong>Place</strong><small>leave a mark</small></div><div class="demo-step" style="--c:var(--red)"><b><svg class="icon"><use href="#icon-map"/></svg></b><strong>Map</strong><small>make it public</small></div></div></div></section>
+
+    <!-- 07 -->
+    <section class="slide close" data-title="Invitation"><svg class="map" viewBox="0 0 1400 900" aria-hidden="true" style="opacity:.2"><path class="water" d="M-40 700C360 630 720 750 1440 580v420H-40z"/><g><line x1="0" y1="280" x2="1400" y2="280"/><line x1="0" y1="520" x2="1400" y2="520"/><line x1="210" y1="0" x2="210" y2="900"/><line x1="610" y1="0" x2="610" y2="900"/><line x1="1000" y1="0" x2="1000" y2="900"/><line class="major" x1="0" y1="390" x2="1400" y2="390"/></g><g fill="var(--red)"><circle cx="390" cy="390" r="12" style="animation:pulse 2.4s infinite"/><circle cx="820" cy="530" r="9" style="animation:pulse 2.4s .5s infinite"/><circle cx="1030" cy="250" r="11" style="animation:pulse 2.4s 1s infinite"/></g></svg><div class="eyebrow reveal d1">The invitation</div><h2 class="reveal d2">Leave one<br><span>worth finding.</span></h2><div class="url reveal d3">gitoutoftown.129-153-49-190.sslip.io</div><div class="prizes reveal d4">Main <b>·</b> Best Use of Reve <b>·</b> TECHNATION Data Intelligence</div></section>
+
+    <div class="brand"><svg class="brand-icon" viewBox="0 0 128 160" aria-hidden="true"><use class="offset" href="#pin-solid"/><use class="main" href="#pin-solid"/></svg><span>GIT OUT OF TOWN</span></div><div class="count"><strong id="current">01</strong> / <span id="total">07</span></div><div class="footer"><b>SUMMERHACKS 2026</b> · TORONTO</div>
+  </main>
+  <div class="hint">← → navigate · F fullscreen</div><nav class="controls" aria-label="Presentation controls"><button class="control" id="prev" aria-label="Previous slide"><svg class="icon"><use href="#icon-chevron-left"/></svg></button><div class="progress"><i id="progress"></i></div><button class="control" id="next" aria-label="Next slide"><svg class="icon"><use href="#icon-chevron-right"/></svg></button><button class="control" id="fullscreen" aria-label="Toggle fullscreen"><svg class="icon"><use href="#icon-fullscreen"/></svg></button></nav>
+  <script>
+    (()=>{const slides=[...document.querySelectorAll('.slide')],cur=document.getElementById('current'),tot=document.getElementById('total'),bar=document.getElementById('progress');let i=0,busy=false;tot.textContent=String(slides.length).padStart(2,'0');
+      function render(n,dir=1){if(busy||n===i||n<0||n>=slides.length)return;busy=true;const old=slides[i],next=slides[n];next.classList.toggle('prev-enter',dir<0);next.classList.add('active');old.classList.add('leaving');i=n;cur.textContent=String(i+1).padStart(2,'0');bar.style.width=((i+1)/slides.length*100)+'%';history.replaceState(null,'','#'+(i+1));setTimeout(()=>{old.classList.remove('active','leaving');next.classList.remove('prev-enter');busy=false},680)}
+      function go(d){render(Math.max(0,Math.min(slides.length-1,i+d)),d<0?-1:1)}
+      prev.onclick=()=>go(-1);next.onclick=()=>go(1);fullscreen.onclick=()=>document.fullscreenElement?document.exitFullscreen?.():document.documentElement.requestFullscreen?.();
+      document.addEventListener('keydown',e=>{if(['ArrowRight','PageDown',' ','Enter'].includes(e.key)){e.preventDefault();go(1)}if(['ArrowLeft','PageUp','Backspace'].includes(e.key)){e.preventDefault();go(-1)}if(e.key==='Home'){e.preventDefault();render(0,-1)}if(e.key==='End'){e.preventDefault();render(slides.length-1,1)}if(e.key.toLowerCase()==='f')fullscreen.click()});
+      let x=0;document.addEventListener('touchstart',e=>x=e.changedTouches[0].screenX,{passive:true});document.addEventListener('touchend',e=>{const d=e.changedTouches[0].screenX-x;if(Math.abs(d)>55)go(d<0?1:-1)},{passive:true});
+      const hash=Number(location.hash.slice(1));if(hash>=1&&hash<=slides.length){slides[0].classList.remove('active');slides[hash-1].classList.add('active');i=hash-1}cur.textContent=String(i+1).padStart(2,'0');bar.style.width=((i+1)/slides.length*100)+'%';
+    })();
+  </script>
+</body>
+</html>
