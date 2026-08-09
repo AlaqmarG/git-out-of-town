@@ -1,70 +1,73 @@
 # Git Out of Town
 
-**Overview** · [Plan](docs/PLAN.md) · [Devpost](docs/devpost.md) · [Reve playbook](docs/reve-playbook.md) · [Reve prompts](docs/reve-prompts-used.md) · [Third Space Trek](docs/hunt.md)
+![Git Out of Town cover](docs/assets/brand/devpost-cover-1200.png)
 
-Spray-paint the real world. Hold up your phone, paint on what you see, and it pins to that spot
-forever — on a living world map anyone can explore.
+Spray paint the real world without leaving a mark on it.
 
-**SummerHacks 2026** · Main track + Best Use of Reve + TECHNATION Data Intelligence
+Git Out of Town is a shared AR graffiti wall built at SummerHacks 2026. Draw or place a sticker in
+the iOS app, spray it onto a real surface, and it appears on a public map seconds later. Anyone can
+browse without an account or an install. Painting currently requires the native iOS build.
 
----
+[Live map](https://gitoutoftown.129-153-49-190.sslip.io) ·
+[Live data](https://gitoutoftown.129-153-49-190.sslip.io/data) ·
+[Devpost draft](docs/devpost-final-draft.md)
 
-## Deadlines
+## How it works
 
-| When | What |
-|---|---|
-| **11:00 PM Aug 8** | Devpost draft with all 3 tracks — **miss = disqualified** |
-| 11:00 AM Aug 9 | Soft deadline / feature freeze |
-| **1:00 PM Aug 9** | Final submission — hard cutoff |
-| 3:00–5:00 PM Aug 9 | Live judging (4-min pitch) |
+The app includes PencilKit drawing and a 36-piece sticker pack. On LiDAR iPhones, ARKit projects the
+art onto measured geometry so it can follow corners, inherit wall texture, and hide behind real
+objects. Other iPhones fall back to plane detection.
 
----
+Pieces are placed using the best signal available: a shared printed marker, visual `ARWorldMap`
+scans, surface alignment, or GPS. Freehand art posts immediately, then an optional Replicate
+pipeline can restyle and weather it.
+
+The website uses a custom MapLibre style over OpenFreeMap tiles. PostgreSQL stores the wall and
+pushes new pieces to open maps through Server-Sent Events. The `/data` dashboard shows live
+locations, colours, surfaces, painting time, and views.
+
+We made 18 sticker symbols with Reve and paired them with 18 word stickers rendered from a graffiti
+alphabet we wrote ourselves.
 
 ## Stack
 
-Next.js (App Router) · Postgres · MapLibre GL JS · Replicate (Reve) · Docker on OCI via Komodo, behind shared Traefik
+SwiftUI · ARKit · SceneKit · PencilKit · Next.js 16 · React 19 · TypeScript · MapLibre GL ·
+PostgreSQL 17 · Replicate · Docker · nginx · Traefik · Komodo
 
-## Getting started
+## Run locally
+
+Requires Node.js 22 or newer and Docker.
 
 ```bash
 cp .env.example .env
-docker compose up -d got-db  # Postgres only
-npm install                  # installs every workspace
+npm ci
+docker compose up -d got-db
+set -a; . ./.env; set +a
 npm run dev
 ```
 
-> ⚠️ Camera, geolocation, and device orientation **require HTTPS** — they will not work on
-> `localhost` from a phone. Test against https://gitoutoftown.129-153-49-190.sslip.io
+Open http://localhost:3000. Run checks with:
 
-## Repo layout
-
-One repository, two clients. **Not** an npm monorepo — no workspaces, no shared packages.
-
-```
-apps/web         Next.js — frontend + API + /data dashboard
-apps/ios         Native SwiftUI + ARKit client
-packages/shared  API contract types, shared by every client
-db/              Postgres schema
-docs/            Plan, rubric, deployment, access
+```bash
+npm run typecheck
+npm run lint
+npm test
+npm run build
 ```
 
-npm workspaces. Run `npm install` and all scripts from the **repo root** — never inside `apps/web`.
-`apps/ios` is a plain folder, not a workspace; Swift shares the repo and the API contract, nothing else.
+The iOS app needs Xcode 26. Device setup is documented in
+[`apps/ios/CLAUDE.md`](apps/ios/CLAUDE.md).
 
-## Docs
+## Repository
 
-| | |
-|---|---|
-| [`CLAUDE.md`](CLAUDE.md) | **Start here** — architecture, conventions, current state |
-| [`docs/PLAN.md`](docs/PLAN.md) | Deadlines, rubric, product, scope, risks, pitch |
-| [`docs/OPS.md`](docs/OPS.md) | Onboarding, VPS access, deployment, troubleshooting |
-| [`docs/reve-api.md`](docs/reve-api.md) | Reve API reference (only if we get a key) |
-| [`docs/hunt.md`](docs/hunt.md) | Third Space Trek — route, schedule, photo log |
+```text
+apps/web/          Web app, API, map, dashboard
+apps/ios/          Native AR client
+packages/shared/   TypeScript API contract
+db/                PostgreSQL schema
+scripts/           Tests, seeding, graffiti tools
+docs/              Product, judging, demo, operations
+```
 
-Each directory also carries its own `CLAUDE.md` with local detail — `apps/web`, `apps/ios`,
-`packages/shared`, `db`.
-
-## Ground rules
-
-- Hand-edit every Reve asset. Unedited AI visuals are an explicit mark-down in the rubric.
-- P0 before P1. See the scope section in the build plan.
+Start with the [Devpost draft](docs/devpost-final-draft.md), [judging criteria](docs/judging-criteria.md),
+[demo runbook](docs/DEMO-RUNBOOK.md), or [operations guide](docs/OPS.md).
