@@ -13,12 +13,16 @@ enum SurfaceTexture {
         var ci = CIImage(cgImage: cg).applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0])
 
         // Push the average toward white so multiplying darkens only where the
-        // surface itself darkens.
-        let gain = min(max(0.9 / max(averageLuminance(of: ci), 0.05), 0.6), 3.5)
+        // surface itself darkens. The bias is a floor: without it a shadowed or
+        // dark-painted wall multiplies the art down to black and the piece the
+        // user just made is simply not there.
+        let bias: CGFloat = 0.25
+        let gain = min(max(0.9 / max(averageLuminance(of: ci), 0.05), 0.6), 3.5) * (1 - bias)
         ci = ci.applyingFilter("CIColorMatrix", parameters: [
             "inputRVector": CIVector(x: gain, y: 0, z: 0, w: 0),
             "inputGVector": CIVector(x: 0, y: gain, z: 0, w: 0),
             "inputBVector": CIVector(x: 0, y: 0, z: gain, w: 0),
+            "inputBiasVector": CIVector(x: bias, y: bias, z: bias, w: 0),
         ])
 
         guard let out = context.createCGImage(ci, from: ci.extent) else { return nil }

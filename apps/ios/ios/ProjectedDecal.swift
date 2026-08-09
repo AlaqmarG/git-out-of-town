@@ -53,6 +53,7 @@ enum ProjectedDecal {
         triangles: [Triangle],
         camera: ARCamera,
         viewport: CGSize,
+        orientation: UIInterfaceOrientation,
         mask: PaintMask
     ) -> Result? {
         let camPos = simd_make_float3(camera.transform.columns.3)
@@ -67,6 +68,7 @@ enum ProjectedDecal {
 
         let cells = 96
         var candidates: [Candidate] = []
+        candidates.reserveCapacity(4096)
         var nearest = [Float](repeating: .greatestFiniteMagnitude, count: cells * cells)
 
         for tri in triangles {
@@ -78,9 +80,9 @@ enum ProjectedDecal {
             let normal = simd_cross(tri.b - tri.a, tri.c - tri.a)
             guard simd_length(normal) > 1e-7, simd_dot(normal, toCamera) > 0 else { continue }
 
-            let p0 = camera.projectPoint(tri.a, orientation: .portrait, viewportSize: viewport)
-            let p1 = camera.projectPoint(tri.b, orientation: .portrait, viewportSize: viewport)
-            let p2 = camera.projectPoint(tri.c, orientation: .portrait, viewportSize: viewport)
+            let p0 = camera.projectPoint(tri.a, orientation: orientation, viewportSize: viewport)
+            let p1 = camera.projectPoint(tri.b, orientation: orientation, viewportSize: viewport)
+            let p2 = camera.projectPoint(tri.c, orientation: orientation, viewportSize: viewport)
             let cx = (p0.x + p1.x + p2.x) / 3
             let cy = (p0.y + p1.y + p2.y) / 3
             guard cx >= 0, cy >= 0, cx < viewport.width, cy < viewport.height else { continue }
@@ -111,19 +113,23 @@ enum ProjectedDecal {
         var normalSum = SIMD3<Float>.zero
         var kept = 0
 
+        positions.reserveCapacity(candidates.count * 3)
+        texcoords.reserveCapacity(candidates.count * 3)
+        indices.reserveCapacity(candidates.count * 3)
+
         for candidate in candidates where candidate.depth < nearest[candidate.cell] + 0.35 {
-            let faceNormal = simd_normalize(simd_cross(
+            guard let faceNormal = unitVector(simd_cross(
                 candidate.tri.b - candidate.tri.a,
                 candidate.tri.c - candidate.tri.a
-            ))
+            )) else { continue }
             // The decal sits on the very triangles the occlusion mesh renders, so
             // without a lift it z-fights with them and vanishes. 12 mm is enough
             // to win the depth test and still read as painted on.
             let lift = faceNormal * 0.012
             let base = UInt32(positions.count)
-            for vertex in [candidate.tri.a, candidate.tri.b, candidate.tri.c] {
-                positions.append(SCNVector3(vertex + lift))
-            }
+            positions.append(SCNVector3(candidate.tri.a + lift))
+            positions.append(SCNVector3(candidate.tri.b + lift))
+            positions.append(SCNVector3(candidate.tri.c + lift))
             texcoords.append(contentsOf: [candidate.uv.0, candidate.uv.1, candidate.uv.2])
             indices.append(contentsOf: [base, base + 1, base + 2])
             sum += candidate.tri.centroid
@@ -143,7 +149,7 @@ enum ProjectedDecal {
         )
 
         let position = sum / Float(kept)
-        var normal = simd_length(normalSum) > 1e-6 ? simd_normalize(normalSum) : SIMD3<Float>(0, 0, 1)
+        var normal = unitVector(normalSum) ?? SIMD3<Float>(0, 0, 1)
         if simd_dot(normal, camPos - position) < 0 { normal = -normal }
 
         var extent: Float = 0
@@ -154,21 +160,28 @@ enum ProjectedDecal {
         return Result(
             geometry: geometry,
             triangleCount: kept,
-            placement: placement(at: position, normal: normal, camera: camera),
+            placement: surfaceFrame(
+                position: position,
+                normal: normal,
+                upHint: simd_make_float3(camera.transform.columns.1)
+            ),
             position: position,
             surfaceNormal: normal,
             extent: max(extent * 2, 0.05)
         )
     }
 
-    /// Upright, surface-aligned frame — the same convention placed pieces use, so
-    /// other clients reconstruct the orientation identically.
-    private static func placement(at position: SIMD3<Float>, normal: SIMD3<Float>, camera: ARCamera) -> simd_float4x4 {
-        let cameraUp = simd_make_float3(camera.transform.columns.1)
-        var up = cameraUp - normal * simd_dot(cameraUp, normal)
-        if simd_length(up) < 0.01 { up = simd_cross(normal, SIMD3<Float>(1, 0, 0)) }
-        if simd_length(up) < 0.01 { up = simd_cross(normal, SIMD3<Float>(0, 0, 1)) }
-        up = simd_normalize(up)
+    /// Upright, surface-aligned frame — the one convention every placement uses,
+    /// so a piece reconstructs identically wherever it is re-read.
+    static func surfaceFrame(position: SIMD3<Float>, normal rawNormal: SIMD3<Float>, upHint: SIMD3<Float>) -> simd_float4x4 {
+        let normal = unitVector(rawNormal) ?? SIMD3<Float>(0, 0, 1)
+        // Looking straight down a surface leaves almost nothing of the hint to
+        // project, and normalizing that scrap gives a direction that jitters —
+        // so below 1 cm fall back to an arbitrary but stable perpendicular.
+        let up = unitVector(upHint - normal * simd_dot(upHint, normal), min: 0.01)
+            ?? unitVector(simd_cross(normal, SIMD3<Float>(1, 0, 0)))
+            ?? unitVector(simd_cross(normal, SIMD3<Float>(0, 0, 1)))
+            ?? SIMD3<Float>(0, 1, 0)
         let right = simd_cross(up, normal)
         // Fold in the SCNPlane 90° correction so viewers can apply this directly.
         return simd_float4x4(columns: (
@@ -178,6 +191,15 @@ enum ProjectedDecal {
             simd_float4(position.x, position.y, position.z, 1)
         ))
     }
+}
+
+/// `simd_normalize` of a zero-length vector is NaN, and a single NaN anywhere in
+/// a node's transform makes SceneKit drop the node without a word. Returns nil
+/// rather than poisoning the scene graph.
+func unitVector(_ v: SIMD3<Float>, min minLength: Float = 1e-6) -> SIMD3<Float>? {
+    let length = simd_length(v)
+    guard length.isFinite, length > minLength else { return nil }
+    return v / length
 }
 
 /// Low-resolution alpha map of the painted overlay: which parts of the screen

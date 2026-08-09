@@ -62,6 +62,7 @@ extension ARPaintView {
         private var lastStatus = ""
         private var renderedRemoteIDs: Set<Int> = []
         private var remoteNodes: [Int: SCNNode] = [:]
+        private var remoteScale: [Int: Float] = [:]
         private var fallbackNodes: [Int: SCNNode] = [:]
         private var fallbackPieces: [Int: RemotePiece] = [:]
         private var lastReanchor = Date.distantPast
@@ -70,6 +71,10 @@ extension ARPaintView {
         private var meshCount = 0
         private var lastPlacedNode: SCNNode?
         private var snappedIDs: Set<Int> = []
+        /// The interface orientation the still was shot in. Everything that maps
+        /// between the overlay and the world has to use *that* orientation, not
+        /// whichever way the phone happens to be held when Place is tapped.
+        private var captureOrientation: UIInterfaceOrientation = .portrait
 
         let hasLidar = ARWorldTrackingConfiguration.supportsSceneReconstruction(.meshWithClassification)
 
@@ -195,6 +200,7 @@ extension ARPaintView {
             lastPlacedNode = nil
             for (_, node) in remoteNodes { node.removeFromParentNode() }
             remoteNodes.removeAll()
+            remoteScale.removeAll()
             renderedRemoteIDs.removeAll()
             fallbackNodes.removeAll()
             fallbackPieces.removeAll()
@@ -209,6 +215,7 @@ extension ARPaintView {
             guard let scnView, let frame = scnView.session.currentFrame else { return nil }
             let viewport = scnView.bounds.size
             guard viewport.width > 0, viewport.height > 0 else { return nil }
+            captureOrientation = scnView.window?.windowScene?.effectiveGeometry.interfaceOrientation ?? .portrait
 
             let photo = scnView.snapshot()
             let camera = frame.camera
@@ -257,29 +264,13 @@ extension ARPaintView {
             let camPos = simd_make_float3(camera.transform.columns.3)
             if simd_dot(normal, simd_normalize(camPos - position)) < 0 { normal = -normal }
 
-            let transform = Self.surfaceFrame(
+            let transform = ProjectedDecal.surfaceFrame(
                 position: position + normal * 0.004,
                 normal: normal,
                 upHint: simd_make_float3(camera.transform.columns.1)
             )
             let classification = (result.anchor as? ARPlaneAnchor)?.classification.label ?? "unknown"
             return (transform, position, classification)
-        }
-
-        /// Upright, surface-aligned frame — the convention every client uses, with
-        /// the SCNPlane 90° correction already folded in.
-        static func surfaceFrame(position: SIMD3<Float>, normal: SIMD3<Float>, upHint: SIMD3<Float>) -> simd_float4x4 {
-            var up = upHint - normal * simd_dot(upHint, normal)
-            if simd_length(up) < 0.01 { up = simd_cross(normal, SIMD3<Float>(1, 0, 0)) }
-            if simd_length(up) < 0.01 { up = simd_cross(normal, SIMD3<Float>(0, 0, 1)) }
-            up = simd_normalize(up)
-            let right = simd_cross(up, normal)
-            return simd_float4x4(columns: (
-                simd_float4(up.x, up.y, up.z, 0),
-                simd_float4(-right.x, -right.y, -right.z, 0),
-                simd_float4(normal.x, normal.y, normal.z, 0),
-                simd_float4(position.x, position.y, position.z, 1)
-            ))
         }
 
         // MARK: - Placing painted art
@@ -299,6 +290,7 @@ extension ARPaintView {
                 triangles: scene.triangles,
                 camera: scene.camera,
                 viewport: scene.viewport,
+                orientation: captureOrientation,
                 mask: mask
             ) {
                 projected.geometry.materials = [material(art: overlay, shade: scene.photo)]
@@ -317,7 +309,7 @@ extension ARPaintView {
                 let distance = simd_distance(fallback.position, camPos)
                 // Metres per screen-height at that distance, from the vertical FOV.
                 let projection = scene.camera.projectionMatrix(
-                    for: .portrait,
+                    for: captureOrientation,
                     viewportSize: scene.viewport,
                     zNear: 0.01,
                     zFar: 100
@@ -440,6 +432,12 @@ extension ARPaintView {
             for (id, node) in remoteNodes where !wanted.contains(id) {
                 node.removeFromParentNode()
                 remoteNodes.removeValue(forKey: id)
+                // The reanchor loop walks fallbackNodes, so a piece left behind
+                // there keeps being repositioned long after it left the scene.
+                remoteScale.removeValue(forKey: id)
+                fallbackNodes.removeValue(forKey: id)
+                fallbackPieces.removeValue(forKey: id)
+                snappedIDs.remove(id)
             }
             renderedRemoteIDs.formIntersection(wanted)
             for piece in pieces where !renderedRemoteIDs.contains(piece.id) {
@@ -467,7 +465,8 @@ extension ARPaintView {
 
                 let camPos = simd_make_float3(frame.camera.transform.columns.3)
                 let position = self.worldPosition(for: piece, from: loc, cameraPos: camPos)
-                let rotation = piece.placementTransform.flatMap(unflatten) ?? matrix_identity_float4x4
+                let stored = piece.placementTransform.flatMap(unflatten)
+                let rotation = stored ?? matrix_identity_float4x4
 
                 let node = SCNNode(geometry: SCNPlane(width: 0.3, height: 0.3))
                 node.geometry?.materials = [self.remoteMaterial(image: image)]
@@ -482,12 +481,15 @@ extension ARPaintView {
                     world = snapped
                     self.snappedIDs.insert(piece.id)
                 }
-                if piece.placementTransform == nil {
+                if stored == nil {
                     // Web pieces carry no orientation — face the viewer.
                     node.constraints = [SCNBillboardConstraint()]
                 }
                 node.simdTransform = world
-                self.applyVisibility(to: node, snapped: self.snappedIDs.contains(piece.id), camPos: camPos)
+                // The piece's real size lives in its transform's column lengths;
+                // remember it before `applyVisibility` overwrites node.scale.
+                self.remoteScale[piece.id] = simd_length(simd_make_float3(world.columns.0))
+                self.applyVisibility(to: node, id: piece.id, snapped: self.snappedIDs.contains(piece.id), camPos: camPos)
                 scnView.scene.rootNode.addChildNode(node)
                 self.remoteNodes[piece.id] = node
                 self.fallbackNodes[piece.id] = node
@@ -509,15 +511,19 @@ extension ARPaintView {
         /// surface it renders through geometry, like a map marker; once snapped
         /// it sits on the wall and occludes properly. Distant pieces are also
         /// scaled up so they stay legible instead of vanishing to a speck.
-        private func applyVisibility(to node: SCNNode, snapped: Bool, camPos: SIMD3<Float>) {
-            guard let material = node.geometry?.firstMaterial else { return }
-            material.readsFromDepthBuffer = snapped
-            material.writesToDepthBuffer = snapped
+        private func applyVisibility(to node: SCNNode, id: Int, snapped: Bool, camPos: SIMD3<Float>) {
+            if let material = node.geometry?.firstMaterial {
+                material.readsFromDepthBuffer = snapped
+                material.writesToDepthBuffer = snapped
+            }
             node.renderingOrder = snapped ? 0 : 20
 
             let distance = simd_distance(node.simdPosition, camPos)
             let boost = snapped ? 1 : max(1, min(distance / 4, 6))
-            node.scale = SCNVector3(boost, boost, boost)
+            // Setting node.scale *replaces* the scale SceneKit decomposed out of
+            // simdTransform, so the piece's stored size has to be multiplied back
+            // in — otherwise every remote piece collapses to the 0.3 m base quad.
+            node.simdScale = SIMD3(repeating: (remoteScale[id] ?? 1) * boost)
         }
 
         /// How many pieces are loaded vs actually placed in the world, and how
@@ -549,7 +555,10 @@ extension ARPaintView {
         /// Where a piece should sit in world space, given our current pose + fix.
         /// Vertical comes from the surface type, not GPS altitude (very noisy).
         private func worldPosition(for piece: RemotePiece, from loc: CLLocation, cameraPos: SIMD3<Float>) -> SIMD3<Float> {
-            let eastDelta = (piece.lng - loc.coordinate.longitude) * 111320 * cos(loc.coordinate.latitude * .pi / 180)
+            // Wrapped, so a piece across the antimeridian is 100 m away and not
+            // half a planet away.
+            let lngDelta = (piece.lng - loc.coordinate.longitude + 540).truncatingRemainder(dividingBy: 360) - 180
+            let eastDelta = lngDelta * 111320 * cos(loc.coordinate.latitude * .pi / 180)
             let northDelta = (piece.lat - loc.coordinate.latitude) * 111320
             let upDelta = heightForSurface(piece.surfaceType) - 1.4
             return cameraPos + simd_float3(Float(eastDelta), Float(upDelta), Float(-northDelta))
@@ -586,7 +595,7 @@ extension ARPaintView {
                     SCNTransaction.begin()
                     SCNTransaction.animationDuration = 0.35
                     node.simdTransform = snapped
-                    applyVisibility(to: node, snapped: true, camPos: camPos)
+                    applyVisibility(to: node, id: id, snapped: true, camPos: camPos)
                     SCNTransaction.commit()
                     continue
                 }
@@ -595,7 +604,7 @@ extension ARPaintView {
                     t.columns.3 = simd_float4(desired.x, desired.y, desired.z, 1)
                     node.simdTransform = t
                 }
-                applyVisibility(to: node, snapped: false, camPos: camPos)
+                applyVisibility(to: node, id: id, snapped: false, camPos: camPos)
             }
             publishNearby()
         }
@@ -606,9 +615,11 @@ extension ARPaintView {
         private func snappedTransform(for piece: RemotePiece, near desired: SIMD3<Float>) -> simd_float4x4? {
             guard let scnView else { return nil }
             let stored = piece.placementTransform.flatMap(unflatten)
-            let scale = stored.map { simd_length(simd_make_float3($0.columns.0)) } ?? 1
-            let normal = stored.map { simd_normalize(simd_make_float3($0.columns.2)) } ?? SIMD3<Float>(0, 0, 1)
-            let upHint = stored.map { simd_normalize(simd_make_float3($0.columns.0)) } ?? SIMD3<Float>(0, 1, 0)
+            // A transform written by a future client could carry anything; clamp
+            // it to sizes that can actually be seen rather than trusting it.
+            let scale = stored.map { min(max(simd_length(simd_make_float3($0.columns.0)), 0.05), 40) } ?? 1
+            let normal = stored.flatMap { unitVector(simd_make_float3($0.columns.2)) } ?? SIMD3<Float>(0, 0, 1)
+            let upHint = stored.flatMap { unitVector(simd_make_float3($0.columns.0)) } ?? SIMD3<Float>(0, 1, 0)
 
             var surfacePoint: SIMD3<Float>?
             var surfaceNormal: SIMD3<Float>?
@@ -619,17 +630,16 @@ extension ARPaintView {
                 to: SCNVector3(desired - normal * 2),
                 options: [SCNHitTestOption.backFaceCulling.rawValue: false]
             )
-            if let hit = hits.first(where: { $0.node.name == "occlusion" }) {
-                surfacePoint = simd_float3(hit.worldCoordinates.x, hit.worldCoordinates.y, hit.worldCoordinates.z)
-                let n = hit.worldNormal
-                surfaceNormal = simd_normalize(simd_float3(n.x, n.y, n.z))
+            if let hit = hits.first(where: { $0.node.name == "occlusion" }),
+               let n = unitVector(simd_float3(hit.worldNormal)) {
+                surfacePoint = simd_float3(hit.worldCoordinates)
+                surfaceNormal = n
             } else {
                 let query = ARRaycastQuery(origin: from, direction: -normal, allowing: .existingPlaneGeometry, alignment: .any)
                 if let result = scnView.session.raycast(query).first {
                     surfacePoint = simd_make_float3(result.worldTransform.columns.3)
-                    surfaceNormal = (result.anchor as? ARPlaneAnchor).map {
-                        simd_normalize(simd_make_float3($0.transform.columns.1))
-                    } ?? normal
+                    surfaceNormal = (result.anchor as? ARPlaneAnchor)
+                        .flatMap { unitVector(simd_make_float3($0.transform.columns.1)) } ?? normal
                 }
             }
 
@@ -638,7 +648,7 @@ extension ARPaintView {
             if simd_dot(n, normal) < 0 { n = -n }
             guard orientationMatches(piece.surfaceType, normal: n) else { return nil }
 
-            var t = Self.surfaceFrame(position: point + n * 0.004, normal: n, upHint: upHint)
+            var t = ProjectedDecal.surfaceFrame(position: point + n * 0.004, normal: n, upHint: upHint)
             t.columns.0 *= scale
             t.columns.1 *= scale
             t.columns.2 *= scale
@@ -691,11 +701,16 @@ func flatten(_ m: simd_float4x4) -> [Double] {
     return out
 }
 
-func unflatten(_ a: [Double]) -> simd_float4x4 {
-    simd_float4x4(columns: (
-        simd_float4(Float(a[0]), Float(a[1]), Float(a[2]), Float(a[3])),
-        simd_float4(Float(a[4]), Float(a[5]), Float(a[6]), Float(a[7])),
-        simd_float4(Float(a[8]), Float(a[9]), Float(a[10]), Float(a[11])),
-        simd_float4(Float(a[12]), Float(a[13]), Float(a[14]), Float(a[15]))
+/// Nil for anything that isn't a usable matrix. `placement_transform` is a JSONB
+/// column any client can fill, and both a short array (index crash) and a NaN
+/// (node silently disappears) are one bad row away.
+func unflatten(_ a: [Double]) -> simd_float4x4? {
+    guard a.count == 16, a.allSatisfy(\.isFinite) else { return nil }
+    let f = a.map(Float.init)
+    return simd_float4x4(columns: (
+        simd_float4(f[0], f[1], f[2], f[3]),
+        simd_float4(f[4], f[5], f[6], f[7]),
+        simd_float4(f[8], f[9], f[10], f[11]),
+        simd_float4(f[12], f[13], f[14], f[15])
     ))
 }
