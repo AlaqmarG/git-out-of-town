@@ -98,12 +98,25 @@ final class ARController {
         self.nearestM = nearestM
     }
 
+    /// How well the current spot is scanned: "rough" | "good" | "precise".
+    /// Drives the placement-quality chip on the Post card.
+    private(set) var scanQuality = "rough"
+
+    func setScanQuality(_ quality: String) {
+        guard scanQuality != quality else { return }
+        scanQuality = quality
+    }
+
     func capture() -> CapturedScene? { coordinator?.capture() }
 
     @discardableResult
     func place(overlay: UIImage, scene: CapturedScene) -> PlacementSnapshot? {
         coordinator?.placePainted(overlay: overlay, scene: scene)
     }
+
+    /// Ship the visual scan of this spot so other devices can relocalize
+    /// against it. Call after the piece is posted; fire-and-forget.
+    func saveScan(pieceId: Int) { coordinator?.saveScan(pieceId: pieceId) }
 
     func discardLast() { coordinator?.discardLast() }
     func clearPieces() { coordinator?.clearPieces() }

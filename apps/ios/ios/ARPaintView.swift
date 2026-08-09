@@ -73,6 +73,13 @@ extension ARPaintView {
         private var meshCount = 0
         private var lastPlacedNode: SCNNode?
         private var snappedIDs: Set<Int> = []
+        private var lastPlacedFrame: simd_float4x4?
+        private var lastPlacedSize: Float = 0.3
+        private var anchoredPieceIDs: Set<Int> = []
+        private var knownImagePaths: [Int: String] = [:]
+        private var relocalizeAttempted = false
+        private var relocalizing = false
+        private var relocalizeDeadline: Date?
         private var lastPlaceabilityUpdate: TimeInterval = 0
         /// The interface orientation the still was shot in. Everything that maps
         /// between the overlay and the world has to use *that* orientation, not
@@ -131,6 +138,8 @@ extension ARPaintView {
             Task { @MainActor [weak self] in
                 self?.publishStatus()
                 self?.publishPlaceability(at: time)
+                self?.maybeRelocalize()
+                self?.settleRelocalization()
                 self?.maybeReanchor()
             }
         }
@@ -152,10 +161,19 @@ extension ARPaintView {
         // MARK: - Occlusion mesh
 
         nonisolated func renderer(_ renderer: SCNSceneRenderer, didAdd node: SCNNode, for anchor: ARAnchor) {
-            guard let mesh = anchor as? ARMeshAnchor else { return }
-            node.geometry = MeshOcclusion.geometry(from: mesh.geometry)
-            node.renderingOrder = -1
-            node.name = "occlusion"
+            if let mesh = anchor as? ARMeshAnchor {
+                node.geometry = MeshOcclusion.geometry(from: mesh.geometry)
+                node.renderingOrder = -1
+                node.name = "occlusion"
+                return
+            }
+            // Anchors named piece:<id>:<mm> arrive out of a relocalized world
+            // map — each one is a piece at its exact painted spot.
+            if let name = anchor.name, name.hasPrefix("piece:") {
+                Task { @MainActor [weak self] in
+                    self?.attachAnchoredPiece(node: node, name: name)
+                }
+            }
         }
 
         nonisolated func renderer(_ renderer: SCNSceneRenderer, didUpdate node: SCNNode, for anchor: ARAnchor) {
@@ -166,13 +184,30 @@ extension ARPaintView {
         // MARK: - Status
 
         private func publishStatus() {
+            publishScanQuality()
             let (status, ready) = sessionStatus()
             guard status != lastStatus else { return }
             lastStatus = status
             controller.setStatus(status, ready: ready)
         }
 
+        /// How well this spot is scanned — drives the placement-quality chip on
+        /// the Post card and decides whether a world map is worth uploading.
+        private func publishScanQuality() {
+            guard let frame = scnView?.session.currentFrame else { return }
+            let quality: String
+            switch frame.worldMappingStatus {
+            case .mapped: quality = "precise"
+            case .extending: quality = "good"
+            default: quality = "rough"
+            }
+            controller.setScanQuality(quality)
+        }
+
         private func sessionStatus() -> (String, Bool) {
+            if relocalizing {
+                return ("Matching this spot to earlier scans…", false)
+            }
             guard let frame = scnView?.session.currentFrame else {
                 return ("Starting camera…", false)
             }
@@ -388,8 +423,105 @@ extension ARPaintView {
             node.runAction(.fadeIn(duration: 0.3))
             placedNodes.append(node)
             lastPlacedNode = node
+            // Rigid frame for the ARWorldMap anchor: unit axes + the real position.
+            lastPlacedFrame = simd_float4x4(columns: (
+                simd_float4(simd_normalize(simd_make_float3(placement.columns.0)), 0),
+                simd_float4(simd_normalize(simd_make_float3(placement.columns.1)), 0),
+                simd_float4(simd_normalize(simd_make_float3(placement.columns.2)), 0),
+                simd_float4(position, 1)
+            ))
+            lastPlacedSize = sizeMeters
 
             return snapshot(placement: placement, position: position, size: sizeMeters, scene: scene)
+        }
+
+        // MARK: - Visual relocalization (ARWorldMap)
+
+        /// After a successful post: pin the piece as a named anchor and ship the
+        /// session's visual scan to the server, so a returning device can match
+        /// this exact spot instead of trusting GPS. Fire-and-forget.
+        func saveScan(pieceId: Int) {
+            guard let scnView, let frame = lastPlacedFrame else { return }
+            let mapping = scnView.session.currentFrame?.worldMappingStatus
+            // A bare-minimum scan relocalizes worse than GPS guesses — skip it.
+            guard mapping == .extending || mapping == .mapped else { return }
+            let name = "piece:\(pieceId):\(Int(max(lastPlacedSize, 0.05) * 1000))"
+            scnView.session.add(anchor: ARAnchor(name: name, transform: frame))
+            anchoredPieceIDs.insert(pieceId)
+            scnView.session.getCurrentWorldMap { map, _ in
+                guard let map else { return }
+                Task { @MainActor in
+                    guard let location = LocationService.shared.location else { return }
+                    _ = try? await WorldMapStore.upload(map, pieceId: pieceId, location: location)
+                }
+            }
+        }
+
+        /// Once per session: if someone scanned near here, relocalize against the
+        /// closest scan — anchors inside it put their pieces on the exact wall.
+        private func maybeRelocalize() {
+            guard !relocalizeAttempted, sessionActive,
+                  let scnView, scnView.session.currentFrame != nil,
+                  let location = LocationService.shared.location,
+                  location.horizontalAccuracy >= 0, location.horizontalAccuracy < 80 else { return }
+            relocalizeAttempted = true
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard let record = (try? await WorldMapStore.nearby(location: location, radiusM: 80))?.first,
+                      let map = try? await WorldMapStore.download(record),
+                      let scnView = self.scnView, self.sessionActive else { return }
+                let config = self.makeWorldConfiguration()
+                config.initialWorldMap = map
+                self.relocalizeDeadline = Date().addingTimeInterval(25)
+                self.relocalizing = true
+                scnView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
+            }
+        }
+
+        /// Relocalization either matched (tracking goes normal — the map's piece
+        /// anchors are live) or it never will; don't leave the user stuck.
+        private func settleRelocalization() {
+            guard relocalizing, let scnView, let frame = scnView.session.currentFrame else { return }
+            if case .normal = frame.camera.trackingState {
+                relocalizing = false
+                return
+            }
+            if let deadline = relocalizeDeadline, Date() > deadline {
+                relocalizing = false
+                scnView.session.run(makeWorldConfiguration(), options: [.resetTracking, .removeExistingAnchors])
+            }
+        }
+
+        /// A piece riding a relocalized anchor: exact placement, managed by ARKit.
+        private func attachAnchoredPiece(node: SCNNode, name: String) {
+            let parts = name.split(separator: ":")
+            guard parts.count == 3, let id = Int(parts[1]), let mm = Int(parts[2]) else { return }
+            anchoredPieceIDs.insert(id)
+            // The GPS-guessed copy would double-render next to the exact one.
+            if let stale = remoteNodes.removeValue(forKey: id) { stale.removeFromParentNode() }
+            fallbackNodes.removeValue(forKey: id)
+            fallbackPieces.removeValue(forKey: id)
+            let size = CGFloat(max(Float(mm) / 1000, 0.05))
+            Task { @MainActor [weak self] in
+                // The anchor can resolve before the first pieces fetch lands, so
+                // wait for the poll loop to learn this piece's image path.
+                var path: String?
+                for _ in 0..<10 {
+                    path = self?.knownImagePaths[id]
+                    if path != nil { break }
+                    try? await Task.sleep(for: .seconds(1))
+                }
+                guard let self, let path, let image = try? await APIClient.loadImage(path: path) else { return }
+                let plane = SCNPlane(width: size, height: size)
+                let material = SCNMaterial()
+                material.isDoubleSided = true
+                material.lightingModel = .constant
+                material.diffuse.contents = image
+                plane.materials = [material]
+                node.addChildNode(SCNNode(geometry: plane))
+                self.remoteNodes[id] = node.childNodes.last ?? node
+                self.publishNearby()
+            }
         }
 
         /// Art on top, with the surface's own light and grain multiplied through
@@ -473,8 +605,9 @@ extension ARPaintView {
 
         func renderRemotePieces(_ pieces: [RemotePiece]) {
             guard let scnView else { return }
+            for piece in pieces { knownImagePaths[piece.id] = piece.imagePath }
             let wanted = Set(pieces.map(\.id))
-            for (id, node) in remoteNodes where !wanted.contains(id) {
+            for (id, node) in remoteNodes where !wanted.contains(id) && !anchoredPieceIDs.contains(id) {
                 node.removeFromParentNode()
                 remoteNodes.removeValue(forKey: id)
                 // The reanchor loop walks fallbackNodes, so a piece left behind
@@ -486,8 +619,10 @@ extension ARPaintView {
                 loadFailures.removeValue(forKey: id)
                 snapAttempts.removeValue(forKey: id)
             }
-            renderedRemoteIDs.formIntersection(wanted)
-            for piece in pieces where !renderedRemoteIDs.contains(piece.id) {
+            renderedRemoteIDs.formIntersection(wanted.union(anchoredPieceIDs))
+            // Anchored pieces ride their world-map anchors at the exact painted
+            // spot; the GPS path must not spawn a second, guessed copy.
+            for piece in pieces where !renderedRemoteIDs.contains(piece.id) && !anchoredPieceIDs.contains(piece.id) {
                 renderedRemoteIDs.insert(piece.id)
                 addRemoteNode(for: piece, scnView: scnView)
             }
