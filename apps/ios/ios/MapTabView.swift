@@ -13,6 +13,8 @@ struct MapTabView: View {
     @State private var loaded = false
     @State private var offline = false
     @State private var position: MapCameraPosition = .userLocation(fallback: .automatic)
+    @State private var visibleRegion: MKCoordinateRegion?
+    @State private var didAutoFrame = false
 
     private var location = LocationService.shared
     private var permissions = Permissions.shared
@@ -55,6 +57,10 @@ struct MapTabView: View {
             }
         }
         .animation(.snappy, value: selected?.id)
+        .onMapCameraChange(frequency: .onEnd) { context in
+            visibleRegion = context.region
+            Task { await refresh() }
+        }
         .task { await refreshLoop() }
     }
 
@@ -140,27 +146,54 @@ struct MapTabView: View {
             .padding(24)
     }
 
-    private func refreshLoop() async {
-        while !Task.isCancelled {
-            if let loc = location.location {
-                do {
-                    let fetched = try await APIClient.listPieces(
-                        lat: loc.coordinate.latitude,
-                        lng: loc.coordinate.longitude,
-                        radiusMeters: 2000
-                    )
-                    // Reassigning identical pieces re-creates every annotation and
-                    // makes the markers blink on each poll.
-                    if fetched.map(\.id) != pieces.map(\.id) { pieces = fetched }
-                    if let sel = selected {
-                        selected = fetched.first { $0.id == sel.id } ?? sel
-                    }
-                    loaded = true
-                    offline = false
-                } catch {
-                    offline = true
+    /// Fetch whatever the camera is looking at — pan to Stackt, see Stackt.
+    /// Falls back to a radius around the user until the map reports a region.
+    private func refresh() async {
+        do {
+            let fetched: [PieceDTO]
+            if let region = visibleRegion {
+                fetched = try await APIClient.listPieces(
+                    west: region.center.longitude - region.span.longitudeDelta / 2,
+                    south: region.center.latitude - region.span.latitudeDelta / 2,
+                    east: region.center.longitude + region.span.longitudeDelta / 2,
+                    north: region.center.latitude + region.span.latitudeDelta / 2
+                )
+            } else if let loc = location.location {
+                fetched = try await APIClient.listPieces(
+                    lat: loc.coordinate.latitude,
+                    lng: loc.coordinate.longitude,
+                    radiusMeters: 2000
+                )
+            } else {
+                return
+            }
+            // Reassigning identical pieces re-creates every annotation and
+            // makes the markers blink on each poll.
+            if fetched.map(\.id) != pieces.map(\.id) { pieces = fetched }
+            if let sel = selected {
+                selected = fetched.first { $0.id == sel.id } ?? sel
+            }
+            loaded = true
+            offline = false
+
+            // An empty view around the user reads as "everything vanished" —
+            // frame the world's pieces instead of showing a blank map.
+            if pieces.isEmpty, !didAutoFrame {
+                didAutoFrame = true
+                let all = try await APIClient.listPieces(west: -180, south: -85, east: 180, north: 85)
+                if !all.isEmpty {
+                    pieces = all
+                    withAnimation(.snappy) { position = .automatic }
                 }
             }
+        } catch {
+            offline = true
+        }
+    }
+
+    private func refreshLoop() async {
+        while !Task.isCancelled {
+            await refresh()
             try? await Task.sleep(for: .seconds(5))
         }
     }

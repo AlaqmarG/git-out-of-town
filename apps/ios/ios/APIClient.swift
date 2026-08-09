@@ -68,13 +68,21 @@ enum APIClient {
     static func listPieces(lat: Double, lng: Double, radiusMeters: Double) async throws -> [PieceDTO] {
         let latDelta = radiusMeters / 111320
         let lngDelta = radiusMeters / (111320 * cos(lat * .pi / 180))
-        let west = lng - lngDelta
-        let east = lng + lngDelta
-        let south = lat - latDelta
-        let north = lat + latDelta
+        return try await listPieces(
+            west: lng - lngDelta,
+            south: lat - latDelta,
+            east: lng + lngDelta,
+            north: lat + latDelta
+        )
+    }
 
+    /// Pieces inside a bounding box — what the map camera is looking at.
+    static func listPieces(west: Double, south: Double, east: Double, north: Double) async throws -> [PieceDTO] {
         var comps = URLComponents(url: baseURL.appendingPathComponent("api/pieces"), resolvingAgainstBaseURL: false)!
-        comps.queryItems = [URLQueryItem(name: "bbox", value: "\(west),\(south),\(east),\(north)")]
+        comps.queryItems = [URLQueryItem(
+            name: "bbox",
+            value: "\(max(west, -180)),\(max(south, -90)),\(min(east, 180)),\(min(north, 90))"
+        )]
 
         let (data, response) = try await URLSession.shared.data(from: comps.url!)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
