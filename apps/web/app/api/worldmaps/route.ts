@@ -36,7 +36,13 @@ function ensureTable() {
     .then(() => pool.query(`
       ALTER TABLE world_maps
         ADD COLUMN IF NOT EXISTS feature_points integer NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS extent_m double precision NOT NULL DEFAULT 0`));
+        ADD COLUMN IF NOT EXISTS extent_m double precision NOT NULL DEFAULT 0`))
+    // A DB blip during the first call must not poison the memo — a rejected
+    // promise cached here would 500 every worldmaps request until restart.
+    .catch((err) => {
+      ensured = null;
+      throw err;
+    });
   return ensured;
 }
 
@@ -47,8 +53,14 @@ function ensureTable() {
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const lat = Number(url.searchParams.get("lat"));
-  const lng = Number(url.searchParams.get("lng"));
+  // Number(null) and Number("") are both 0, so an absent or blank param must
+  // be rejected before coercion — "?lng=..." alone would silently query lat=0.
+  const coord = (name: string) => {
+    const s = url.searchParams.get(name);
+    return s ? Number(s) : NaN;
+  };
+  const lat = coord("lat");
+  const lng = coord("lng");
   const radiusM = Number(url.searchParams.get("radiusM") ?? 100);
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
     return bad(400, "lat and lng are required");
@@ -107,6 +119,13 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   if (!rateLimit(`worldmap:${clientIp(req)}`, 10, 0.2).ok) {
     return bad(429, "slow down");
+  }
+
+  // Refuse before reading a byte — formData() buffers the whole body, so the
+  // per-part check below can only ever be an after-the-fact complaint.
+  const declared = Number(req.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_MAP_BYTES + 1024 * 1024) {
+    return bad(413, `body exceeds ${MAX_MAP_BYTES} bytes`);
   }
 
   let form: FormData;

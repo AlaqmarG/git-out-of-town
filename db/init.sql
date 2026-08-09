@@ -74,6 +74,8 @@ CREATE TABLE IF NOT EXISTS world_maps (
   lng double precision NOT NULL,
   map_path text NOT NULL,
   size_bytes bigint NOT NULL,
+  feature_points integer NOT NULL DEFAULT 0,
+  extent_m double precision NOT NULL DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS world_maps_loc_idx ON world_maps (lat, lng);

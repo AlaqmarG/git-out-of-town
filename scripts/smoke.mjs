@@ -155,6 +155,27 @@ await check("stats are computed fresh, not cached", async () => {
   assert(a.generatedAt !== b.generatedAt, "generatedAt did not change — response is cached");
 });
 
+console.log("\nworld maps");
+await check("GET /api/worldmaps returns a well-formed list", async () => {
+  const res = await expectStatus("/api/worldmaps?lat=0.0001&lng=0.0001&radiusM=100", 200);
+  const { maps } = await res.json();
+  assert(Array.isArray(maps), "maps is not an array");
+  for (const m of maps) {
+    assert(typeof m.mapPath === "string", `map ${m.id} has no mapPath`);
+    assert(typeof m.featurePoints === "number", `map ${m.id} has no featurePoints`);
+    assert(typeof m.extentM === "number", `map ${m.id} has no extentM`);
+  }
+});
+
+await check("rejects a worldmaps query with no coordinates", () =>
+  expectStatus("/api/worldmaps", 400));
+
+await check("rejects a worldmaps query missing lat", () =>
+  expectStatus("/api/worldmaps?lng=-79.3", 400));
+
+await check("rejects an out-of-range worldmaps lat", () =>
+  expectStatus("/api/worldmaps?lat=999&lng=0", 400));
+
 console.log("\nview tracking");
 await check("rejects a view with a non-integer piece id", () =>
   expectStatus("/api/views", 400, {
