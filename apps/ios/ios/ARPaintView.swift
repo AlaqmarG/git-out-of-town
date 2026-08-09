@@ -63,6 +63,8 @@ extension ARPaintView {
         private var renderedRemoteIDs: Set<Int> = []
         private var remoteNodes: [Int: SCNNode] = [:]
         private var remoteScale: [Int: Float] = [:]
+        private var loadFailures: [Int: Int] = [:]
+        private var snapAttempts: [Int: Int] = [:]
         private var fallbackNodes: [Int: SCNNode] = [:]
         private var fallbackPieces: [Int: RemotePiece] = [:]
         private var lastReanchor = Date.distantPast
@@ -205,6 +207,8 @@ extension ARPaintView {
             fallbackNodes.removeAll()
             fallbackPieces.removeAll()
             snappedIDs.removeAll()
+            loadFailures.removeAll()
+            snapAttempts.removeAll()
         }
 
         // MARK: - Capture
@@ -438,6 +442,8 @@ extension ARPaintView {
                 fallbackNodes.removeValue(forKey: id)
                 fallbackPieces.removeValue(forKey: id)
                 snappedIDs.remove(id)
+                loadFailures.removeValue(forKey: id)
+                snapAttempts.removeValue(forKey: id)
             }
             renderedRemoteIDs.formIntersection(wanted)
             for piece in pieces where !renderedRemoteIDs.contains(piece.id) {
@@ -449,10 +455,21 @@ extension ARPaintView {
         private func addRemoteNode(for piece: RemotePiece, scnView: ARSCNView) {
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                // Cheap gates first — don't download an image we can't place.
+                guard scnView.session.currentFrame != nil,
+                      let gateFix = LocationService.shared.location, self.isUsableFix(gateFix) else {
+                    self.renderedRemoteIDs.remove(piece.id)
+                    return
+                }
+                // A piece whose image keeps failing stays in renderedRemoteIDs,
+                // which is what stops the 3-second poll re-downloading it forever.
+                guard self.loadFailures[piece.id, default: 0] < 3 else { return }
+
                 let image: UIImage
                 do {
                     image = try await APIClient.loadImage(path: piece.imagePath)
                 } catch {
+                    self.loadFailures[piece.id, default: 0] += 1
                     self.renderedRemoteIDs.remove(piece.id)
                     return
                 }
@@ -583,6 +600,10 @@ extension ARPaintView {
             guard let frame = scnView.session.currentFrame,
                   let loc = LocationService.shared.location, isUsableFix(loc) else { return }
             let camPos = simd_make_float3(frame.camera.transform.columns.3)
+            // Each snap attempt is a full-scene hit test; budget them per cycle
+            // and back off per piece, or a room full of un-snappable pieces
+            // turns into a periodic main-thread stall.
+            var snapBudget = 4
             for (id, node) in fallbackNodes {
                 guard let piece = fallbackPieces[id] else { continue }
                 let desired = worldPosition(for: piece, from: loc, cameraPos: camPos)
@@ -590,14 +611,21 @@ extension ARPaintView {
                     if simd_distance(node.simdPosition, desired) > 4 { snappedIDs.remove(id) }
                     continue
                 }
-                if let snapped = snappedTransform(for: piece, near: desired) {
-                    snappedIDs.insert(id)
-                    SCNTransaction.begin()
-                    SCNTransaction.animationDuration = 0.35
-                    node.simdTransform = snapped
-                    applyVisibility(to: node, id: id, snapped: true, camPos: camPos)
-                    SCNTransaction.commit()
-                    continue
+                let attempts = snapAttempts[id, default: 0]
+                if snapBudget > 0, attempts < 10 || attempts % 8 == 0 {
+                    snapBudget -= 1
+                    snapAttempts[id] = attempts + 1
+                    if let snapped = snappedTransform(for: piece, near: desired) {
+                        snappedIDs.insert(id)
+                        SCNTransaction.begin()
+                        SCNTransaction.animationDuration = 0.35
+                        node.simdTransform = snapped
+                        applyVisibility(to: node, id: id, snapped: true, camPos: camPos)
+                        SCNTransaction.commit()
+                        continue
+                    }
+                } else if attempts >= 10 {
+                    snapAttempts[id] = attempts + 1
                 }
                 if simd_distance(node.simdPosition, desired) > 0.5 {
                     var t = node.simdTransform

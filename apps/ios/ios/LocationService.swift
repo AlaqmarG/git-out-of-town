@@ -38,7 +38,8 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
         Task { @MainActor [weak self] in
             guard newHeading.headingAccuracy >= 0 else { return }
-            self?.heading = newHeading.trueHeading > 0 ? newHeading.trueHeading : newHeading.magneticHeading
+            // trueHeading is exactly 0 when pointing due north; -1 means invalid.
+            self?.heading = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
         }
     }
 

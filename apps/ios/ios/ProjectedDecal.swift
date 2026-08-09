@@ -29,14 +29,19 @@ enum ProjectedDecal {
 
     /// Snapshots mesh triangles as plain values — the anchors' Metal buffers are
     /// recycled by ARKit, so they can't be read later.
-    static func triangles(anchors: [ARAnchor], around point: SIMD3<Float>, maxDistance: Float = 9) -> [Triangle] {
+    static func triangles(anchors: [ARAnchor], around point: SIMD3<Float>, maxDistance: Float = 5) -> [Triangle] {
         var out: [Triangle] = []
         for case let anchor as ARMeshAnchor in anchors {
             guard simd_distance(simd_make_float3(anchor.transform.columns.3), point) < maxDistance else { continue }
             let geometry = anchor.geometry
             let transform = anchor.transform
+            // ARKit refreshes these Metal buffers concurrently; a torn read can
+            // pair a new index buffer with a stale vertex buffer, so indices
+            // must be range-checked before they become pointer offsets.
+            let vertexCount = UInt32(clamping: geometry.vertices.count)
             for face in 0..<geometry.faces.count {
                 let (i0, i1, i2) = geometry.vertexIndices(of: face)
+                guard i0 < vertexCount, i1 < vertexCount, i2 < vertexCount else { continue }
                 out.append(Triangle(
                     a: simd_make_float3(transform * SIMD4<Float>(geometry.vertex(at: i0), 1)),
                     b: simd_make_float3(transform * SIMD4<Float>(geometry.vertex(at: i1), 1)),
