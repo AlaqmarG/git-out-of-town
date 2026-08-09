@@ -122,6 +122,22 @@ export interface PiecesResponse {
   total: number;
 }
 
+/**
+ * A serialized ARWorldMap scan — the poster's visual fingerprint of the spot.
+ * GET /api/worldmaps?lat&lng&radiusM lists nearby scans (nearest first);
+ * POST /api/worldmaps is multipart: `map` (compressed blob) + `meta` JSON
+ * ({ pieceId?, lat, lng }). The blob itself is served under /uploads/mapPath.
+ */
+export interface WorldMapRecord {
+  id: number;
+  pieceId: number | null;
+  lat: number;
+  lng: number;
+  mapPath: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
 /** Payload pushed over SSE when someone paints. */
 export interface NewPieceEvent {
   id: number;

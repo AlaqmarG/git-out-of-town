@@ -48,3 +48,6 @@ export async function saveImage(buf: Buffer, ext: string): Promise<string> {
 export async function deleteImage(rel: string): Promise<void> {
   await unlink(path.join(UPLOAD_DIR, rel)).catch(() => {});
 }
+
+/** Same sharded layout for opaque blobs (ARWorldMap scans) — no sniffing. */
+export const saveBlob = saveImage;
