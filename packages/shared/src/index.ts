@@ -126,7 +126,8 @@ export interface PiecesResponse {
  * A serialized ARWorldMap scan — the poster's visual fingerprint of the spot.
  * GET /api/worldmaps?lat&lng&radiusM lists nearby scans (nearest first);
  * POST /api/worldmaps is multipart: `map` (compressed blob) + `meta` JSON
- * ({ pieceId?, lat, lng }). The blob itself is served under /uploads/mapPath.
+ * ({ pieceId?, lat, lng, featurePoints?, extentM? }). The blob itself is
+ * served under /uploads/mapPath.
  */
 export interface WorldMapRecord {
   id: number;
@@ -135,6 +136,10 @@ export interface WorldMapRecord {
   lng: number;
   mapPath: string;
   sizeBytes: number;
+  /** ARKit rawFeaturePoints count at save time — scan richness. */
+  featurePoints: number;
+  /** Longest side of the scanned extent, metres. */
+  extentM: number;
   createdAt: string;
 }
 
