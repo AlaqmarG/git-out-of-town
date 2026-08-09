@@ -159,7 +159,21 @@ struct ContentView: View {
                 .glassEffect(.regular, in: Capsule())
                 .foregroundStyle(ar.isReady ? Self.accent : .primary)
                 .animation(.easeInOut, value: ar.isReady)
+
+            if showDebug {
+                Text(debugLine)
+                    .font(.caption2.monospaced())
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 6)
+                    .glassEffect(.regular, in: Capsule())
+            }
         }
+    }
+
+    private var debugLine: String {
+        let accuracy = LocationService.shared.location?.horizontalAccuracy ?? -1
+        let nearest = ar.nearestM.map { String(format: "%.0fm", $0) } ?? "—"
+        return "fetched \(ar.fetched) · in world \(ar.rendered) · snapped \(ar.snapped) · nearest \(nearest) · gps ±\(accuracy < 0 ? "?" : String(format: "%.0f", accuracy))m"
     }
 
     private var shutterBar: some View {
@@ -379,8 +393,9 @@ struct ContentView: View {
                     lng: loc.coordinate.longitude,
                     radiusMeters: 300
                 ) {
+                    ar.fetched = pieces.count
                     remotePieces = pieces
-                        .filter { !ownPieceIDs.contains($0.id) && $0.client == "ios" }
+                        .filter { !ownPieceIDs.contains($0.id) }
                         .map {
                             RemotePiece(
                                 id: $0.id,

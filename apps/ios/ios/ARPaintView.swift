@@ -528,11 +528,7 @@ extension ARPaintView {
                 let rotation = piece.placementTransform.flatMap(unflatten) ?? matrix_identity_float4x4
 
                 let node = SCNNode(geometry: SCNPlane(width: 0.3, height: 0.3))
-                let material = SCNMaterial()
-                material.isDoubleSided = true
-                material.lightingModel = .constant
-                material.diffuse.contents = image
-                node.geometry?.materials = [material]
+                node.geometry?.materials = [self.remoteMaterial(image: image)]
 
                 var world = simd_float4x4(columns: (
                     rotation.columns.0,
@@ -544,20 +540,68 @@ extension ARPaintView {
                     world = snapped
                     self.snappedIDs.insert(piece.id)
                 }
+                if piece.placementTransform == nil {
+                    // Web pieces carry no orientation — face the viewer.
+                    node.constraints = [SCNBillboardConstraint()]
+                }
                 node.simdTransform = world
+                self.applyVisibility(to: node, snapped: self.snappedIDs.contains(piece.id), camPos: camPos)
                 scnView.scene.rootNode.addChildNode(node)
                 self.remoteNodes[piece.id] = node
                 self.fallbackNodes[piece.id] = node
                 self.fallbackPieces[piece.id] = piece
+                self.publishNearby()
             }
+        }
+
+        private func remoteMaterial(image: UIImage) -> SCNMaterial {
+            let material = SCNMaterial()
+            material.isDoubleSided = true
+            material.lightingModel = .constant
+            material.diffuse.contents = image
+            return material
+        }
+
+        /// A piece the GPS has parked inside a wall would be swallowed by the
+        /// occlusion mesh and simply never seen. Until it snaps onto a real
+        /// surface it renders through geometry, like a map marker; once snapped
+        /// it sits on the wall and occludes properly. Distant pieces are also
+        /// scaled up so they stay legible instead of vanishing to a speck.
+        private func applyVisibility(to node: SCNNode, snapped: Bool, camPos: SIMD3<Float>) {
+            guard let material = node.geometry?.firstMaterial else { return }
+            material.readsFromDepthBuffer = snapped
+            material.writesToDepthBuffer = snapped
+            node.renderingOrder = snapped ? 0 : 20
+
+            let distance = simd_distance(node.simdPosition, camPos)
+            let boost = snapped ? 1 : max(1, min(distance / 4, 6))
+            node.scale = SCNVector3(boost, boost, boost)
+        }
+
+        /// How many pieces are loaded vs actually placed in the world, and how
+        /// far the closest one is — surfaced in the debug readout.
+        private func publishNearby() {
+            let camPos = scnView?.session.currentFrame
+                .map { simd_make_float3($0.camera.transform.columns.3) }
+            let distances = remoteNodes.values.map { node -> Float in
+                guard let camPos else { return .greatestFiniteMagnitude }
+                return simd_distance(node.simdPosition, camPos)
+            }
+            controller.setNearby(
+                rendered: remoteNodes.count,
+                snapped: snappedIDs.count,
+                nearestM: distances.min().map { $0 < .greatestFiniteMagnitude ? Double($0) : nil } ?? nil
+            )
         }
 
         // MARK: - Reconstruction helpers (GPS fallback)
 
-        /// A fix we trust enough to hang world positions off: fresh and reasonably accurate.
+        /// A fix we can hang world positions off. Indoors a good fix never
+        /// arrives, so this is deliberately generous — a piece in roughly the
+        /// right direction beats no piece at all, and snapping corrects it.
         private func isUsableFix(_ loc: CLLocation) -> Bool {
-            loc.horizontalAccuracy >= 0 && loc.horizontalAccuracy <= 25 &&
-                Date().timeIntervalSince(loc.timestamp) < 5
+            loc.horizontalAccuracy >= 0 && loc.horizontalAccuracy <= 80 &&
+                Date().timeIntervalSince(loc.timestamp) < 60
         }
 
         /// Where a piece should sit in world space, given our current pose + fix.
@@ -600,6 +644,7 @@ extension ARPaintView {
                     SCNTransaction.begin()
                     SCNTransaction.animationDuration = 0.35
                     node.simdTransform = snapped
+                    applyVisibility(to: node, snapped: true, camPos: camPos)
                     SCNTransaction.commit()
                     continue
                 }
@@ -608,7 +653,9 @@ extension ARPaintView {
                     t.columns.3 = simd_float4(desired.x, desired.y, desired.z, 1)
                     node.simdTransform = t
                 }
+                applyVisibility(to: node, snapped: false, camPos: camPos)
             }
+            publishNearby()
         }
 
         /// Casts along the piece's stored surface normal (LiDAR mesh first,

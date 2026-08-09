@@ -26,16 +26,16 @@ struct PhotoPaintView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        // Both layers are exactly the AR viewport, pinned to the screen's real
+        // top-left: a tap here has to be the same point the projector maps back
+        // onto the world, so this cannot be inset. The chrome is therefore
+        // padded by the device insets by hand rather than by the safe area.
+        ZStack(alignment: .topLeading) {
+            Color.black
 
-            // Full-bleed and sized to the AR viewport, so screen coordinates here
-            // are exactly the coordinates the projector maps back onto the world.
             paintSurface
                 .frame(width: scene.viewport.width, height: scene.viewport.height)
-                .ignoresSafeArea()
 
-            // Chrome stays inside the safe area — never under the clock.
             VStack(spacing: 0) {
                 topBar
                 Spacer()
@@ -47,11 +47,23 @@ struct PhotoPaintView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.top, Self.deviceInsets.top + 6)
+            .padding(.bottom, Self.deviceInsets.bottom + 10)
+            .frame(width: scene.viewport.width, height: scene.viewport.height)
         }
+        .frame(width: scene.viewport.width, height: scene.viewport.height)
+        .ignoresSafeArea()
         .animation(.snappy, value: isDrawing)
         .onAppear { trayID = stickers.first?.id }
         .preferredColorScheme(.dark)
+    }
+
+    private static var deviceInsets: EdgeInsets {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+            .first
+        let insets = window?.safeAreaInsets ?? .zero
+        return EdgeInsets(top: insets.top, leading: insets.left, bottom: insets.bottom, trailing: insets.right)
     }
 
     // MARK: - Layers

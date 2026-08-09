@@ -25,9 +25,22 @@ final class ARController {
     private(set) var hasLidar = ARWorldTrackingConfiguration.supportsSceneReconstruction(.meshWithClassification)
     private(set) var isReady = false
 
+    /// Diagnostics for the debug readout: pieces fetched, placed in the world,
+    /// glued to a real surface, and how far the closest one is.
+    var fetched = 0
+    private(set) var rendered = 0
+    private(set) var snapped = 0
+    private(set) var nearestM: Double?
+
     func setStatus(_ status: String, ready: Bool) {
         self.status = status
         isReady = ready
+    }
+
+    func setNearby(rendered: Int, snapped: Int, nearestM: Double?) {
+        self.rendered = rendered
+        self.snapped = snapped
+        self.nearestM = nearestM
     }
 
     func capture() -> CapturedScene? { coordinator?.capture() }
