@@ -159,9 +159,11 @@ enum DepthDecal {
                 }
 
                 let base = UInt32(positions.count)
-                // 3 mm off the surface so the art wins the depth test against
-                // the occlusion mesh without visibly floating.
-                let lift = facing * 0.003
+                // Held off the surface so the art wins the depth test against
+                // the occlusion mesh. This path is the one that needs it most:
+                // the geometry comes from dense depth, the occluder from the
+                // 5 cm reconstruction mesh, and the two disagree by centimetres.
+                let lift = decalLift(from: camPos, at: (a + b + c + d) / 4)
                 for corner in [a, b, c, d] {
                     positions.append(SCNVector3(corner + lift))
                     normals.append(SCNVector3(facing))

@@ -97,6 +97,9 @@ extension ARPaintView {
         private var lastPlacedFrame: simd_float4x4?
         private var lastPlacedSize: Float = 0.3
         private var anchoredPieceIDs: Set<Int> = []
+        /// Pieces this session painted and posted. Their art is already in the
+        /// scene as a local node, so no other path may draw them a second time.
+        private var locallyPlacedIDs: Set<Int> = []
         private var knownImagePaths: [Int: String] = [:]
         private var relocalizeAttempted = false
         private var relocalizeInFlight = false
@@ -386,6 +389,8 @@ extension ARPaintView {
             for node in placedNodes { node.removeFromParentNode() }
             placedNodes.removeAll()
             lastPlacedNode = nil
+            // The local copies are gone, so the server's are no longer doubles.
+            locallyPlacedIDs.removeAll()
             for (_, node) in remoteNodes { node.removeFromParentNode() }
             remoteNodes.removeAll()
             remoteScale.removeAll()
@@ -604,6 +609,20 @@ extension ARPaintView {
         /// session's visual scan to the server, so a returning device can match
         /// this exact spot instead of trusting GPS. Fire-and-forget.
         func saveScan(pieceId: Int) {
+            // This piece is already in the scene as the wrapped local decal.
+            // Claim it before anything else can draw the server's copy on top:
+            // `anchoredPieceIDs` stops the GPS poll, `locallyPlacedIDs` stops
+            // the anchor we are about to add from coming back through
+            // `attachAnchoredPiece` as a second, flat, constant-lit quad.
+            locallyPlacedIDs.insert(pieceId)
+            anchoredPieceIDs.insert(pieceId)
+            // A poll that was already in flight when the upload landed can have
+            // fetched our own piece back and drawn it. Claiming it now would
+            // otherwise pin that copy in place: `anchoredPieceIDs` is exactly
+            // what stops `renderRemotePieces` from ever removing a node again.
+            if let stale = remoteNodes.removeValue(forKey: pieceId) { stale.removeFromParentNode() }
+            fallbackNodes.removeValue(forKey: pieceId)
+            fallbackPieces.removeValue(forKey: pieceId)
             guard let scnView, let frame = lastPlacedFrame else { return }
             // Apple: save a map only once the session has reached `.mapped`.
             // `.extending` relocalizes only if the viewer retraces the painter's
@@ -614,7 +633,6 @@ extension ARPaintView {
             let name = WorldMapStore.pieceName(id: pieceId, sizeM: lastPlacedSize)
             let pieceAnchor = ARAnchor(name: name, transform: frame)
             scnView.session.add(anchor: pieceAnchor)
-            anchoredPieceIDs.insert(pieceId)
             // What the painter is looking at right now, shipped with the map so
             // a viewer can stand in the same place instead of hunting for the
             // match. Grabbed here, before the phone drifts off the wall.
@@ -789,6 +807,10 @@ extension ARPaintView {
         /// A piece riding a relocalized anchor: exact placement, managed by ARKit.
         private func attachAnchoredPiece(node: SCNNode, name: String) {
             guard let (id, size) = WorldMapStore.pieceName(name) else { return }
+            // The anchor for a piece this session painted exists so the world
+            // map carries it to the NEXT device. Drawing it here would stack a
+            // flat quad on top of the decal that is already on the wall.
+            guard !locallyPlacedIDs.contains(id) else { return }
             Task { @MainActor [weak self] in
                 // The anchor can resolve before the first pieces fetch lands, so
                 // wait for the poll loop to learn this piece's image path. A map

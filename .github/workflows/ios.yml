@@ -38,6 +38,14 @@ jobs:
       - name: Show toolchain
         run: xcodebuild -version
 
+      # PaintMask is deliberately UIKit-free so its orientation can be pinned on
+      # the Mac, with no simulator. A flip here mirrors every placement.
+      - name: PaintMask orientation
+        run: |
+          swiftc -O apps/ios/ios/PaintMask.swift \
+                 apps/ios/tests/PaintMaskOrientationTests.swift -o /tmp/paintmask
+          /tmp/paintmask
+
       # Simulator build with signing disabled — catches every compile error with
       # no Apple Developer account, no certificates, no provisioning profiles.
       # Device builds and TestFlight need signing; see docs/OPS.md.
