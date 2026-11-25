@@ -8,8 +8,8 @@ Git Out of Town is a shared AR graffiti wall built at SummerHacks 2026. Draw or 
 the iOS app, spray it onto a real surface, and it appears on a public map seconds later. Anyone can
 browse without an account or an install. Painting currently requires the native iOS build.
 
-[Live map](https://gitoutoftown.129-153-49-190.sslip.io) ·
-[Live data](https://gitoutoftown.129-153-49-190.sslip.io/data) ·
+The hosted demo is no longer running. To try the web app, see [Run locally](#run-locally).
+
 [Devpost draft](docs/devpost-final-draft.md)
 
 ## How it works
